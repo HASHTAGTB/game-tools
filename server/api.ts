@@ -1,4 +1,5 @@
 /** Tiny file API mounted into the Vite dev/preview server: characters are JSON files in a folder you choose. */
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -23,6 +24,39 @@ async function readConfig(): Promise<Config> {
 }
 
 const expand = (p: string) => path.resolve(ROOT, p.trim().replace(/^~(?=$|\/)/, os.homedir()));
+
+type Run = { stdout: string; code: number | string | null };
+const run = (cmd: string, args: string[]) => new Promise<Run>(resolve =>
+  execFile(cmd, args, { windowsHide: true }, (err: any, stdout) => resolve({ stdout: String(stdout ?? ""), code: err ? err.code ?? 1 : 0 })));
+
+const TITLE = "Folder for the character files";
+
+/** Opens the OS's own folder dialog on this machine (the server runs locally, so the browser can't give us a real path).
+ *  Returns the chosen folder, or null if the dialog was closed. Throws if no dialog program is available. */
+async function pickFolder(start: string): Promise<string | null> {
+  const tries: [string, string[]][] =
+    process.platform === "darwin" ? [["osascript", ["-e",
+      `POSIX path of (choose folder with prompt ${JSON.stringify(TITLE)} default location (POSIX file ${JSON.stringify(start)}))`]]]
+    : process.platform === "win32" ? [["powershell", ["-NoProfile", "-STA", "-Command",
+      "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; " +
+      `$d.Description = '${TITLE}'; $d.SelectedPath = '${start.replace(/'/g, "''")}'; ` +
+      "if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }"]]]
+    : [
+      ["zenity", ["--file-selection", "--directory", `--title=${TITLE}`, `--filename=${start}/`]],
+      ["kdialog", ["--getexistingdirectory", start, "--title", TITLE]],
+      ["yad", ["--file", "--directory", `--title=${TITLE}`, `--filename=${start}/`]],
+      ["qarma", ["--file-selection", "--directory", `--title=${TITLE}`, `--filename=${start}/`]],
+    ];
+  for (const [cmd, args] of tries) {
+    const r = await run(cmd, args);
+    if (r.code === "ENOENT") continue;                 // not installed, try the next one
+    const picked = r.stdout.trim();
+    return r.code === 0 && picked ? picked : null;     // non-zero exit = dialog cancelled
+  }
+  throw new Error(process.platform === "linux"
+    ? "No folder dialog found. Install zenity or kdialog."
+    : "Could not open the folder dialog.");
+}
 
 async function jsonFiles(dir: string) {
   try {
@@ -79,6 +113,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<boolea
   const route = `${req.method} ${url.pathname}`;
 
   if (route === "GET /api/config") return send(res, 200, cfg), true;
+
+  if (route === "POST /api/pick-folder") return send(res, 200, { dataDir: await pickFolder(cfg.dataDir) }), true;
 
   if (route === "POST /api/config") {
     const { dataDir } = await body(req);

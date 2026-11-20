@@ -12,7 +12,7 @@ The Vite server also runs a small file API (`server/api.ts`), so characters are 
 
 ## Save location
 
-With `pnpm dev`, characters are stored as one `<id>.json` file each, saved automatically. The default folder is `./characters`. Change it under **Save location** at the bottom left; the setting lives in `config.json`. If the new folder is empty, the current characters are copied there; otherwise its characters are loaded. Point it at a folder you keep in git. ⟳ reloads from disk (e.g. after `git pull`).
+With `pnpm dev`, characters are stored as one `<id>.json` file each, saved automatically. The default folder is `./characters`. Change it under **Save location** at the bottom left: type a path or click **Browse…** to pick one in your system's folder dialog (zenity or kdialog on Linux). The setting lives in `config.json`. If the new folder is empty, the current characters are copied there; otherwise its characters are loaded. Point it at a folder you keep in git. ⟳ reloads from disk (e.g. after `git pull`).
 
 ## GitHub Pages
 

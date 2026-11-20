@@ -155,6 +155,9 @@ export async function reconnectFolder() {
   if (!dir || (await dir.requestPermission({ mode: "readwrite" })) !== "granted") throw new Error("Permission was not given.");
 }
 
+/** Opens the native folder dialog on the machine running `pnpm dev`; null if it was closed. */
+export const pickDataDir = async () => (await api<{ dataDir: string | null }>("POST", "/api/pick-folder")).dataDir;
+
 export const setDataDir = (dataDir: string) => api<{ dataDir: string; copied: number }>("POST", "/api/config", { dataDir });
 
 /** Switch to browser storage or a newly picked folder (the picker must open from a click).

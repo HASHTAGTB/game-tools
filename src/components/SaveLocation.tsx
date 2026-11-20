@@ -1,7 +1,7 @@
 import * as Popover from "@radix-ui/react-popover";
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { folderSupported, reconnectFolder, setDataDir, STATIC, switchTo, type Location } from "../lib/store";
+import { folderSupported, pickDataDir, reconnectFolder, setDataDir, STATIC, switchTo, type Location } from "../lib/store";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { popoverCls } from "./ui/confirm";
@@ -17,21 +17,30 @@ const msgOf = (e: unknown) => String(e instanceof Error ? e.message : e);
 export function SaveLocation({ loc, onChanged, onReload }: Props) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => { setValue(loc?.label ?? ""); setErr(""); }, [loc, open]);
 
   const run = async (fn: () => Promise<string | null>) => {
     setErr("");
+    setBusy(true);
     try {
       const msg = await fn();
       if (msg) { setOpen(false); onChanged(msg); }
     } catch (e) {
       setErr(msgOf(e));
+    } finally {
+      setBusy(false);
     }
   };
   const copiedNote = (n: number) => (n ? ` (copied ${n} character${n > 1 ? "s" : ""} there)` : "");
 
-  const saveDir = () => run(async () => { const r = await setDataDir(value); return `Saving to ${r.dataDir}${copiedNote(r.copied)}`; });
+  const useDir = async (d: string) => { const r = await setDataDir(d); return `Saving to ${r.dataDir}${copiedNote(r.copied)}`; };
+  const saveDir = () => run(() => useDir(value));
+  const chooseDir = () => run(async () => {
+    const picked = await pickDataDir();
+    return picked ? useDir(picked) : null;   // null: dialog closed
+  });
   const use = (t: "browser" | "folder") => run(async () => { const r = await switchTo(t); return r && `Saving to ${r.label}${copiedNote(r.copied)}`; });
 
   if (loc && !loc.ready) {
@@ -70,11 +79,15 @@ export function SaveLocation({ loc, onChanged, onReload }: Props) {
             {!STATIC ? (
               <>
                 <p className="mb-3 text-sm text-bone">
-                  Folder for the character files (<code>&lt;id&gt;.json</code>). <code>~</code> works. If it doesn't exist or holds no characters yet,
-                  the current characters are copied there. Otherwise its characters are loaded.
+                  Folder for the character files (<code>&lt;id&gt;.json</code>). Pick one with <b>Browse…</b> or type a path (<code>~</code> works).
+                  If it doesn't exist or holds no characters yet, the current characters are copied there. Otherwise its characters are loaded.
                 </p>
-                <input value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => e.key === "Enter" && saveDir()} autoFocus
-                  className="h-9 w-full rounded-md border-2 border-ink-line bg-ink px-2 font-talk text-sm text-paper focus:border-caramel focus:outline-none" />
+                <div className="flex gap-2">
+                  <input value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => e.key === "Enter" && saveDir()} autoFocus disabled={busy}
+                    className="h-9 min-w-0 flex-1 rounded-md border-2 border-ink-line bg-ink px-2 font-talk text-sm text-paper focus:border-caramel focus:outline-none disabled:opacity-40" />
+                  <Button size="sm" className="h-9 shrink-0" onClick={chooseDir} disabled={busy}>Browse…</Button>
+                </div>
+                {busy && <p className="mt-2 text-sm text-bone">Pick a folder in the dialog that opened.</p>}
               </>
             ) : (
               <div className="space-y-2">
@@ -90,7 +103,7 @@ export function SaveLocation({ loc, onChanged, onReload }: Props) {
               {!STATIC ? (
                 <>
                   <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-                  <Button size="sm" variant="primary" className="px-3" onClick={saveDir}>Use this folder</Button>
+                  <Button size="sm" variant="primary" className="px-3" onClick={saveDir} disabled={busy}>Use this folder</Button>
                 </>
               ) : <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Close</Button>}
             </div>
