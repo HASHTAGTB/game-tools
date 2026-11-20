@@ -168,7 +168,7 @@ export default function App() {
     <DndContext.Provider value={dnd}>
       <div className="grid h-screen grid-cols-[190px_minmax(0,1fr)_270px] bg-ink text-paper lg:grid-cols-[230px_minmax(0,1fr)_340px] 2xl:grid-cols-[260px_minmax(0,1fr)_400px]">
         <Sidebar
-          chars={chars} current={curId} onSelect={select} onCreate={n => create(n)} loc={loc} onImport={importChars}
+          chars={chars} current={curId} onSelect={select} onCreate={n => create(n)} loc={loc} onImport={importChars} onError={setError}
           onDirChanged={async msg => { await flush(); await load(); setNotice(msg); }}
           onReload={async () => { await flush(); await load(); setNotice(loc?.kind === "browser" ? "Reloaded" : "Reloaded from disk"); }}
         />

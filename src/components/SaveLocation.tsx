@@ -1,25 +1,23 @@
 import * as Popover from "@radix-ui/react-popover";
-import { Download, RefreshCw, Upload } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import type { Character } from "../lib/types";
-import { exportCharacters, folderSupported, readImport, reconnectFolder, setDataDir, STATIC, switchTo, type Location } from "../lib/store";
+import { RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { folderSupported, reconnectFolder, setDataDir, STATIC, switchTo, type Location } from "../lib/store";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { popoverCls } from "./ui/confirm";
 
 type Props = {
-  loc: Location | null; chars: Character[];
-  onChanged: (msg: string) => void; onReload: () => void; onImport: (chars: Character[]) => void;
+  loc: Location | null;
+  onChanged: (msg: string) => void; onReload: () => void;
 };
 
 const msgOf = (e: unknown) => String(e instanceof Error ? e.message : e);
 
-/** Sidebar footer: where characters are saved, plus import / export of all characters as one JSON file. */
-export function SaveLocation({ loc, chars, onChanged, onReload, onImport }: Props) {
+/** Sidebar footer: where characters are saved. */
+export function SaveLocation({ loc, onChanged, onReload }: Props) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   const [err, setErr] = useState("");
-  const fileInput = useRef<HTMLInputElement>(null);
   useEffect(() => { setValue(loc?.label ?? ""); setErr(""); }, [loc, open]);
 
   const run = async (fn: () => Promise<string | null>) => {
@@ -35,19 +33,6 @@ export function SaveLocation({ loc, chars, onChanged, onReload, onImport }: Prop
 
   const saveDir = () => run(async () => { const r = await setDataDir(value); return `Saving to ${r.dataDir}${copiedNote(r.copied)}`; });
   const use = (t: "browser" | "folder") => run(async () => { const r = await switchTo(t); return r && `Saving to ${r.label}${copiedNote(r.copied)}`; });
-
-  const importFiles = async (files: FileList | null) => {
-    if (!files?.length) return;
-    setErr("");
-    try {
-      onImport(await readImport(files));
-      setOpen(false);
-    } catch (e) {
-      setErr(msgOf(e));
-    } finally {
-      if (fileInput.current) fileInput.current.value = "";
-    }
-  };
 
   if (loc && !loc.ready) {
     return (
@@ -101,13 +86,6 @@ export function SaveLocation({ loc, chars, onChanged, onReload, onImport }: Prop
             )}
             {err && <p className="mt-2 text-sm text-coral">{err}</p>}
             <div className="mt-3 flex items-center gap-3">
-              <Button size="sm" variant="ghost" onClick={() => exportCharacters(chars)} disabled={!chars.length} title="Download all characters as one JSON file">
-                <Download className="h-3.5 w-3.5" />Export
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => fileInput.current?.click()} title="Load an export or single character files">
-                <Upload className="h-3.5 w-3.5" />Import
-              </Button>
-              <input ref={fileInput} type="file" accept=".json,application/json" multiple hidden onChange={e => importFiles(e.target.files)} />
               <span className="flex-1" />
               {!STATIC ? (
                 <>

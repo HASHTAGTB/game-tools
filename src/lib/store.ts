@@ -183,17 +183,15 @@ export async function switchTo(target: "browser" | "folder"): Promise<{ label: s
 
 // ---------------------------------------------------------------- import / export
 
-export function exportCharacters(chars: Character[]) {
-  const blob = new Blob([JSON.stringify(chars, null, 2) + "\n"], { type: "application/json" });
-  const a = Object.assign(document.createElement("a"), {
-    href: URL.createObjectURL(blob),
-    download: `prompt-builder-${new Date().toISOString().slice(0, 10)}.json`,
-  });
+/** Downloads one character as <id>.json, the same format as a file in a save folder. */
+export function exportCharacter(c: Character) {
+  const blob = new Blob([JSON.stringify(c, null, 2) + "\n"], { type: "application/json" });
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: fileName(c.id) });
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-/** Reads exported bundles (an array) and single <id>.json character files. */
+/** Reads <id>.json character files (and old all-in-one exports, which hold an array). */
 export async function readImport(files: FileList | File[]): Promise<Character[]> {
   const out: Character[] = [];
   for (const f of Array.from(files)) {
