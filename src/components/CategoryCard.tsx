@@ -1,5 +1,6 @@
 import * as Tabs from "@radix-ui/react-tabs";
-import { Copy, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Plus, Trash2 } from "lucide-react";
+import { useRef } from "react";
 import type { Category, ListKey } from "../lib/types";
 import { segColor, sameKey } from "../lib/prompt";
 import type { TagDb } from "../lib/tags";
@@ -20,10 +21,15 @@ type Props = {
   setActive: (k: ListKey) => void;
   onChange: (fn: (c: Category) => void) => void;
   onDelete: () => void;
+  /** Move this category one slot earlier (-1) or later (1) — also its place in the prompt. */
+  onMove: (dir: -1 | 1) => void;
+  canUp: boolean;
+  canDown: boolean;
 };
 
 /** A pick-one group (Outfit, Expression, Pose, …). The selected tab is what goes into the prompt. */
-export function CategoryCard({ cat, color, db, activeKey, setActive, onChange, onDelete }: Props) {
+export function CategoryCard({ cat, color, db, activeKey, setActive, onChange, onDelete, onMove, canUp, canDown }: Props) {
+  const nameRef = useRef<HTMLInputElement>(null);
   const sel = cat.presets.find(p => p.id === cat.selected) ?? null;
   const dropTarget = useDropTarget();
   const hex = segColor(color);
@@ -47,13 +53,28 @@ export function CategoryCard({ cat, color, db, activeKey, setActive, onChange, o
         <header className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             <input
+              ref={nameRef}
               value={cat.name}
+              onKeyDown={e => {
+                if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+                e.preventDefault();
+                const dir = e.key === "ArrowUp" ? -1 : 1;
+                if (dir === -1 ? !canUp : !canDown) return;
+                onMove(dir);
+                // React may re-insert this node while reordering, which drops focus.
+                requestAnimationFrame(() => { nameRef.current?.focus(); nameRef.current?.scrollIntoView({ block: "nearest" }); });
+              }}
+              title="Alt+↑ / Alt+↓ to move"
               onChange={e => onChange(c => { c.name = e.target.value; })}
               aria-label="Category name"
               className="w-full max-w-xs bg-transparent font-sans text-[22px] leading-tight text-paper focus:outline-none"
             />
             <Rule color={hex} />
           </div>
+          <Button size="icon" variant="ghost" title="Move up (Alt+↑)" aria-label="Move category up"
+            className={cn(!canUp && "invisible")} onClick={() => onMove(-1)}><ArrowUp className="h-4 w-4" /></Button>
+          <Button size="icon" variant="ghost" title="Move down (Alt+↓)" aria-label="Move category down"
+            className={cn(!canDown && "invisible")} onClick={() => onMove(1)}><ArrowDown className="h-4 w-4" /></Button>
           <Confirm message={`Delete the whole "${cat.name}" category with ${cat.presets.length} presets?`} onConfirm={onDelete}>
             <Button size="sm" variant="danger" title="Delete category"><Trash2 className="h-3.5 w-3.5" />Delete category</Button>
           </Confirm>

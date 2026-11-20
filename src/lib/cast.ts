@@ -4,18 +4,18 @@ export type CastLook = { color: string; pattern?: string };
 
 const CAST: Record<string, CastLook> = {
   satoru: { color: "#7ec8e3" },
-  kaishi: { color: "#e38c7e" },
+  kaishi: { color: "#8ce3a0" },
   rin: { color: "#c97ec8", pattern: import.meta.env.BASE_URL + "patterns/rin.png" },
-  takaya: { color: "#8ce3a0", pattern: import.meta.env.BASE_URL + "patterns/takaya.png" },
-  timo: { color: "#e3d07e" },
+  takaya: { color: "#57535e", pattern: import.meta.env.BASE_URL + "patterns/takaya.png" },
+  timo: { color: "#e38c7e" },
   rumina: { color: "#e3a87e" },
-  dai: { color: "#7e9be3" },
-  izuya: { color: "#b0b0b0" },
-  mei: { color: "#e37eb8" },
-  haru: { color: "#7ec8b0" },
-  minako: { color: "#c8b07e" },
-  yui: { color: "#b07ec8" },
-  akito: { color: "#7eb8e3" },
+  dai: { color: "#e3925e" },
+  izuya: { color: "#6fc48a" },
+  mei: { color: "#9a6ea8" },
+  haru: { color: "#a98ee3" },
+  minako: { color: "#d47e5e" },
+  yui: { color: "#e3c27e" },
+  akito: { color: "#7e9be3" },
 };
 
 /** Characters outside the cast use the GUI accent color. */

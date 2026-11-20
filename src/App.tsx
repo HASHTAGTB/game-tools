@@ -216,6 +216,13 @@ export default function App() {
                     setActive={setActiveKey}
                     onChange={fn => update(c => { const x = c.categories.find(x => x.id === cat.id); if (x) fn(x); })}
                     onDelete={() => update(c => { c.categories = c.categories.filter(x => x.id !== cat.id); })}
+                    canUp={i > 0}
+                    canDown={i < cur.categories.length - 1}
+                    onMove={dir => update(c => {
+                      const a = c.categories.findIndex(x => x.id === cat.id), b = a + dir;
+                      if (a < 0 || b < 0 || b >= c.categories.length) return;
+                      [c.categories[a], c.categories[b]] = [c.categories[b], c.categories[a]];
+                    })}
                   />
                 ))}
                 <div className="!mt-6">
