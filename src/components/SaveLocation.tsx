@@ -1,0 +1,127 @@
+import * as Popover from "@radix-ui/react-popover";
+import { Download, RefreshCw, Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import type { Character } from "../lib/types";
+import { exportCharacters, folderSupported, readImport, reconnectFolder, setDataDir, STATIC, switchTo, type Location } from "../lib/store";
+import { cn } from "../lib/utils";
+import { Button } from "./ui/button";
+import { popoverCls } from "./ui/confirm";
+
+type Props = {
+  loc: Location | null; chars: Character[];
+  onChanged: (msg: string) => void; onReload: () => void; onImport: (chars: Character[]) => void;
+};
+
+const msgOf = (e: unknown) => String(e instanceof Error ? e.message : e);
+
+/** Sidebar footer: where characters are saved, plus import / export of all characters as one JSON file. */
+export function SaveLocation({ loc, chars, onChanged, onReload, onImport }: Props) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const [err, setErr] = useState("");
+  const fileInput = useRef<HTMLInputElement>(null);
+  useEffect(() => { setValue(loc?.label ?? ""); setErr(""); }, [loc, open]);
+
+  const run = async (fn: () => Promise<string | null>) => {
+    setErr("");
+    try {
+      const msg = await fn();
+      if (msg) { setOpen(false); onChanged(msg); }
+    } catch (e) {
+      setErr(msgOf(e));
+    }
+  };
+  const copiedNote = (n: number) => (n ? ` (copied ${n} character${n > 1 ? "s" : ""} there)` : "");
+
+  const saveDir = () => run(async () => { const r = await setDataDir(value); return `Saving to ${r.dataDir}${copiedNote(r.copied)}`; });
+  const use = (t: "browser" | "folder") => run(async () => { const r = await switchTo(t); return r && `Saving to ${r.label}${copiedNote(r.copied)}`; });
+
+  const importFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setErr("");
+    try {
+      onImport(await readImport(files));
+      setOpen(false);
+    } catch (e) {
+      setErr(msgOf(e));
+    } finally {
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  };
+
+  if (loc && !loc.ready) {
+    return (
+      <div className="px-4 py-4">
+        <button onClick={() => reconnectFolder().then(onReload, e => onChanged(msgOf(e)))}
+          className="group w-full rounded border-l-4 border-caramel bg-caramel/15 p-2 text-left">
+          <span className="block font-sans text-[15px] text-paper underline-offset-4 decoration-2 group-hover:underline">Allow folder access</span>
+          <span className="mt-0.5 block break-all font-talk text-[11px] leading-snug text-bone">{loc.label}: the browser asks again after a restart.</span>
+        </button>
+      </div>
+    );
+  }
+
+  const option = (t: "browser" | "folder", title: string, text: string, disabled = false) => (
+    <button onClick={() => use(t)} disabled={disabled}
+      className={cn("block w-full rounded-md border-2 px-3 py-2 text-left disabled:opacity-40",
+        loc?.kind === t ? "border-caramel" : "border-ink-line hover:border-bone")}>
+      <span className="block font-sans text-paper">{title}{loc?.kind === t && <span className="ml-2 text-sm text-caramel">in use</span>}</span>
+      <span className="block text-sm text-bone">{text}</span>
+    </button>
+  );
+
+  return (
+    <div className="flex items-end gap-1 px-4 py-4">
+      <Popover.Root open={open} onOpenChange={setOpen}>
+        <Popover.Trigger asChild>
+          <button className="group min-w-0 flex-1 rounded p-2 text-left" title="Change save location">
+            <span className="block font-sans text-[15px] text-bone underline-offset-4 decoration-2 group-hover:text-paper group-hover:underline">Save location</span>
+            <span className="mt-0.5 block break-all font-talk text-[11px] leading-snug text-taupe">{loc?.label || "…"}</span>
+          </button>
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content side="top" align="start" sideOffset={6} className={`${popoverCls} w-[28rem]`}>
+            <p className="mb-2 font-sans text-lg text-paper">Save location</p>
+            {!STATIC ? (
+              <>
+                <p className="mb-3 text-sm text-bone">
+                  Folder for the character files (<code>&lt;id&gt;.json</code>). <code>~</code> works. If it doesn't exist or holds no characters yet,
+                  the current characters are copied there. Otherwise its characters are loaded.
+                </p>
+                <input value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => e.key === "Enter" && saveDir()} autoFocus
+                  className="h-9 w-full rounded-md border-2 border-ink-line bg-ink px-2 font-talk text-sm text-paper focus:border-caramel focus:outline-none" />
+              </>
+            ) : (
+              <div className="space-y-2">
+                {option("browser", "This browser", "Kept in this browser's storage. Export now and then: clearing site data deletes it.")}
+                {option("folder", "A folder on disk",
+                  folderSupported ? "One <id>.json per character, e.g. a folder you keep in git. If it's empty the current characters are copied there."
+                    : "Needs Chrome, Edge or another Chromium browser.", !folderSupported)}
+              </div>
+            )}
+            {err && <p className="mt-2 text-sm text-coral">{err}</p>}
+            <div className="mt-3 flex items-center gap-3">
+              <Button size="sm" variant="ghost" onClick={() => exportCharacters(chars)} disabled={!chars.length} title="Download all characters as one JSON file">
+                <Download className="h-3.5 w-3.5" />Export
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => fileInput.current?.click()} title="Load an export or single character files">
+                <Upload className="h-3.5 w-3.5" />Import
+              </Button>
+              <input ref={fileInput} type="file" accept=".json,application/json" multiple hidden onChange={e => importFiles(e.target.files)} />
+              <span className="flex-1" />
+              {!STATIC ? (
+                <>
+                  <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+                  <Button size="sm" variant="primary" className="px-3" onClick={saveDir}>Use this folder</Button>
+                </>
+              ) : <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Close</Button>}
+            </div>
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
+      <Button size="icon" variant="ghost" onClick={onReload} title={loc?.kind === "browser" ? "Reload characters" : "Reload characters from disk (e.g. after git pull)"} className="mb-2">
+        <RefreshCw className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+}

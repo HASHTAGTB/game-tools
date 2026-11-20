@@ -1,0 +1,11 @@
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import { fileApi } from "./server/api";
+
+export default defineConfig({
+  // GitHub Pages serves the site from /<repo>/; the workflow passes that in as BASE
+  base: process.env.BASE || "/",
+  plugins: [react(), fileApi()],
+  server: { port: 7871, strictPort: true, watch: { ignored: ["**/characters/**", "**/config.json"] } },
+  preview: { port: 7871, strictPort: true },
+});

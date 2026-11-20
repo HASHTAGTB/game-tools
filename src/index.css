@@ -1,0 +1,75 @@
+@font-face {
+  font-family: "Josefin Sans";
+  src: url("/fonts/JosefinSans-VariableFont_wght.ttf") format("truetype");
+  font-weight: 100 700;
+  font-display: swap;
+  /* Josefin's default metrics sit the text high in its line box; recentre it. */
+  ascent-override: 88%;
+  descent-override: 22%;
+}
+@font-face {
+  font-family: "Nunito";
+  src: url("/fonts/Nunito-VariableFont_wght.ttf") format("truetype");
+  font-weight: 200 1000;
+  font-display: swap;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+}
+html, body, #root { height: 100%; }
+body { margin: 0; background: #2b2826; color: #faf5ef; overflow: hidden; user-select: none; font-family: "Nunito", system-ui, sans-serif; }
+input, textarea, [contenteditable], .select-text { user-select: text; }
+:focus-visible { outline: 2px solid #c4956a; outline-offset: 2px; }
+input:focus-visible, textarea:focus-visible { outline: none; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #544c45; border-radius: 8px; border: 3px solid #2b2826; }
+::-webkit-scrollbar-thumb:hover { background: #8a7d72; }
+::-webkit-scrollbar-track { background: transparent; }
+details > summary::-webkit-details-marker { display: none; }
+
+/* ------------------------------------------------------------------ dialogue box
+   The prompt panel is drawn like the game's say window (core/gui/say.rpy):
+   white rounded border, translucent character-colored fill, a staggered icon
+   pattern, a white namebox tab, and white Nunito text with a dark outline. */
+.say-box {
+  position: relative;
+  border: 4px solid #fff;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--char) 80%, #2b2826);
+  isolation: isolate;
+}
+.say-box::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--char) 55%, #000);
+  opacity: .3;
+  -webkit-mask: var(--pattern) 0 0 / 120px 72px repeat;
+  mask: var(--pattern) 0 0 / 120px 72px repeat;
+}
+.say-text {
+  color: #fff;
+  font-family: "Nunito", system-ui, sans-serif;
+  font-weight: 700;
+  -webkit-text-stroke: 4px #2f2924;
+  paint-order: stroke fill;
+}
+.say-tab {
+  border-radius: 12px 12px 0 0;
+  background: #fff;
+  margin-bottom: -4px; /* sit on the box border, like the game's 5px overlap */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.log
+# your data (point the save location wherever you keep it in git)
+characters/
+config.json
+scripts/wiki_cache/
