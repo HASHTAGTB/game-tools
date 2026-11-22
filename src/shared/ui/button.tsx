@@ -1,5 +1,5 @@
 import { forwardRef, type ButtonHTMLAttributes } from "react";
-import { cn } from "../../lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /** Text buttons in the style of the game's menus: no fill, underline on hover. */
 const VARIANTS = {
@@ -16,7 +16,7 @@ export const Button = forwardRef<HTMLButtonElement, Props>(({ className, variant
   <button
     ref={ref}
     className={cn(
-      "inline-flex items-center rounded font-sans underline-offset-4 decoration-2 transition-colors disabled:opacity-40 disabled:pointer-events-none select-none",
+      "inline-flex items-center rounded-sm font-sans underline-offset-4 decoration-2 transition-colors disabled:opacity-40 disabled:pointer-events-none select-none",
       VARIANTS[variant], SIZES[size], className,
     )}
     {...p}

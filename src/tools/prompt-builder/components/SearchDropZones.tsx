@@ -2,7 +2,7 @@ import { ExternalLink, Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useDnd } from "../lib/dnd";
 import { danbooruUrl, googleUrl, searchName } from "../lib/tag";
-import { cn } from "../lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 type Blocked = { label: string; name: string; url: string };
 
@@ -42,7 +42,7 @@ export function SearchDropZones() {
   return (
     <div className="pointer-events-none fixed inset-y-0 right-0 z-50 flex w-[270px] flex-col items-center justify-center gap-4 animate-pop-in lg:w-[340px] 2xl:w-[400px]">
       <Zone label="Danbooru" sub={name} color="#7e9be3" onDrop={() => open("Danbooru", name, danbooruUrl(dnd.drag!.tag))} />
-      <Zone label="Google Images" sub={name} color="#8ce3a0" onDrop={() => open("Google Images", name, googleUrl(dnd.drag!.tag))} />
+      <Zone label="Google" sub={name} color="#8ce3a0" onDrop={() => open("Google Images", name, googleUrl(dnd.drag!.tag))} />
     </div>
   );
 }

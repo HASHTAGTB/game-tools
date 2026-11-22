@@ -3,8 +3,10 @@ import { Download, Plus, Upload } from "lucide-react";
 import type { Character } from "../lib/types";
 import { exportCharacter, readImport, type Location } from "../lib/store";
 import { castLook } from "../lib/cast";
-import { cn } from "../lib/utils";
+import { cn } from "@/shared/lib/utils";
 import { SaveLocation } from "./SaveLocation";
+import { IconButton } from "@/shared/ui/icon-button";
+import { m, spring } from "@/shared/ui/motion";
 
 type Props = {
   chars: Character[]; current: string | null; onSelect: (id: string) => void; onCreate: (name: string) => void;
@@ -37,7 +39,10 @@ export function Sidebar({ chars, current, onSelect, onCreate, loc, onDirChanged,
             const on = c.id === current;
             return (
               <li key={c.id} className="group/char relative flex items-center">
-                {on && <span aria-hidden className="absolute -left-[3px] top-1 h-[calc(100%-8px)] w-1 rounded-full" style={{ background: castLook(c.name).color }} />}
+                {/* One shared layoutId: the bar slides to the selected character and takes on their color. */}
+                {on && <m.span layoutId="char-marker" aria-hidden transition={spring.bouncy}
+                  className="absolute left-[-3px] top-1 h-[calc(100%-8px)] w-1 rounded-full"
+                  initial={false} animate={{ backgroundColor: castLook(c.name).color }} />}
                 <button
                   onClick={() => onSelect(c.id)}
                   aria-current={on || undefined}
@@ -46,10 +51,8 @@ export function Sidebar({ chars, current, onSelect, onCreate, loc, onDirChanged,
                     on ? "text-paper" : "text-bone/70 hover:text-paper hover:underline",
                   )}
                 >{c.name || c.id}</button>
-                <button onClick={() => exportCharacter(c)} title={`Export ${c.name || c.id} as ${c.id}.json`} aria-label={`Export ${c.name || c.id}`}
-                  className="grid h-7 w-7 shrink-0 place-items-center rounded text-taupe opacity-0 hover:text-paper focus-visible:opacity-100 group-hover/char:opacity-100">
-                  <Download className="h-3.5 w-3.5" />
-                </button>
+                <IconButton icon={Download} size="sm" tooltipSide="right" label={`Export as ${c.id}.json`} onClick={() => exportCharacter(c)}
+                  className="opacity-0 focus-visible:opacity-100 group-hover/char:opacity-100 [@media(hover:none)]:opacity-100" />
               </li>
             );
           })}
@@ -62,12 +65,9 @@ export function Sidebar({ chars, current, onSelect, onCreate, loc, onDirChanged,
             onKeyDown={e => e.key === "Enter" && create()}
             placeholder="New character"
             aria-label="New character name"
-            className="h-9 min-w-0 flex-1 bg-transparent font-talk text-[15px] text-paper placeholder:text-taupe focus:outline-none"
+            className="h-9 min-w-0 flex-1 bg-transparent font-talk text-[15px] text-paper placeholder:text-taupe focus:outline-hidden"
           />
-          <button onClick={create} disabled={!name.trim()} title="Create character"
-            className="grid h-7 w-7 place-items-center rounded text-taupe hover:text-paper disabled:opacity-40">
-            <Plus className="h-4 w-4" />
-          </button>
+          <IconButton icon={Plus} size="sm" label="Create character" kbd="Enter" onClick={create} disabled={!name.trim()} />
         </div>
 
         <button onClick={() => fileInput.current?.click()} title="Load one or more character files (<id>.json)"

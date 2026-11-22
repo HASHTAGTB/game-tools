@@ -1,19 +1,12 @@
-import { createContext, useContext } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { usePromptBuilder } from "../state";
 import type { ListKey } from "./types";
 
 /** A tag being dragged. `from` is null when it comes from the tag browser (copy only). */
 export type DragTag = { tag: string; from: ListKey | null; index: number };
 
-export type DndApi = {
-  drag: DragTag | null;
-  start: (d: DragTag) => void;
-  end: () => void;
-  /** Drop the dragged tag into list `to` before position `index` (Infinity = end). Ctrl/Alt held = copy. */
-  drop: (to: ListKey, index: number, copy: boolean) => void;
-};
-
-export const DndContext = createContext<DndApi>({ drag: null, start: () => {}, end: () => {}, drop: () => {} });
-export const useDnd = () => useContext(DndContext);
+/** The drag state and actions from the prompt builder store. */
+export const useDnd = () => usePromptBuilder(useShallow(s => ({ drag: s.drag, start: s.dragStart, end: s.dragEnd, drop: s.drop })));
 
 /** dataTransfer payload. Firefox needs some data set or the drag does not start. */
 export const DRAG_MIME = "text/plain";

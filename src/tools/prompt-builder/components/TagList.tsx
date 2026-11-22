@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { X, TriangleAlert } from "lucide-react";
 import { splitTags, tagKey } from "../lib/prompt";
 import { parseTag, setWeight, toggleOff } from "../lib/tag";
 import { RARE, searchTags, toPromptText, type TagDb } from "../lib/tags";
 import { DRAG_MIME, useDnd } from "../lib/dnd";
 import type { ListKey } from "../lib/types";
-import { cn, fmtCount } from "../lib/utils";
+import { cn, fmtCount } from "@/shared/lib/utils";
+import { AnimatePresence, fade, m, pop, spring } from "@/shared/ui/motion";
 
 type Props = {
   listKey: ListKey;
@@ -15,13 +16,15 @@ type Props = {
   active?: boolean;
   onActivate?: () => void;
   placeholder?: string;
+  /** The section's color: the border while this is the list the tag browser adds to. */
+  accent?: string;
 };
 
 /** Chip editor.
  *  type + Enter/comma to add (Danbooru autocomplete) · paste comma lists · drag chips within/between lists
  *  (hold Ctrl to copy instead of move) · click = turn off/on · Ctrl+scroll = weight · double-click = edit text
  *  · Backspace in the empty input removes the last chip. */
-export function TagList({ listKey, tags, onChange, db, active, onActivate, placeholder = "Add tags…" }: Props) {
+export function TagList({ listKey, tags, onChange, db, active, onActivate, placeholder = "Add tags…", accent = "#c4956a" }: Props) {
   const [text, setText] = useState("");
   const [hi, setHi] = useState(0);
   const [focused, setFocused] = useState(false);
@@ -62,6 +65,12 @@ export function TagList({ listKey, tags, onChange, db, active, onActivate, place
     else if (e.key === "Backspace" && !text && tags.length) onChange(tags.slice(0, -1));
   };
 
+  // Stable keys so chips keep their identity (and animate) when the list changes. Same tag twice: suffix.
+  const chipKeys = useMemo(() => {
+    const seen = new Map<string, number>();
+    return tags.map(t => { const k = tagKey(t) || t; const n = seen.get(k) ?? 0; seen.set(k, n + 1); return n ? `${k}#${n}` : k; });
+  }, [tags]);
+
   const replaceAt = (i: number, v: string) => onChange(tags.map((t, j) => (j === i ? v : t)));
   const dropAt = (e: React.DragEvent, index: number) => {
     e.preventDefault();
@@ -77,16 +86,18 @@ export function TagList({ listKey, tags, onChange, db, active, onActivate, place
       onDragOver={e => { if (dnd.drag) { e.preventDefault(); e.dataTransfer.dropEffect = e.ctrlKey || e.altKey || !dnd.drag.from ? "copy" : "move"; if (over === null) setOver(tags.length); } }}
       onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(null); }}
       onDrop={e => dropAt(e, Infinity)}
+      style={{ "--accent": accent } as React.CSSProperties}
       className={cn(
-        "relative flex min-h-[2.75rem] flex-wrap items-center gap-1.5 rounded-xl border-2 bg-ink-2 p-2 transition-colors",
-        active ? "border-caramel" : "border-ink-3 hover:border-ink-line",
+        "relative flex min-h-11 flex-wrap items-center gap-1.5 rounded-xl border-2 bg-ink-2 p-2 transition-colors",
+        active ? "border-(--accent)" : "border-ink-3 hover:border-ink-line",
         dnd.drag && "border-dashed",
-        dnd.drag && over !== null && "border-caramel bg-caramel/10",
+        dnd.drag && over !== null && "border-(--accent) bg-(--accent)/10",
       )}
     >
+      <AnimatePresence initial={false} mode="popLayout">
       {tags.map((t, i) => (
         <Chip
-          key={i}
+          key={chipKeys[i]}
           raw={t}
           count={db?.count.get(tagKey(t))}
           known={!!db}
@@ -101,8 +112,9 @@ export function TagList({ listKey, tags, onChange, db, active, onActivate, place
           onRemove={() => onChange(tags.filter((_, j) => j !== i))}
         />
       ))}
-      {over === tags.length && <span className="h-6 w-1 rounded-full bg-caramel" />}
-      <div className="relative min-w-[8rem] flex-1">
+      </AnimatePresence>
+      {over === tags.length && <DropMarker />}
+      <div className="relative min-w-32 flex-1">
         <input
           ref={input}
           value={text}
@@ -115,10 +127,10 @@ export function TagList({ listKey, tags, onChange, db, active, onActivate, place
             const p = e.clipboardData.getData("text");
             if (/[,\n]/.test(p)) { e.preventDefault(); add(splitTags(text + p)); setText(""); }
           }}
-          className="h-7 w-full bg-transparent px-1 font-talk text-[15px] text-paper placeholder:text-taupe focus:outline-none"
+          className="h-7 w-full bg-transparent px-1 font-talk text-[15px] text-paper placeholder:text-taupe focus:outline-hidden"
         />
         {suggestions.length > 0 && (
-          <ul className="absolute left-0 top-full z-40 mt-1.5 w-72 overflow-hidden rounded-xl border-[3px] border-paper bg-ink-2 py-1 font-talk shadow-[0_12px_40px_rgba(0,0,0,.45)] animate-pop-in">
+          <m.ul {...pop} className="absolute left-0 top-full z-40 mt-1.5 w-72 origin-top-left overflow-hidden rounded-xl border-[3px] border-paper bg-ink-2 py-1 font-talk shadow-[0_12px_40px_rgba(0,0,0,.45)]">
             {suggestions.map((s, i) => (
               <li
                 key={s.t}
@@ -130,7 +142,7 @@ export function TagList({ listKey, tags, onChange, db, active, onActivate, place
                 <small className="text-taupe">{fmtCount(s.n)}</small>
               </li>
             ))}
-          </ul>
+          </m.ul>
         )}
       </div>
     </div>
@@ -152,11 +164,26 @@ type ChipProps = {
   onRemove: () => void;
 };
 
-function Chip({ raw, count, known, marker, dragging, onDragStart, onDragOver, onDrop, onToggle, onWeight, onEdit, onRemove }: ChipProps) {
+/** Insertion point shown while dragging. */
+const DropMarker = () => <m.span layout initial={{ scaleY: 0 }} animate={{ scaleY: 1 }} className="h-6 w-1 rounded-full bg-(--accent)" />;
+
+/** Chip enter/exit. Layout is "position" only: a chip whose text changes width snaps instead of stretching. */
+const chipMotion = {
+  layout: "position" as const,
+  initial: { opacity: 0, scale: 0.8 },
+  animate: { opacity: 1, scale: 1, transition: { ...spring.snappy, opacity: fade.in } },
+  exit: { opacity: 0, scale: 0.8, transition: fade.out },
+};
+
+const Chip = forwardRef<HTMLSpanElement, ChipProps>(function Chip(props, ref) {
+  return <m.span ref={ref} {...chipMotion} className="inline-flex items-center gap-1.5"><ChipBody {...props} /></m.span>;
+});
+
+function ChipBody({ raw, count, known, marker, dragging, onDragStart, onDragOver, onDrop, onToggle, onWeight, onEdit, onRemove }: ChipProps) {
   const { text, weight, off } = parseTag(raw);
   const rare = known && (count === undefined || count < RARE);
   const el = useRef<HTMLSpanElement>(null);
-  const clickTimer = useRef<number>();
+  const clickTimer = useRef<number | undefined>(undefined);
   const wheel = useRef({ weight, onWeight });
   wheel.current = { weight, onWeight };
 
@@ -176,7 +203,7 @@ function Chip({ raw, count, known, marker, dragging, onDragStart, onDragOver, on
 
   return (
     <>
-      {marker && <span className="h-6 w-1 rounded-full bg-caramel" />}
+      {marker && <DropMarker />}
       <span
         ref={el}
         draggable
@@ -207,14 +234,14 @@ function Chip({ raw, count, known, marker, dragging, onDragStart, onDragOver, on
           <button
             title="weight (click to reset to 1)"
             onClick={e => { e.stopPropagation(); onWeight(1); }}
-            className={cn("rounded px-1 text-[12px] font-extrabold tabular-nums text-ink", weight > 1 ? "bg-caramel" : "bg-periwinkle")}
+            className={cn("rounded-sm px-1 text-[12px] font-extrabold tabular-nums text-ink", weight > 1 ? "bg-caramel" : "bg-periwinkle")}
           >{weight}</button>
         )}
         {count !== undefined && <small className="text-[11px] font-normal text-taupe">{fmtCount(count)}</small>}
         <button
           onClick={e => { e.stopPropagation(); onRemove(); }}
           aria-label="Remove tag"
-          className="-mr-1 rounded text-taupe opacity-70 hover:text-coral group-hover:opacity-100"
+          className="-mr-1 rounded-sm text-taupe opacity-70 hover:text-coral group-hover:opacity-100"
         ><X className="h-3 w-3" /></button>
       </span>
     </>

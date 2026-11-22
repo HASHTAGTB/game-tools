@@ -1,3 +1,4 @@
+import { folderSupported, STATIC } from "@/shared/lib/env";
 import type { Category, Character, Toggle } from "./types";
 
 /** Where characters live.
@@ -8,14 +9,13 @@ import type { Category, Character, Toggle } from "./types";
 export type Backend = "server" | "browser" | "folder";
 export type Location = { kind: Backend; label: string; ready: boolean };
 
-export const STATIC = import.meta.env.VITE_STATIC === "1";
-export const folderSupported = typeof window !== "undefined" && "showDirectoryPicker" in window;
-
 // ---------------------------------------------------------------- server (Vite file API)
 
 async function api<T>(method: string, url: string, body?: unknown): Promise<T> {
   const r = await fetch(url, {
     method,
+    // lets a save started while the tab closes still reach the server (bodies up to 64 KB)
+    keepalive: document.visibilityState === "hidden",
     headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
@@ -209,19 +209,6 @@ export async function readImport(files: FileList | File[]): Promise<Character[]>
 }
 
 // ----------------------------------------------------------------
-
-export async function copyText(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    // clipboard API needs a secure context (localhost is fine; a LAN IP over http is not)
-    const ta = Object.assign(document.createElement("textarea"), { value: text });
-    document.body.append(ta);
-    ta.select();
-    document.execCommand("copy");
-    ta.remove();
-  }
-}
 
 export function newCharacter(name: string, id: string): Character {
   return {

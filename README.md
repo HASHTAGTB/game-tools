@@ -1,6 +1,6 @@
 # prompt-builder
 
-Browser app (React + Radix UI + Tailwind, served by Vite) for building Danbooru-tag character prompts. Pick a variation per category, switch extras on or off, and copy the finished prompt into any UI.
+Browser app (React + Base UI + Motion + Tailwind, served by Vite) for building Danbooru-tag character prompts. Pick a variation per category, switch extras on or off, and copy the finished prompt into any UI.
 
 ```
 pnpm install
@@ -9,6 +9,23 @@ pnpm typecheck
 ```
 
 The Vite server also runs a small file API (`server/api.ts`), so characters are saved as plain JSON files on disk.
+
+## Code layout
+
+```
+src/app/        router (TanStack Router, hash URLs) and the tool list (tools.ts)
+src/shared/     UI kit (Base UI + Motion + Tailwind) and helpers every tool uses
+src/tools/<id>/ one folder per tool: its page, components, lib and Zustand store (state.ts)
+server/         local file API, only in `pnpm dev`
+```
+
+To add a tool, add it to `TOOLS` in `src/app/tools.ts` and give it a `toolRoute(...)` in `src/app/router.tsx`. Each tool's code is loaded only when it's opened. Mark a tool `needsServer` if it can't work on GitHub Pages; it then shows a notice there instead.
+
+UI kit (`src/shared/ui/`): `Section` (title over a colored rule, actions that appear on hover), `IconButton` (icon only, so it always takes a `label` for its tooltip), `Tooltip`, `Popover`, `Confirm`, `Switch`, `CollapsiblePanel`, `SearchField` and `Toasts`.
+
+Animation: import `m`, `AnimatePresence` and the `spring`/`fade`/`pop` presets from `src/shared/ui/motion.ts` (not `motion.*` from `motion/react`; the app runs LazyMotion in strict mode and loads Motion's features in their own chunk). Simple hover and color changes stay CSS transitions.
+
+The theme colors are CSS variables (`--color-caramel` etc., see `@theme` in `src/index.css`), so canvas code can read them too.
 
 ## Save location
 
@@ -40,7 +57,7 @@ Tags are stored as raw prompt text: `(cute face:1.2)` keeps its weight, and `// 
 
 ## Editing tags
 
-* Type a tag and press Enter or `,`. Autocomplete comes from Danbooru. Pasting a comma list adds every tag.
+* Type a tag and press Enter or `,`. Autocomplete searches the bundled Danbooru tag list (`public/data/tags.json`, see Tag data below). Pasting a comma list adds every tag.
 * **Click** a tag to switch it off or on. **Ctrl+scroll** changes its weight in steps of 0.05; click the weight badge to reset it to 1. **Double-click** edits the tag. ✕ removes it.
 * **Drag** tags within a list or between lists to move them; hold Ctrl to copy instead. You can also drop onto a preset tab or a toggle row, and drag tags in from the tag browser.
 * While dragging, two boxes appear: drop on **Search on Danbooru** or **Search on Google** to look the tag up. If the browser blocks the new tab, a link is shown instead (or allow pop-ups for localhost).
