@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
 import { Download, Plus, Upload } from "lucide-react";
 import type { Character } from "../lib/types";
-import { exportCharacter, readImport, type Location } from "../lib/store";
+import { exportCharacter, readImport } from "../lib/store";
+import type { Location } from "@/shared/lib/workspace";
 import { castLook } from "../lib/cast";
 import { cn } from "@/shared/lib/utils";
-import { SaveLocation } from "./SaveLocation";
+import { WorkspaceLocation } from "@/shared/ui/workspace-location";
 import { IconButton } from "@/shared/ui/icon-button";
 import { m, spring } from "@/shared/ui/motion";
 
@@ -77,7 +78,7 @@ export function Sidebar({ chars, current, onSelect, onCreate, loc, onDirChanged,
         <input ref={fileInput} type="file" accept=".json,application/json" multiple hidden onChange={e => importFiles(e.target.files)} />
       </nav>
 
-      <SaveLocation loc={loc} onChanged={onDirChanged} onReload={onReload} />
+      <WorkspaceLocation loc={loc} onChanged={onDirChanged} onReload={onReload} />
     </aside>
   );
 }

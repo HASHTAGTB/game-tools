@@ -9,6 +9,6 @@ export default defineConfig({
   base: process.env.BASE || "/",
   plugins: [react(), tailwindcss(), fileApi()],
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
-  server: { port: 7871, strictPort: true, watch: { ignored: ["**/characters/**", "**/config.json"] } },
+  server: { port: 7871, strictPort: true, watch: { ignored: ["**/characters/**", "**/.game-tools/**", "**/config.json"] } },
   preview: { port: 7871, strictPort: true },
 });

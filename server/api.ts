@@ -1,4 +1,6 @@
-/** Tiny file API mounted into the Vite dev/preview server: characters are JSON files in a folder you choose. */
+/** Tiny file API mounted into the Vite dev/preview server. Every tool reads and writes files under one root folder
+ *  you choose (normally the story vault; tool data lives in its `.game-tools/` folder). Paths are relative to the root
+ *  and can't leave it. */
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -10,16 +12,23 @@ import type { Plugin } from "vite";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CONFIG = path.join(ROOT, "config.json");
 const DEFAULT_DIR = path.join(ROOT, "characters");
-const ID = /^[A-Za-z0-9_-]{1,100}$/;
 
-type Config = { dataDir: string };
+type Config = { root: string };
+
+/** Older configs held `dataDir`, the Prompt Builder's character folder. Inside a vault that was CANON/01_Characters,
+ *  so the vault root is two levels up; any other folder simply becomes the root (the client moves its files). */
+function fromLegacy(dataDir: string) {
+  const m = dataDir.match(/^(.*?)[\\/]+CANON[\\/]+01_Characters[\\/]*$/);
+  return m ? m[1] : dataDir;
+}
 
 async function readConfig(): Promise<Config> {
   try {
     const c = JSON.parse(await fs.readFile(CONFIG, "utf8"));
-    if (typeof c.dataDir === "string" && c.dataDir) return c;
+    if (typeof c.root === "string" && c.root) return { root: c.root };
+    if (typeof c.dataDir === "string" && c.dataDir) return { root: fromLegacy(c.dataDir) };
   } catch { /* no config yet */ }
-  return { dataDir: DEFAULT_DIR };
+  return { root: DEFAULT_DIR };
 }
 
 const expand = (p: string) => path.resolve(ROOT, p.trim().replace(/^~(?=$|\/)/, os.homedir()));
@@ -28,7 +37,7 @@ type Run = { stdout: string; code: number | string | null };
 const run = (cmd: string, args: string[]) => new Promise<Run>(resolve =>
   execFile(cmd, args, { windowsHide: true }, (err: any, stdout) => resolve({ stdout: String(stdout ?? ""), code: err ? err.code ?? 1 : 0 })));
 
-const TITLE = "Folder for the character files";
+const TITLE = "Folder for the tools' data (the story vault)";
 
 /** Opens the OS's own folder dialog on this machine (the server runs locally, so the browser can't give us a real path).
  *  Returns the chosen folder, or null if the dialog was closed. Throws if no dialog program is available. */
@@ -57,15 +66,19 @@ async function pickFolder(start: string): Promise<string | null> {
     : "Could not open the folder dialog.");
 }
 
-async function jsonFiles(dir: string) {
-  try {
-    return (await fs.readdir(dir)).filter(f => f.endsWith(".json")).sort();
-  } catch {
-    return [];
-  }
+/** Absolute path of `rel` inside `root`. Rejects anything that would leave the root. */
+function inRoot(root: string, rel: string | null) {
+  const clean = (rel ?? "").replace(/\\/g, "/");
+  if (clean.startsWith("/") || clean.split("/").includes("..")) throw new Error(`invalid path ${rel}`);
+  const full = path.resolve(root, clean);
+  if (full !== root && !full.startsWith(root + path.sep)) throw new Error(`invalid path ${rel}`);
+  return full;
 }
 
+const missing = (e: any) => e?.code === "ENOENT" || e?.code === "ENOTDIR";
+
 async function writeAtomic(file: string, data: string) {
+  await fs.mkdir(path.dirname(file), { recursive: true });
   const tmp = file + ".tmp";
   await fs.writeFile(tmp, data, "utf8");
   await fs.rename(tmp, file);
@@ -91,54 +104,65 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<boolea
 
   if (route === "GET /api/config") return send(res, 200, cfg), true;
 
-  if (route === "POST /api/pick-folder") return send(res, 200, { dataDir: await pickFolder(cfg.dataDir) }), true;
+  if (route === "POST /api/pick-folder") return send(res, 200, { root: await pickFolder(cfg.root) }), true;
 
   if (route === "POST /api/config") {
-    const { dataDir } = await body(req);
-    if (typeof dataDir !== "string" || !dataDir.trim()) throw new Error("dataDir missing");
-    const dir = expand(dataDir);
+    const { root } = await body(req);
+    if (typeof root !== "string" || !root.trim()) throw new Error("root missing");
+    const dir = expand(root);
     await fs.mkdir(dir, { recursive: true });
-    // moving to an empty folder: bring the current characters along
-    let copied = 0;
-    if (dir !== cfg.dataDir && !(await jsonFiles(dir)).length) {
-      for (const f of await jsonFiles(cfg.dataDir)) {
-        await fs.copyFile(path.join(cfg.dataDir, f), path.join(dir, f));
-        copied++;
-      }
-    }
-    await writeAtomic(CONFIG, JSON.stringify({ dataDir: dir }, null, 2) + "\n");
-    return send(res, 200, { dataDir: dir, copied }), true;
+    await writeAtomic(CONFIG, JSON.stringify({ root: dir }, null, 2) + "\n");
+    return send(res, 200, { root: dir }), true;
   }
 
-  if (route === "GET /api/characters") {
-    const out = [];
-    for (const f of await jsonFiles(cfg.dataDir)) {
-      try {
-        out.push(JSON.parse(await fs.readFile(path.join(cfg.dataDir, f), "utf8")));
-      } catch (e) {
-        console.warn(`[prompt-builder] skipping ${f}: ${e}`);
-      }
+  if (!url.pathname.startsWith("/api/fs/")) return send(res, 404, { error: `no route ${route}` }), true;
+  const root = path.resolve(cfg.root);
+  const full = inRoot(root, url.searchParams.get("path"));
+
+  if (route === "GET /api/fs/list") {
+    try {
+      const entries = await fs.readdir(full, { withFileTypes: true });
+      return send(res, 200, entries
+        .filter(e => e.isFile() || e.isDirectory())
+        .map(e => ({ name: e.name, kind: e.isDirectory() ? "directory" : "file" }))), true;
+    } catch (e) {
+      if (missing(e)) return send(res, 200, []), true;
+      throw e;
     }
-    return send(res, 200, out), true;
   }
 
-  const m = url.pathname.match(/^\/api\/characters\/([^/]+)$/);
-  if (m) {
-    const id = decodeURIComponent(m[1]);
-    if (!ID.test(id)) throw new Error(`invalid id ${id}`);
-    const file = path.join(cfg.dataDir, `${id}.json`);
-    if (req.method === "PUT") {
-      const ch = await body(req);
-      if (ch?.id !== id) throw new Error("id mismatch");
-      await fs.mkdir(cfg.dataDir, { recursive: true });
-      await writeAtomic(file, JSON.stringify(ch, null, 2) + "\n");
-      return send(res, 200, { ok: true }), true;
-    }
-    if (req.method === "DELETE") {
-      await fs.rm(file, { force: true });
-      return send(res, 200, { ok: true }), true;
+  if (route === "GET /api/fs/stat") {
+    try {
+      const st = await fs.stat(full);
+      return send(res, 200, { mtime: st.isFile() ? st.mtimeMs : null }), true;
+    } catch (e) {
+      if (missing(e)) return send(res, 200, { mtime: null }), true;
+      throw e;
     }
   }
+
+  if (route === "GET /api/fs/file") {
+    try {
+      const [text, st] = await Promise.all([fs.readFile(full, "utf8"), fs.stat(full)]);
+      return send(res, 200, { text, mtime: st.mtimeMs }), true;
+    } catch (e) {
+      if (missing(e)) return send(res, 200, null), true;
+      throw e;
+    }
+  }
+
+  if (route === "PUT /api/fs/file") {
+    const { text } = await body(req);
+    if (typeof text !== "string") throw new Error("text missing");
+    await writeAtomic(full, text);
+    return send(res, 200, { mtime: (await fs.stat(full)).mtimeMs }), true;
+  }
+
+  if (route === "DELETE /api/fs/file") {
+    await fs.rm(full, { force: true });
+    return send(res, 200, { ok: true }), true;
+  }
+
   send(res, 404, { error: `no route ${route}` });
   return true;
 }
@@ -150,7 +174,7 @@ export function fileApi(): Plugin {
       .catch(e => send(res, 400, { error: String(e?.message ?? e) }));
   };
   return {
-    name: "prompt-builder-file-api",
+    name: "game-tools-file-api",
     configureServer: s => { s.middlewares.use(mw); },
     configurePreviewServer: s => { s.middlewares.use(mw); },
   };

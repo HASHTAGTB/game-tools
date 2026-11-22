@@ -1,0 +1,327 @@
+import { folderSupported, STATIC } from "./env";
+
+/** The one folder every tool works in, normally the story vault. Paths are relative to it and use "/".
+ *  Tool data lives under `.game-tools/<tool>/` (Obsidian ignores dot-folders; git still syncs it). Other paths, like the
+ *  vault's scene files, are only read.
+ *
+ *  Backends:
+ *  - server:  the Vite file API (`pnpm dev`), a folder path on this machine
+ *  - folder:  a folder picked with the File System Access API (Chromium only)
+ *  - browser: IndexedDB in this browser, a small file store with the same paths (no vault files to read)
+ *  The static build (GitHub Pages) has no server, so it offers folder and browser. */
+export type Backend = "server" | "browser" | "folder";
+
+/** `ready` is false while a folder is remembered but the browser wants permission again, or no folder was picked yet
+ *  (`picked` false). */
+export type Location = { kind: Backend; label: string; ready: boolean; picked: boolean };
+
+export type Entry = { name: string; kind: "file" | "directory" };
+export type FileData = { text: string; mtime: number };
+
+export const TOOLS_DIR = ".game-tools";
+/** Path of a tool's own data folder. */
+export const toolDir = (tool: string) => `${TOOLS_DIR}/${tool}`;
+
+export const joinPath = (...parts: string[]) => parts.filter(Boolean).join("/");
+
+/** Thrown while a picked folder is remembered but the browser wants the user to allow access again. */
+export class NeedsPermission extends Error {
+  constructor() { super("The browser needs permission to use the folder again."); }
+}
+
+interface Store {
+  read(path: string): Promise<FileData | null>;
+  write(path: string, text: string): Promise<number>;
+  remove(path: string): Promise<void>;
+  list(dir: string): Promise<Entry[]>;
+  /** Last change time of a file, null if it doesn't exist. */
+  stat(path: string): Promise<number | null>;
+}
+
+function check(path: string) {
+  if (path.startsWith("/") || path.split("/").includes("..")) throw new Error(`invalid path ${path}`);
+  return path.split("/").filter(Boolean);
+}
+
+// ---------------------------------------------------------------- server (Vite file API)
+
+async function api<T>(method: string, url: string, body?: unknown): Promise<T> {
+  const r = await fetch(url, {
+    method,
+    // lets a save started while the tab closes still reach the server (bodies up to 64 KB)
+    keepalive: document.visibilityState === "hidden",
+    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data?.error ?? r.statusText);
+  return data as T;
+}
+
+const q = (path: string) => `?path=${encodeURIComponent(check(path).join("/"))}`;
+
+const server: Store = {
+  read: path => api("GET", `/api/fs/file${q(path)}`),
+  write: async (path, text) => (await api<{ mtime: number }>("PUT", `/api/fs/file${q(path)}`, { text })).mtime,
+  remove: async path => void (await api("DELETE", `/api/fs/file${q(path)}`)),
+  list: dir => api("GET", `/api/fs/list${q(dir)}`),
+  stat: async path => (await api<{ mtime: number | null }>("GET", `/api/fs/stat${q(path)}`)).mtime,
+};
+
+// ---------------------------------------------------------------- IndexedDB (files + settings)
+
+const DB_NAME = "game-tools";
+let dbp: Promise<IDBDatabase> | null = null;
+function openDb(name: string, upgrade?: (db: IDBDatabase) => void) {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const req = indexedDB.open(name, 1);
+    req.onupgradeneeded = () => upgrade?.(req.result);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+const idb = () => dbp ??= openDb(DB_NAME, db => {
+  db.createObjectStore("files");
+  db.createObjectStore("settings");
+}).then(async db => { await migrateOldDb(db); return db; });
+
+function req<T>(r: IDBRequest<T>) {
+  return new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+}
+async function tx<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>, db?: IDBDatabase): Promise<T> {
+  return req(fn((db ?? await idb()).transaction(store, mode).objectStore(store)));
+}
+const getSetting = <T>(key: string) => tx<T | undefined>("settings", "readonly", s => s.get(key));
+const setSetting = (key: string, v: unknown) => tx("settings", "readwrite", s => s.put(v, key));
+
+type Stored = { text: string; mtime: number };
+
+const browser: Store = {
+  read: async path => (await tx<Stored | undefined>("files", "readonly", s => s.get(check(path).join("/")))) ?? null,
+  write: async (path, text) => {
+    const mtime = Date.now();
+    await tx("files", "readwrite", s => s.put({ text, mtime } satisfies Stored, check(path).join("/")));
+    return mtime;
+  },
+  remove: async path => void (await tx("files", "readwrite", s => s.delete(check(path).join("/")))),
+  list: async dir => {
+    const prefix = check(dir).map(p => p + "/").join("");
+    const keys = await tx("files", "readonly", s => s.getAllKeys(prefix ? IDBKeyRange.bound(prefix, prefix + "￿") : undefined));
+    const out = new Map<string, Entry>();
+    for (const k of keys as string[]) {
+      const [name, ...more] = k.slice(prefix.length).split("/");
+      if (!out.has(name) || more.length) out.set(name, { name, kind: more.length ? "directory" : "file" });
+    }
+    return [...out.values()];
+  },
+  stat: async path => (await browser.read(path))?.mtime ?? null,
+};
+
+/** The Prompt Builder used to keep its own database ("prompt-builder": characters + settings). Copy it over once. */
+async function migrateOldDb(db: IDBDatabase) {
+  if (await tx("settings", "readonly", s => s.get("migrated"), db)) return;
+  const names = (await indexedDB.databases?.().catch(() => [])) ?? [];
+  if (names.some(d => d.name === "prompt-builder")) {
+    const old = await openDb("prompt-builder");
+    if (old.objectStoreNames.contains("characters")) {
+      const chars = await req(old.transaction("characters").objectStore("characters").getAll());
+      for (const c of chars) {
+        if (!c?.id) continue;
+        const key = `${toolDir("prompt-builder")}/${c.id}.json`;
+        await tx("files", "readwrite", s => s.put({ text: JSON.stringify(c, null, 2) + "\n", mtime: Date.now() } satisfies Stored, key), db);
+      }
+    }
+    // The old remembered folder was the character folder, not the vault, so folder users pick the vault once.
+    const backend = old.objectStoreNames.contains("settings")
+      ? await req(old.transaction("settings").objectStore("settings").get("backend")) : undefined;
+    if (backend) await tx("settings", "readwrite", s => s.put(backend, "backend"), db);
+    old.close();
+  }
+  await tx("settings", "readwrite", s => s.put(true, "migrated"), db);
+}
+
+// ---------------------------------------------------------------- File System Access API (not in TS's DOM lib yet)
+
+type Perm = "granted" | "denied" | "prompt";
+type FileHandle = {
+  kind: "file"; name: string;
+  getFile(): Promise<File>;
+  createWritable(): Promise<{ write(d: string): Promise<void>; close(): Promise<void> }>;
+};
+type DirHandle = {
+  kind: "directory"; name: string;
+  values(): AsyncIterable<FileHandle | DirHandle>;
+  getFileHandle(name: string, o?: { create?: boolean }): Promise<FileHandle>;
+  getDirectoryHandle(name: string, o?: { create?: boolean }): Promise<DirHandle>;
+  removeEntry(name: string): Promise<void>;
+  queryPermission(o: { mode: "readwrite" }): Promise<Perm>;
+  requestPermission(o: { mode: "readwrite" }): Promise<Perm>;
+};
+
+let rootDir: DirHandle | null = null;
+const permitted = async (d: DirHandle) => (await d.queryPermission({ mode: "readwrite" })) === "granted";
+const notFound = (e: any) => e?.name === "NotFoundError" || e?.name === "TypeMismatchError";
+
+async function dirAt(parts: string[], create: boolean): Promise<DirHandle | null> {
+  if (!rootDir) throw new NeedsPermission();
+  let d = rootDir;
+  try {
+    for (const p of parts) d = await d.getDirectoryHandle(p, { create });
+  } catch (e) {
+    if (notFound(e)) return null;
+    throw e;
+  }
+  return d;
+}
+
+async function fileAt(path: string, create: boolean): Promise<FileHandle | null> {
+  const parts = check(path);
+  const d = await dirAt(parts.slice(0, -1), create);
+  if (!d) return null;
+  try {
+    return await d.getFileHandle(parts[parts.length - 1], { create });
+  } catch (e) {
+    if (notFound(e)) return null;
+    throw e;
+  }
+}
+
+const folder: Store = {
+  read: async path => {
+    const f = await (await fileAt(path, false))?.getFile();
+    return f ? { text: await f.text(), mtime: f.lastModified } : null;
+  },
+  write: async (path, text) => {
+    const h = (await fileAt(path, true))!;
+    const w = await h.createWritable();
+    await w.write(text);
+    await w.close();
+    return (await h.getFile()).lastModified;
+  },
+  remove: async path => {
+    const parts = check(path);
+    const d = await dirAt(parts.slice(0, -1), false);
+    await d?.removeEntry(parts[parts.length - 1]).catch(e => { if (!notFound(e)) throw e; });
+  },
+  list: async dir => {
+    const d = await dirAt(check(dir), false);
+    const out: Entry[] = [];
+    if (d) for await (const h of d.values()) out.push({ name: h.name, kind: h.kind });
+    return out;
+  },
+  stat: async path => (await (await fileAt(path, false))?.getFile())?.lastModified ?? null,
+};
+
+// ---------------------------------------------------------------- active backend
+
+let kind: Backend | null = null;
+async function backend(): Promise<Backend> {
+  if (kind) return kind;
+  if (!STATIC) return (kind = "server");
+  const saved = await getSetting<Backend>("backend");
+  if (saved === "folder" && folderSupported) {
+    rootDir = (await getSetting<DirHandle>("root")) ?? null;
+    return (kind = "folder");
+  }
+  return (kind = "browser");
+}
+
+const stores: Record<Backend, Store> = { server, browser, folder };
+
+async function store(): Promise<Store> {
+  const k = await backend();
+  if (k === "folder" && (!rootDir || !(await permitted(rootDir)))) throw new NeedsPermission();
+  return stores[k];
+}
+
+/** Text of a file and when it last changed; null if it doesn't exist. */
+export const readFile = async (path: string) => (await store()).read(path);
+export const readText = async (path: string) => (await readFile(path))?.text ?? null;
+export async function readJson<T>(path: string): Promise<T | null> {
+  const t = await readText(path);
+  return t === null ? null : JSON.parse(t);
+}
+/** Writes (creating folders as needed) and returns the file's new change time. */
+export const writeText = async (path: string, text: string) => (await store()).write(path, text);
+export const writeJson = (path: string, data: unknown) => writeText(path, JSON.stringify(data, null, 2) + "\n");
+export const removeFile = async (path: string) => (await store()).remove(path);
+/** Entries of a folder; empty if it doesn't exist. */
+export const listDir = async (dir: string) => (await store()).list(dir);
+export const statFile = async (path: string) => (await store()).stat(path);
+
+/** Files directly in `dir` with the given extension, as full paths. */
+export async function listFiles(dir: string, ext: string) {
+  return (await listDir(dir)).filter(e => e.kind === "file" && e.name.endsWith(ext)).map(e => joinPath(dir, e.name)).sort();
+}
+
+export async function getLocation(): Promise<Location> {
+  const k = await backend();
+  if (k === "server") return { kind: k, label: (await api<{ root: string }>("GET", "/api/config")).root, ready: true, picked: true };
+  if (k === "browser") return { kind: k, label: "This browser", ready: true, picked: true };
+  if (!rootDir) return { kind: k, label: "No folder picked yet", ready: false, picked: false };
+  return { kind: k, label: `Folder: ${rootDir.name}`, ready: await permitted(rootDir), picked: true };
+}
+
+/** Ask again for access to the remembered folder. Must run from a click. */
+export async function reconnectFolder() {
+  if (!rootDir || (await rootDir.requestPermission({ mode: "readwrite" })) !== "granted") throw new Error("Permission was not given.");
+}
+
+// ---------------------------------------------------------------- changing the location
+
+/** Every file under `.game-tools/`, recursively. */
+async function toolFiles(s: Store, dir = TOOLS_DIR): Promise<string[]> {
+  const out: string[] = [];
+  for (const e of await s.list(dir).catch(() => [] as Entry[])) {
+    const p = joinPath(dir, e.name);
+    if (e.kind === "directory") out.push(...await toolFiles(s, p));
+    else out.push(p);
+  }
+  return out;
+}
+
+/** Run `change`, then bring the tools' data along if the new place has none yet. Returns how many files were copied. */
+async function moveData(change: () => Promise<void>): Promise<number> {
+  const from = await store().catch(() => null);
+  const files: [string, string][] = [];
+  if (from) for (const p of await toolFiles(from)) {
+    const f = await from.read(p);
+    if (f) files.push([p, f.text]);
+  }
+  await change();
+  const to = await store();
+  if (!files.length || (await toolFiles(to)).length) return 0;
+  for (const [p, text] of files) await to.write(p, text);
+  return files.length;
+}
+
+/** Opens the native folder dialog on the machine running `pnpm dev`; null if it was closed. */
+export const pickServerRoot = async () => (await api<{ root: string | null }>("POST", "/api/pick-folder")).root;
+
+/** Point the dev server at another folder. Returns the folder and how many tool files were copied there. */
+export async function setServerRoot(root: string) {
+  let chosen = root;
+  const copied = await moveData(async () => { chosen = (await api<{ root: string }>("POST", "/api/config", { root })).root; });
+  return { label: chosen, copied };
+}
+
+/** Switch to browser storage or a newly picked folder (the picker must open from a click). Returns null if the picker
+ *  was closed. If the new place holds no tool data yet, the current data is copied there. */
+export async function switchTo(target: "browser" | "folder"): Promise<{ label: string; copied: number } | null> {
+  let picked: DirHandle | null = null;
+  if (target === "folder") {
+    try {
+      picked = await (window as any).showDirectoryPicker({ id: "game-tools-root", mode: "readwrite" });
+    } catch (e: any) {
+      if (e?.name === "AbortError") return null;   // picker closed
+      throw e;
+    }
+  }
+  const copied = await moveData(async () => {
+    kind = target;
+    if (picked) rootDir = picked;
+    await setSetting("backend", target);
+    if (picked) await setSetting("root", picked);
+  });
+  return { label: target === "folder" ? `Folder: ${picked!.name}` : "This browser", copied };
+}

@@ -3,7 +3,8 @@ import { STATIC } from "@/shared/lib/env";
 import { uniqueId } from "@/shared/lib/utils";
 import type { DragTag } from "./lib/dnd";
 import { listFor, sameKey, tagKey } from "./lib/prompt";
-import { deleteCharacter, getLocation, listCharacters, NeedsPermission, newCharacter, saveCharacter, type Location } from "./lib/store";
+import { getLocation, NeedsPermission, type Location } from "@/shared/lib/workspace";
+import { deleteCharacter, listCharacters, newCharacter, saveCharacter } from "./lib/store";
 import { loadTagDb, type TagDb } from "./lib/tags";
 import type { Character, ListKey } from "./lib/types";
 

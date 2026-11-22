@@ -8,7 +8,7 @@ pnpm dev              # → http://localhost:7871
 pnpm typecheck
 ```
 
-The Vite server also runs a small file API (`server/api.ts`), so characters are saved as plain JSON files on disk.
+The Vite server also runs a small file API (`server/api.ts`), so tool data is saved as plain JSON files on disk.
 
 ## Code layout
 
@@ -21,24 +21,30 @@ server/         local file API, only in `pnpm dev`
 
 To add a tool, add it to `TOOLS` in `src/app/tools.ts` and give it a `toolRoute(...)` in `src/app/router.tsx`. Each tool's code is loaded only when it's opened. Mark a tool `needsServer` if it can't work on GitHub Pages; it then shows a notice there instead.
 
+Storage: tools read and write through `src/shared/lib/workspace.ts` (`readJson`, `writeJson`, `listFiles`, …) with paths relative to the data folder, and keep their own files under `toolDir("<tool>")` (`.game-tools/<tool>/`). Other paths (the vault's scene files) are only read. The data folder panel is `WorkspaceLocation` in `src/shared/ui/`.
+
 UI kit (`src/shared/ui/`): `Section` (title over a colored rule, actions that appear on hover), `IconButton` (icon only, so it always takes a `label` for its tooltip), `Tooltip`, `Popover`, `Confirm`, `Switch`, `CollapsiblePanel`, `SearchField` and `Toasts`.
 
 Animation: import `m`, `AnimatePresence` and the `spring`/`fade`/`pop` presets from `src/shared/ui/motion.ts` (not `motion.*` from `motion/react`; the app runs LazyMotion in strict mode and loads Motion's features in their own chunk). Simple hover and color changes stay CSS transitions.
 
 The theme colors are CSS variables (`--color-caramel` etc., see `@theme` in `src/index.css`), so canvas code can read them too.
 
-## Save location
+## Data folder
 
-With `pnpm dev`, characters are stored as one `<id>.json` file each, saved automatically. The default folder is `./characters`. Change it under **Save location** at the bottom left: type a path or click **Browse…** to pick one in your system's folder dialog (zenity or kdialog on Linux). The setting lives in `config.json`. If the new folder is empty, the current characters are copied there; otherwise its characters are loaded. Point it at a folder you keep in git. ⟳ reloads from disk (e.g. after `git pull`).
+All tools share one data folder, normally the story vault. Each tool keeps its files in the vault's `.game-tools/<tool>/` folder: Obsidian hides dot-folders, but git syncs it like everything else. The Prompt Builder stores one `<id>.json` per character in `.game-tools/prompt-builder/`, saved automatically. (Older versions kept them in `CANON/01_Characters/`; the first load moves them over.)
+
+With `pnpm dev`, change the folder under **Data folder** at the bottom left: type a path or click **Browse…** to pick one in your system's folder dialog (zenity or kdialog on Linux). The setting lives in `config.json` (`root`). The default is `./characters`. ⟳ reloads from disk (e.g. after `git pull`).
 
 ## GitHub Pages
 
-`.github/workflows/pages.yml` builds a static version on every push to `main` and publishes it to `https://<user>.github.io/<repo>/`. That version has no file API, so **Save location** offers:
+`.github/workflows/pages.yml` builds a static version on every push to `main` and publishes it to `https://<user>.github.io/<repo>/`. That version has no file API, so **Data folder** offers:
 
-* **This browser**: IndexedDB, works everywhere. Clearing site data deletes it, so use **Export** now and then.
-* **A folder on disk**: you pick a folder once and it holds one `<id>.json` per character, like the dev server's folder. Chromium browsers only (Chrome, Edge, Brave…). After a browser restart, click **Allow folder access** once.
+* **The story folder**: you pick the vault once. Chromium browsers only (Chrome, Edge, Brave…). After a browser restart, click **Allow folder access** once.
+* **This browser**: IndexedDB, works everywhere, but without the vault's own files (scenes). Clearing site data deletes it, so use **Export** now and then.
 
-**Export** downloads every character as one JSON file. **Import** reads that file or single `<id>.json` files; a character with the same id is replaced.
+Switching to a place that has no tool data yet copies the current data there; otherwise its data is loaded.
+
+**Export** downloads a character as `<id>.json`. **Import** reads such files (or old all-in-one exports); a character with the same id is replaced.
 
 Build the static version locally with `VITE_STATIC=1 BASE=/<repo>/ pnpm build`.
 
