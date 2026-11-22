@@ -37,6 +37,8 @@ type Actions = {
   load: () => Promise<void>;
   reload: (msg: string) => Promise<void>;
   flush: () => Promise<void>;
+  /** Drop unsaved in-memory edits: wait for any write in progress, run `drop`, reload without writing first. */
+  revert: (drop: () => Promise<void>) => Promise<void>;
   /** Change the data. `fn` gets a copy it may mutate. Edits with the same `key` less than 1.5s apart (typing in one
    *  field) are one undo step. */
   edit: (fn: (d: Doc) => void, key?: string) => void;
@@ -158,6 +160,13 @@ export const useTimeline = create<State & Actions>()((set, get) => {
     },
 
     flush: () => serial(flushNow),
+
+    revert: async drop => {
+      clearTimeout(saveTimer);
+      // queued after any flush already running, so nothing writes between dropping and loading
+      await serial(async () => { await drop(); await get().load(); });
+      get().setNotice("Discarded");
+    },
 
     edit: (fn, key) => {
       const before = get().doc;

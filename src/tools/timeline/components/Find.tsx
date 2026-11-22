@@ -11,6 +11,18 @@ import { useTimeline } from "../state";
 const MAX = 60;
 /** Lower case, no accents: "auflosung" finds "Auflösung". */
 const fold = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+/** Where in `s` the character at `i` of `fold(s)` came from. Folding drops characters (accents, but also ^ or `), so
+ *  positions in the folded text don't line up with the original. */
+function originalIndex(s: string, i: number) {
+  let folded = 0;
+  for (let j = 0; j < s.length; ) {
+    const ch = String.fromCodePoint(s.codePointAt(j)!);
+    folded += fold(ch).length;
+    if (folded > i) return j;
+    j += ch.length;
+  }
+  return s.length;
+}
 
 /** Toolbar button (and Ctrl+K) that finds events by title, note or character name and jumps to them. */
 export function FindButton() {
@@ -46,7 +58,7 @@ export function FindButton() {
       let snippet: string | undefined;
       const at = words.map(w => note.indexOf(w)).filter(i => i >= 0).sort((a, b) => a - b)[0];
       if (!inTitle && at !== undefined && event.note) {
-        const from = Math.max(0, at - 30);
+        const from = Math.max(0, originalIndex(event.note, at) - 30);
         snippet = (from ? "…" : "") + event.note.slice(from, from + 90).replace(/\s+/g, " ") + (from + 90 < event.note.length ? "…" : "");
       }
       hits.push({ chapter, event, inTitle, snippet, color: names.get(event.chars[0])?.color });
@@ -56,6 +68,8 @@ export function FindButton() {
   }, [query, doc]);
 
   useEffect(() => setActive(0), [query]);
+  // the list can also shrink under the highlight (the doc reloaded or was edited)
+  useEffect(() => setActive(a => Math.max(0, Math.min(a, results.length - 1))), [results]);
   useEffect(() => { list.current?.querySelector(`[data-i="${active}"]`)?.scrollIntoView({ block: "nearest" }); }, [active]);
 
   const go = (i: number) => {

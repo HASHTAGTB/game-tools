@@ -45,7 +45,7 @@ const GESTURES: [React.ReactNode, string][] = [
   [<><Key>Ctrl</Key> + scroll</>, "Wider or narrower columns"],
   [<><Key>Ctrl</Key> <Key>K</Key></>, "Find an event"],
   [<><Key>Ctrl</Key> <Key>Z</Key></>, "Undo (add Shift to redo)"],
-  [<Key>Del</Key>, "Delete the selected event"],
+  [<><Key>Del</Key> or <Key>Ctrl</Key> <Key>⌫</Key></>, "Delete the selected event"],
 ];
 
 function Help() {

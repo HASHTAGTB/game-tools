@@ -35,9 +35,9 @@ export default function Timeline() {
       if (mod && e.key.toLowerCase() === "y" && !typing(e.target)) { e.preventDefault(); st.redo(); return; }
       if (typing(e.target)) { if (e.key === "Escape") (e.target as HTMLElement).blur(); return; }
       if (e.key === "Escape") st.select(null);
-      // only events: chapters, threads and characters are deleted from their panel, with a confirm. Not Backspace:
-      // too easy to hit right after leaving a text field.
-      if (e.key === "Delete" && st.selection?.kind === "event") {
+      // only events: chapters, threads and characters are deleted from their panel, with a confirm. Not a bare
+      // Backspace: too easy to hit right after leaving a text field. Ctrl/Cmd+Backspace for keyboards without Delete.
+      if ((e.key === "Delete" || (mod && e.key === "Backspace")) && st.selection?.kind === "event") {
         const id = st.selection.id;
         st.edit(d => deleteEvent(d.chapters, id));
         st.select(null);

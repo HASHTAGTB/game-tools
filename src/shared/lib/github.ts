@@ -9,8 +9,8 @@ import type { Entry, FileData } from "./workspace";
  *  Each pending change remembers the repo's version of the file it started from (`base`, a blob sha). If someone
  *  else pushed a different version in the meantime, the commit stops and names those files instead of overwriting.
  *
- *  Change times (`mtime`) are made up: the file's blob sha as a number, or the time of a pending write. Tools only
- *  compare them for equality, to notice when a file changed somewhere else. */
+ *  Change times (`mtime`) are made up: the file's blob sha as a number, pending or not, so a file keeps its time when
+ *  it gets saved. Tools only compare them for equality, to notice when a file changed somewhere else. */
 
 export type GitHubConfig = { owner: string; repo: string; branch: string; token: string; login: string };
 
@@ -47,6 +47,8 @@ let config: GitHubConfig | null | undefined;
 let pending: Map<string, Pending> | null = null;
 let tree: Tree | null = null;
 let treeLoad: Promise<Tree> | null = null;
+/** Bumped whenever `tree` is replaced from outside `loadTree`, so a load that started earlier can't put back an older tree. */
+let treeGen = 0;
 const blobs = new Map<string, string>();
 
 export async function getConfig() {
@@ -128,27 +130,59 @@ async function cfg() {
 /** The branch's current file list. Re-checked when older than FRESH_MS, or always with `force`. */
 async function currentTree(force = false): Promise<Tree> {
   if (tree && !force && Date.now() - tree.at < FRESH_MS) return tree;
-  return treeLoad ??= loadTree().finally(() => { treeLoad = null; });
+  if (treeLoad) return treeLoad;
+  const p: Promise<Tree> = loadTree().finally(() => { if (treeLoad === p) treeLoad = null; });
+  return (treeLoad = p);
+}
+
+/** Put in a tree known some other way (right after a commit). Loads still running can no longer replace it. */
+function setTree(t: Tree) {
+  treeGen++;
+  treeLoad = null;
+  tree = t;
 }
 
 async function loadTree(): Promise<Tree> {
+  const gen = treeGen;
+  const keep = (t: Tree) => (gen === treeGen ? (tree = t) : tree ?? t);
   const c = await cfg();
   const r = repoPath(c);
   const ref = await call<{ object: { sha: string } }>("GET", `${r}/git/ref/heads/${encodeURIComponent(c.branch)}`, undefined,
     tree?.etag ? { "If-None-Match": tree.etag } : {});
-  if (ref.res.status === 304 && tree) return (tree = { ...tree, at: Date.now() });
+  if (ref.res.status === 304 && tree) return keep({ ...tree, at: Date.now() });
   const head = ref.data.object.sha;
-  if (tree?.head === head) return (tree = { ...tree, etag: ref.res.headers.get("etag"), at: Date.now() });
+  if (tree?.head === head) return keep({ ...tree, etag: ref.res.headers.get("etag"), at: Date.now() });
   const commit = (await call<{ tree: { sha: string } }>("GET", `${r}/git/commits/${head}`)).data;
-  const t = (await call<{ tree: { path: string; type: string; sha: string }[]; truncated: boolean }>("GET", `${r}/git/trees/${commit.tree.sha}?recursive=1`)).data;
-  if (t.truncated) console.warn("GitHub returned only part of the repository's file list.");
   const files = new Map<string, string>();
   const dirs = new Set<string>();
-  for (const e of t.tree) {
-    if (e.type === "blob") files.set(e.path, e.sha);
-    else if (e.type === "tree") dirs.add(e.path);
+  await walk(r, commit.tree.sha, "", files, dirs);
+  return keep({ head, tree: commit.tree.sha, files, dirs, etag: ref.res.headers.get("etag"), at: Date.now() });
+}
+
+type TreeEntry = { path: string; type: string; sha: string };
+
+/** Every file under the tree `sha`. GitHub cuts long recursive listings short (`truncated`); then each folder is
+ *  listed on its own, so no file goes missing (a missing file would look new, and saving would overwrite it). */
+async function walk(r: string, sha: string, prefix: string, files: Map<string, string>, dirs: Set<string>): Promise<void> {
+  const all = (await call<{ tree: TreeEntry[]; truncated: boolean }>("GET", `${r}/git/trees/${sha}?recursive=1`)).data;
+  const add = (e: TreeEntry) => {
+    if (e.type === "blob") files.set(prefix + e.path, e.sha);
+    else if (e.type === "tree") dirs.add(prefix + e.path);
+  };
+  if (!all.truncated) { all.tree.forEach(add); return; }
+  const top = (await call<{ tree: TreeEntry[]; truncated: boolean }>("GET", `${r}/git/trees/${sha}`)).data;
+  if (top.truncated) throw new GitHubError(0, `GitHub can't list the folder "${prefix || "/"}" in full (too many files in it).`);
+  top.tree.forEach(add);
+  await Promise.all(top.tree.filter(e => e.type === "tree").map(e => walk(r, e.sha, prefix + e.path + "/", files, dirs)));
+}
+
+/** The folders holding `files` (git keeps no empty ones). */
+function dirsOf(files: Map<string, string>) {
+  const dirs = new Set<string>();
+  for (const path of files.keys()) {
+    for (let i = path.indexOf("/"); i >= 0; i = path.indexOf("/", i + 1)) dirs.add(path.slice(0, i));
   }
-  return (tree = { head, tree: commit.tree.sha, files, dirs, etag: ref.res.headers.get("etag"), at: Date.now() });
+  return dirs;
 }
 
 const bytesToText = (b64: string) => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g, "")), ch => ch.charCodeAt(0)));
@@ -177,10 +211,6 @@ async function blobSha(text: string) {
 /** A blob sha as a change time (48 bits fit a JS number exactly). */
 const shaTime = (sha: string) => parseInt(sha.slice(0, 12), 16);
 
-let lastTime = 0;
-/** A change time for a pending write, never the same twice. */
-const stamp = () => (lastTime = Math.max(Date.now(), lastTime + 1));
-
 // ---------------------------------------------------------------- the Store
 
 export const github = {
@@ -195,16 +225,16 @@ export const github = {
     const [ps, t, sha] = await Promise.all([pend(), currentTree(), blobSha(text)]);
     const remote = t.files.get(path) ?? null;
     const base = ps.has(path) ? ps.get(path)!.base : remote;
+    blobs.set(sha, text);
     if (sha === remote && base === remote) {
       // back to what the repo has: nothing to save
       if (ps.delete(path)) changed();
-      blobs.set(sha, text);
-      return shaTime(sha);
+    } else {
+      ps.set(path, { text, base, mtime: shaTime(sha) });
+      changed();
     }
-    const mtime = stamp();
-    ps.set(path, { text, base, mtime });
-    changed();
-    return mtime;
+    // the same time it will have once saved, so saving doesn't look like a change made somewhere else
+    return shaTime(sha);
   },
 
   async remove(path: string): Promise<void> {
@@ -212,7 +242,7 @@ export const github = {
     const remote = t.files.get(path) ?? null;
     const base = ps.has(path) ? ps.get(path)!.base : remote;
     if (base === null && remote === null) ps.delete(path);   // only ever existed here
-    else ps.set(path, { text: null, base, mtime: stamp() });
+    else ps.set(path, { text: null, base, mtime: 0 });
     changed();
   },
 
@@ -252,6 +282,8 @@ export async function connect(token: string): Promise<GitHubConfig> {
   const login = (await call<{ login: string }>("GET", "/user", undefined, {}, token).catch(() => null))?.data.login ?? "";
   config = { ...REPO, token, login };
   await kv("readwrite", s => s.put(config, "config"));
+  treeGen++;
+  treeLoad = null;
   tree = null;
   return config;
 }
@@ -260,6 +292,8 @@ export async function connect(token: string): Promise<GitHubConfig> {
 export async function disconnect() {
   await discard();
   config = null;
+  treeGen++;
+  treeLoad = null;
   tree = null;
   await kv("readwrite", s => s.delete("config"));
 }
@@ -294,12 +328,20 @@ export async function commit(message: string): Promise<CommitResult> {
       throw e;
     }
 
-    for (const [, p] of snap) if (p.text !== null) blobs.set(await blobSha(p.text), p.text);
-    const after = await currentTree(true);
+    // The branch now holds exactly what was sent. Build that file list here rather than asking GitHub, which could
+    // still answer with the tree from before the commit.
+    const files = new Map(t.files);
+    for (const [path, p] of snap) {
+      if (p.text === null) { files.delete(path); continue; }
+      const sha = await blobSha(p.text);
+      blobs.set(sha, p.text);
+      files.set(path, sha);
+    }
+    setTree({ head: made.sha, tree: newTree.sha, files, dirs: dirsOf(files), etag: null, at: Date.now() });
     for (const [path, p] of snap) {
       const now = ps.get(path);
       if (now === p) ps.delete(path);   // saved as it is now
-      else if (now) now.base = after.files.get(path) ?? null;   // edited again while saving: still pending, on top of this commit
+      else if (now) now.base = files.get(path) ?? null;   // edited again while saving: still pending, on top of this commit
     }
     changed();
     return { ok: true, files: snap.length, sha: made.sha };

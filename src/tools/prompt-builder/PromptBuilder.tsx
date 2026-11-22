@@ -44,7 +44,7 @@ export default function PromptBuilder() {
       <div className="grid h-screen grid-cols-[190px_minmax(0,1fr)_270px] bg-ink text-paper lg:grid-cols-[230px_minmax(0,1fr)_340px] 2xl:grid-cols-[260px_minmax(0,1fr)_400px]">
         <Sidebar
           chars={chars} current={curId} onSelect={s.select} onCreate={n => s.create(n)} loc={loc} onImport={s.importChars} onError={setError}
-          onDirChanged={s.reload} onFlush={s.flush}
+          onDirChanged={s.reload} onFlush={s.flush} onRevert={s.revert}
           onReload={() => s.reload(loc?.kind === "browser" ? "Reloaded" : loc?.kind === "github" ? "Reloaded from GitHub" : "Reloaded from disk")}
         />
 

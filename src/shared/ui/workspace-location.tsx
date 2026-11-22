@@ -17,13 +17,15 @@ type Props = {
   onReload: () => void;
   /** Write the tool's in-memory edits out now (before a GitHub save). */
   onFlush: () => Promise<void>;
+  /** Drop the tool's in-memory edits and reload, without saving them first (GitHub's Discard). */
+  onRevert: (drop: () => Promise<void>) => Promise<void>;
 };
 
 const msgOf = (e: unknown) => String(e instanceof Error ? e.message : e);
 const copiedNote = (n: number) => (n ? ` (copied ${n} file${n > 1 ? "s" : ""} there)` : "");
 
 /** Sidebar footer shared by every tool: the one folder all tools keep their data in (normally the story vault). */
-export function WorkspaceLocation({ loc, onChanged, onReload: reloadTool, onFlush }: Props) {
+export function WorkspaceLocation({ loc, onChanged, onReload: reloadTool, onFlush, onRevert }: Props) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
@@ -88,7 +90,7 @@ export function WorkspaceLocation({ loc, onChanged, onReload: reloadTool, onFlus
 
   return (
     <>
-    {loc?.kind === "github" && <GitHubSave onFlush={onFlush} onReload={reloadTool} />}
+    {loc?.kind === "github" && <GitHubSave onFlush={onFlush} onRevert={onRevert} />}
     <div className="flex items-end gap-1 px-4 py-4">
       <Popover open={open} onOpenChange={setOpen} side="top" align="start" className="w-md" trigger={
         <button className="group min-w-0 flex-1 rounded-sm p-2 text-left" title="Change the data folder">

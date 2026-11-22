@@ -31,6 +31,8 @@ type Actions = {
   flush: () => Promise<void>;
   /** Save pending edits, reload from the save location, then show `msg`. */
   reload: (msg: string) => Promise<void>;
+  /** Drop unsaved in-memory edits: run `drop`, then reload without saving first. */
+  revert: (drop: () => Promise<void>) => Promise<void>;
   /** Change the current character. `fn` gets a copy it may mutate. */
   update: (fn: (c: Character) => void) => void;
   select: (id: string) => void;
@@ -96,6 +98,13 @@ export const usePromptBuilder = create<State & Actions>()((set, get) => ({
     await get().flush();
     await get().load();
     get().setNotice(msg);
+  },
+
+  revert: async drop => {
+    clearTimeout(saveTimer);
+    await drop();
+    await get().load();
+    get().setNotice("Discarded");
   },
 
   update: fn => set(s => ({

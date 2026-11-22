@@ -7,8 +7,9 @@ import { Popover } from "./popover";
 type Props = {
   /** Write the tool's in-memory edits out first, so the commit has them. */
   onFlush: () => Promise<void>;
-  /** Files went back to GitHub's version: the tool should reload. */
-  onReload: () => void;
+  /** Throw away the tool's in-memory edits: stop autosaving, wait for any write in progress, run `drop` (which drops
+   *  the pending changes), then reload without writing anything first. */
+  onRevert: (drop: () => Promise<void>) => Promise<void>;
 };
 
 const msgOf = (e: unknown) => String(e instanceof Error ? e.message : e);
@@ -20,7 +21,7 @@ export const usePendingPaths = () => useSyncExternalStore(onPendingChange, pendi
 
 /** Shown in the sidebar footer while the data lives on GitHub: unsaved changes and the Save button. Nothing is pushed
  *  until Save (or Ctrl+S). */
-export function GitHubSave({ onFlush, onReload }: Props) {
+export function GitHubSave({ onFlush, onRevert }: Props) {
   const paths = usePendingPaths();
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
@@ -63,9 +64,8 @@ export function GitHubSave({ onFlush, onReload }: Props) {
     setBusy(true);
     try {
       if (keep === "mine") { await keepMine(conflicts); setConflicts([]); setBusy(false); await save(); return; }
-      await discard(conflicts);
+      await onRevert(() => discard(conflicts));
       setConflicts([]);
-      onReload();
     } catch (e) {
       setErr(msgOf(e));
     } finally {
@@ -114,7 +114,7 @@ export function GitHubSave({ onFlush, onReload }: Props) {
         {err && <p className="mt-2 text-sm text-coral">{err}</p>}
         {!conflicts.length && (
           <div className="mt-3 flex items-center gap-3">
-            {n > 0 && <DiscardAll busy={busy} onDiscard={async () => { await discard(); setOpen(false); onReload(); }} />}
+            {n > 0 && <DiscardAll busy={busy} onDiscard={async () => { await onRevert(() => discard()); setOpen(false); }} />}
             <span className="flex-1" />
             <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Close</Button>
             {n > 0 && <Button size="sm" variant="primary" className="px-3" onClick={() => save()} disabled={busy}>Save</Button>}
