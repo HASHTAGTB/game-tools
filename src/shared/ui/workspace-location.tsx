@@ -173,6 +173,7 @@ export function WorkspaceLocation({ loc, onChanged, onReload: reloadTool, onFlus
 }
 
 const TOKEN_URL = "https://github.com/settings/personal-access-tokens/new";
+const CLASSIC_TOKEN_URL = "https://github.com/settings/tokens/new?scopes=repo&description=game-tools";
 const field = "h-9 min-w-0 w-full rounded-md border-2 border-ink-line bg-ink px-2 font-talk text-sm text-paper focus:border-caramel focus:outline-hidden disabled:opacity-40";
 
 type GhForm = { token: string };
@@ -193,7 +194,9 @@ function GitHubForm({ value, busy, expanded, onChange, onConnect, onExpand }: {
       <input value={value.token} onChange={e => onChange({ token: e.target.value })} onKeyDown={enter} type="password" autoComplete="off" placeholder="github_pat_…" aria-label="Token" disabled={busy} autoFocus className={field} />
       <p className="text-sm text-bone">
         <a href={TOKEN_URL} target="_blank" rel="noreferrer" className="text-caramel underline underline-offset-2">Create a fine-grained token</a>{" "}
-        for only this repository with <b>Contents: Read and write</b>. It stays in this browser; disconnect on shared computers.
+        for only this repository with <b>Contents: Read and write</b>. If GitHub doesn't offer {REPO.owner} as the owner, use a{" "}
+        <a href={CLASSIC_TOKEN_URL} target="_blank" rel="noreferrer" className="text-caramel underline underline-offset-2">classic token</a>{" "}
+        with <b>repo</b> instead. It stays in this browser; disconnect on shared computers.
       </p>
       <div className="flex justify-end">
         <Button size="sm" variant="primary" className="px-3" onClick={onConnect} disabled={busy || !value.token.trim()}>
