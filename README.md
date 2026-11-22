@@ -43,10 +43,11 @@ With `pnpm dev`, change the folder under **Data folder** at the bottom left: typ
 `.github/workflows/pages.yml` builds a static version on every push to `main` and publishes it to `https://<user>.github.io/<repo>/`. That version has no file API, so **Data folder** offers:
 
 * **The story folder**: you pick the vault once. Chromium browsers only (Chrome, Edge, Brave…). After a browser restart, click **Allow folder access** once.
-* **This browser**: IndexedDB, works everywhere, but without the vault's own files (scenes). Clearing site data deletes it, so use **Export** now and then.
-* **GitHub**: the vault's repository through GitHub's API, from any browser and any machine. Enter `owner/repo` (branch optional, default branch otherwise) and a [fine-grained token](https://github.com/settings/personal-access-tokens/new) for only that repository with **Contents: Read and write**. Fine-grained tokens only reach repositories of your own account (or an organization you're in), so collaborators on someone else's personal repo need a classic token with the `repo` scope instead (it reaches all their repos), or the repo moves into a free organization. The token stays in that browser; **Disconnect** on shared computers.
+* **GitHub**: the vault's repository (`HASHTAGTB/game`, branch `main`, fixed in `REPO` in `src/shared/lib/github.ts`) through GitHub's API, from any browser and any machine. Paste a [fine-grained token](https://github.com/settings/personal-access-tokens/new) for only that repository with **Contents: Read and write**. The token stays in that browser; **Disconnect** on shared computers.
 
   Nothing is pushed on its own: edits wait in the browser (they survive reloads and going offline) until **Save to GitHub** above **Data folder**, or Ctrl+S, pushes them as one commit to the branch. The panel lists the changed files, takes a commit message and can discard everything. If someone pushed a different version of a file you changed in the meantime, saving stops and asks: **Keep mine and save** or **Take theirs**. Changes others push show up within ~15 s (or click ⟳). Local clones need a `git pull` before editing. Code: `src/shared/lib/github.ts`.
+
+Until one of them is set up (or after **Stop using it** / **Disconnect**), edits are only kept in this browser (IndexedDB), without the vault's own files (scenes); clearing site data deletes them. It isn't offered as a choice of its own.
 
 Switching to a place that has no tool data yet copies the current data there; otherwise its data is loaded.
 

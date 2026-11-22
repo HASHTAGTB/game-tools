@@ -14,6 +14,9 @@ import type { Entry, FileData } from "./workspace";
 
 export type GitHubConfig = { owner: string; repo: string; branch: string; token: string; login: string };
 
+/** The story vault. Fixed: every author works on this repository and branch. */
+export const REPO = { owner: "HASHTAGTB", repo: "game", branch: "main" } as const;
+
 type Pending = { text: string | null; base: string | null; mtime: number };
 type Tree = { head: string; tree: string; files: Map<string, string>; dirs: Set<string>; etag: string | null; at: number };
 
@@ -47,7 +50,10 @@ let treeLoad: Promise<Tree> | null = null;
 const blobs = new Map<string, string>();
 
 export async function getConfig() {
-  if (config === undefined) config = (await kv<GitHubConfig | undefined>("readonly", s => s.get("config"))) ?? null;
+  if (config === undefined) {
+    const saved = await kv<GitHubConfig | undefined>("readonly", s => s.get("config"));
+    config = saved ? { ...saved, ...REPO } : null;
+  }
   return config;
 }
 
@@ -235,28 +241,18 @@ export const github = {
 
 // ---------------------------------------------------------------- connecting
 
-/** "owner/repo" or a github.com URL. */
-export function parseRepo(text: string) {
-  const m = text.trim().replace(/\.git$/, "").match(/(?:github\.com[/:])?([\w.-]+)\/([\w.-]+)\/?$/);
-  return m ? { owner: m[1], repo: m[2] } : null;
-}
-
-/** Checks the token can push to the repo, then remembers it. An empty branch means the repo's default branch. */
-export async function connect(repoText: string, branch: string, token: string): Promise<GitHubConfig> {
-  const r = parseRepo(repoText);
-  if (!r) throw new Error('Enter the repository as "owner/name".');
+/** Checks the token can push to REPO, then remembers it. Unsaved changes are kept (same repo, new token). */
+export async function connect(token: string): Promise<GitHubConfig> {
   token = token.trim();
   if (!token) throw new Error("Paste a token.");
-  const repo = (await call<{ default_branch: string; permissions?: { push?: boolean } }>("GET", `/repos/${r.owner}/${r.repo}`, undefined, {}, token)).data;
+  const path = `/repos/${REPO.owner}/${REPO.repo}`;
+  const repo = (await call<{ permissions?: { push?: boolean } }>("GET", path, undefined, {}, token)).data;
   if (!repo.permissions?.push) throw new Error("This token can read the repository but not write to it. Give it Contents: Read and write.");
-  const b = branch.trim() || repo.default_branch;
-  await call("GET", `/repos/${r.owner}/${r.repo}/git/ref/heads/${encodeURIComponent(b)}`, undefined, {}, token);
+  await call("GET", `${path}/git/ref/heads/${REPO.branch}`, undefined, {}, token);
   const login = (await call<{ login: string }>("GET", "/user", undefined, {}, token).catch(() => null))?.data.login ?? "";
-  const same = config && config.owner === r.owner && config.repo === r.repo && config.branch === b;
-  config = { ...r, branch: b, token, login };
+  config = { ...REPO, token, login };
   await kv("readwrite", s => s.put(config, "config"));
   tree = null;
-  if (!same) await discard();   // pending changes belong to the old repo
   return config;
 }
 

@@ -1,5 +1,5 @@
 import { folderSupported, STATIC } from "./env";
-import { connect, getConfig, github, refresh as refreshGitHub } from "./github";
+import { connect, getConfig, github, refresh as refreshGitHub, REPO } from "./github";
 
 /** The one folder every tool works in, normally the story vault. Paths are relative to it and use "/".
  *  Tool data lives under `.game-tools/<tool>/` (Obsidian ignores dot-folders; git still syncs it). Other paths, like the
@@ -8,7 +8,8 @@ import { connect, getConfig, github, refresh as refreshGitHub } from "./github";
  *  Backends:
  *  - server:  the Vite file API (`pnpm dev`), a folder path on this machine
  *  - folder:  a folder picked with the File System Access API (Chromium only)
- *  - browser: IndexedDB in this browser, a small file store with the same paths (no vault files to read)
+ *  - browser: IndexedDB in this browser, a small file store with the same paths (no vault files to read). Not offered
+ *             as a choice: it's what the static build uses until a folder or GitHub is set up, or after leaving them
  *  - github:  the vault's GitHub repository through the REST API (github.ts); changes wait in this browser until the
  *             user saves them as a commit
  *  The static build (GitHub Pages) has no server, so it offers folder, browser and github. */
@@ -268,10 +269,9 @@ export async function getLocation(): Promise<Location> {
     const root = (await api<{ root: string }>("GET", "/api/config")).root;
     return { kind: k, label: root, ready: true, picked: true, name: root.split(/[\\/]/).filter(Boolean).pop() };
   }
-  if (k === "browser") return { kind: k, label: "This browser", ready: true, picked: true };
+  if (k === "browser") return { kind: k, label: BROWSER_LABEL, ready: true, picked: true };
   if (k === "github") {
-    const c = (await getConfig())!;
-    return { kind: k, label: `GitHub: ${c.owner}/${c.repo} (${c.branch})`, ready: true, picked: true, name: c.repo };
+    return { kind: k, label: githubLabel, ready: true, picked: true, name: REPO.repo };
   }
   if (!rootDir) return { kind: k, label: "No folder picked yet", ready: false, picked: false };
   return { kind: k, label: `Folder: ${rootDir.name}`, ready: await permitted(rootDir), picked: true, name: rootDir.name };
@@ -343,18 +343,20 @@ export async function switchTo(target: "browser" | "folder"): Promise<{ label: s
     await setSetting("backend", target);
     if (picked) await setSetting("root", picked);
   });
-  return { label: target === "folder" ? `Folder: ${picked!.name}` : "This browser", copied };
+  return { label: target === "folder" ? `Folder: ${picked!.name}` : BROWSER_LABEL, copied };
 }
 
-/** Connect to a GitHub repository (checking the token) and use it. If it has no tool data yet, the current data is
+const githubLabel = `GitHub: ${REPO.owner}/${REPO.repo}`;
+/** What browser storage is called: the fallback while nothing else is set up. */
+const BROWSER_LABEL = "Only in this browser";
+
+/** Connect to the GitHub repository (checking the token) and use it. If it has no tool data yet, the current data is
  *  copied there as unsaved changes. */
-export async function switchToGitHub(repo: string, branch: string, token: string) {
-  let label = "";
+export async function switchToGitHub(token: string) {
   const copied = await moveData(async () => {
-    const c = await connect(repo, branch, token);
+    await connect(token);
     kind = "github";
     await setSetting("backend", "github");
-    label = `GitHub: ${c.owner}/${c.repo} (${c.branch})`;
   });
-  return { label, copied };
+  return { label: githubLabel, copied };
 }
