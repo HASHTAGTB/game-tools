@@ -1,20 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BookmarkPlus, Minus, Plus, Redo2, SquarePlus, Undo2, X } from "lucide-react";
 import { cn, uniqueId } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { IconButton } from "@/shared/ui/icon-button";
-import { m, spring } from "@/shared/ui/motion";
+import { AnimatePresence, m, pop, spring } from "@/shared/ui/motion";
 import { Popover } from "@/shared/ui/popover";
 import { Switch } from "@/shared/ui/switch";
 import { Toasts } from "@/shared/ui/toasts";
 import { visible } from "./lib/colors";
 import { runChecks, type Check } from "./lib/checks";
 import { allEvents, castOf, deleteEvent, findEvent, isFiltered, orderBetween, threadsOf } from "./lib/model";
-import { nav } from "./lib/nav";
+import { nav, reveal } from "./lib/nav";
 import type { GroupBy } from "./lib/types";
 import { chapterIdFor, useTimeline } from "./state";
 import { Board } from "./components/Board";
 import { ChecksButton } from "./components/Checks";
+import { FindButton } from "./components/Find";
 import { Inspector } from "./components/Inspector";
 import { Sidebar } from "./components/Sidebar";
 
@@ -34,8 +35,9 @@ export default function Timeline() {
       if (mod && e.key.toLowerCase() === "y" && !typing(e.target)) { e.preventDefault(); st.redo(); return; }
       if (typing(e.target)) { if (e.key === "Escape") (e.target as HTMLElement).blur(); return; }
       if (e.key === "Escape") st.select(null);
-      // only events: chapters, threads and characters are deleted from their panel, with a confirm
-      if ((e.key === "Delete" || e.key === "Backspace") && st.selection?.kind === "event") {
+      // only events: chapters, threads and characters are deleted from their panel, with a confirm. Not Backspace:
+      // too easy to hit right after leaving a text field.
+      if (e.key === "Delete" && st.selection?.kind === "event") {
         const id = st.selection.id;
         st.edit(d => deleteEvent(d.chapters, id));
         st.select(null);
@@ -55,6 +57,16 @@ export default function Timeline() {
     s.edit(d => { d.chapters.push({ version: 2, id, name: "New chapter", order, columns: ["", "", ""], events: [] }); });
     s.select({ kind: "chapter", id });
     setTimeout(() => nav.toChapter(id), 50);
+  };
+
+  const goToCheck = (c: Check) => {
+    if (c.go === "thread-lanes") return s.setFilter({ groupBy: "threads" });
+    if (c.target?.kind === "event") return reveal(c.target.id);
+    if (c.target?.kind === "chapter") {
+      const id = c.target.id;
+      if (s.folded.has(id)) s.toggleFolded(id);
+      setTimeout(() => nav.toChapter(id), 60);
+    }
   };
 
   const checks = useMemo(() => runChecks(doc.chapters, doc.roster, doc.threads), [doc]);
@@ -87,10 +99,18 @@ export default function Timeline() {
           <span className="mx-2 h-5 w-px bg-ink-line" />
           <Button size="sm" onClick={newChapter} disabled={!loaded}><SquarePlus className="h-4 w-4" />New chapter</Button>
           <span className="flex-1" />
-          {loaded && <ChecksButton checks={checks} onGo={c => { if (c.target?.kind === "event") nav.toEvent(c.target.id); }} />}
+          {loaded && <FindButton />}
+          {loaded && <ChecksButton checks={checks} onGo={goToCheck} />}
           <span className="ml-3 hidden font-talk text-[12px] text-taupe 2xl:inline">{doc.chapters.length} chapters · {events} events</span>
         </div>
-        <FocusBar />
+        <AnimatePresence initial={false}>
+          {isFiltered(s.filter) && (
+            <m.div key="focus" className="shrink-0 overflow-hidden" transition={spring.smooth}
+              initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
+              <FocusBar />
+            </m.div>
+          )}
+        </AnimatePresence>
 
         {conflicts.length > 0 && (
           <div className="shrink-0 space-y-2 border-b-2 border-coral bg-coral/10 px-4 py-2.5">
@@ -158,11 +178,14 @@ function FocusBar() {
   const { doc, filter, viewId, setFilter, edit } = useTimeline();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  if (!isFiltered(filter)) return null;
+  // while the bar closes, keep showing what was focused instead of an empty bar
+  const last = useRef(filter);
+  if (isFiltered(filter)) last.current = filter;
+  const shown = last.current;
   const cast = castOf(doc.roster, doc.chapters), threads = threadsOf(doc.threads, doc.chapters);
   const chips = [
-    ...filter.chars.map(id => ({ key: "chars" as const, id, name: cast.find(c => c.id === id)?.name ?? id, color: cast.find(c => c.id === id)?.color ?? "#9a8f86" })),
-    ...filter.threads.map(id => ({ key: "threads" as const, id, name: threads.find(t => t.id === id)?.name ?? id, color: threads.find(t => t.id === id)?.color ?? "#9a8f86" })),
+    ...shown.chars.map(id => ({ key: "chars" as const, id, name: cast.find(c => c.id === id)?.name ?? id, color: cast.find(c => c.id === id)?.color ?? "#9a8f86" })),
+    ...shown.threads.map(id => ({ key: "threads" as const, id, name: threads.find(t => t.id === id)?.name ?? id, color: threads.find(t => t.id === id)?.color ?? "#9a8f86" })),
   ];
   const view = doc.views.find(v => v.id === viewId);
   const save = () => {
@@ -175,19 +198,21 @@ function FocusBar() {
     setOpen(false);
   };
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-ink-line/60 bg-ink-2/50 px-4 py-1.5">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-ink-line/60 bg-ink-2/50 px-4 py-1.5">
       <span className="font-sans text-[14px] text-taupe">{view ? view.name : "Focus"}</span>
       <div className="flex flex-wrap gap-1">
+        <AnimatePresence mode="popLayout" initial={false}>
         {chips.map(c => (
-          <span key={`${c.key}:${c.id}`} className="flex items-center gap-1 rounded-full border-2 py-px pl-2 pr-0.5 font-sans text-[13px] text-paper" style={{ borderColor: visible(c.color) }}>
+          <m.span key={`${c.key}:${c.id}`} layout {...pop} className="flex items-center gap-1 rounded-full border-2 py-px pl-2 pr-0.5 font-sans text-[13px] text-paper" style={{ borderColor: visible(c.color) }}>
             {c.name}
             <button aria-label={`Drop ${c.name}`} onClick={() => setFilter({ [c.key]: filter[c.key].filter(x => x !== c.id) }, null)}
               className="grid h-4 w-4 place-items-center rounded-full text-taupe hover:text-paper"><X className="h-3 w-3" /></button>
-          </span>
+          </m.span>
         ))}
+        </AnimatePresence>
       </div>
       <label className="flex items-center gap-2 font-talk text-[13px] text-bone">
-        <Switch checked={filter.hideOthers} onCheckedChange={v => setFilter({ hideOthers: v })} />
+        <Switch checked={shown.hideOthers} onCheckedChange={v => setFilter({ hideOthers: v })} />
         Hide the rest
       </label>
       <span className="flex-1" />

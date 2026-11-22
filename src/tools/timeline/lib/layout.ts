@@ -9,6 +9,12 @@ export const CHAPTER_PAD = 8;
 /** Width of a folded chapter. */
 export const STRIP_W = 34;
 export const BASE_COL_W = 176;
+export const MIN_ROW_H = 26;
+
+/** Row height where a chapter needs `n` rows in one lane: a crowded lane squashes its cards rather than growing
+ *  to n full rows (which would make it that tall across the whole story). */
+export const rowHeight = (n: number) => (n <= 1 ? ROW_H : Math.max(MIN_ROW_H, Math.floor((ROW_H * 1.5) / n)));
+const cardGap = (n: number) => (n <= 1 ? ROW_H - CARD_H : 4);
 
 /** A lane is a character, a thread, everything ("none" grouping), or the catch-all for events with no character /
  *  no thread (`id` null). */
@@ -83,15 +89,16 @@ export function layout(chapters: Chapter[], lanes: LaneDef[], filter: Filter, co
   }
   const chapterOf = new Map(placed.map(p => [p.chapter.id, p]));
 
-  // lanes along y: pack each chapter's cards into rows, the tallest chapter sets the lane height
+  // lanes along y: pack each chapter's cards into rows; the chapter that needs the most room sets the lane height
   const out: Lane[] = [];
   const cards: Card[] = [];
   const primary = new Map<string, Card>();
   let y = 0;
   for (const lane of liveLanes) {
     const mine = items.filter(i => i.lane.key === lane.key);
-    let rows = 1;
+    let inner = ROW_H;
     const rowOf = new Map<StoryEvent, number>();
+    const rowsIn = new Map<string, number>();
     for (const pc of placed) {
       if (pc.folded) continue;
       const evs = mine.filter(i => i.chapter === pc.chapter).map(i => i.event).sort((a, b) => a.col - b.col || (b.span ?? 1) - (a.span ?? 1));
@@ -102,9 +109,10 @@ export function layout(chapters: Chapter[], lanes: LaneDef[], filter: Filter, co
         ends[r] = e.col + (e.span ?? 1);
         rowOf.set(e, r);
       }
-      rows = Math.max(rows, ends.length);
+      rowsIn.set(pc.chapter.id, ends.length);
+      inner = Math.max(inner, ends.length * rowHeight(ends.length));
     }
-    const h = rows * ROW_H + LANE_PAD * 2;
+    const h = inner + LANE_PAD * 2;
     for (const it of mine) {
       const pc = chapterOf.get(it.chapter.id)!;
       if (pc.folded) continue;
@@ -112,9 +120,10 @@ export function layout(chapters: Chapter[], lanes: LaneDef[], filter: Filter, co
       if (!cols.length) continue;
       const cx = cols[0].x, cw = cols.reduce((s, c) => s + c.w, 0);
       if (cw <= 0) continue;
+      const n = rowsIn.get(it.chapter.id) ?? 1, rh = rowHeight(n), gap = cardGap(n);
       const card: Card = {
         event: it.event, chapter: it.chapter, lane,
-        box: { x: cx + 3, y: y + LANE_PAD + rowOf.get(it.event)! * ROW_H + (ROW_H - CARD_H) / 2, w: cw - 6, h: CARD_H },
+        box: { x: cx + 3, y: y + LANE_PAD + rowOf.get(it.event)! * rh + gap / 2, w: cw - 6, h: rh - gap },
         dim: !hide && !matches(it.event, filter),
       };
       cards.push(card);

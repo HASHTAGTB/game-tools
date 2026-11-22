@@ -164,6 +164,8 @@ export const useTimeline = create<State & Actions>()((set, get) => {
       const after = structuredClone(before);
       fn(after);
       after.chapters = sortChapters(after.chapters);
+      // nothing changed (a resize drag over the same column, an arrow that already exists): no save, no undo step
+      if (JSON.stringify(after) === JSON.stringify(before)) return;
       if (JSON.stringify(after.roster) !== JSON.stringify(before.roster)) shared.add(ROSTER_PATH);
       if (JSON.stringify(after.threads) !== JSON.stringify(before.threads)) shared.add(THREADS_PATH);
       if (JSON.stringify(after.views) !== JSON.stringify(before.views)) shared.add(VIEWS_PATH);

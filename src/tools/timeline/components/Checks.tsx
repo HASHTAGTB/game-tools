@@ -36,7 +36,7 @@ export function ChecksButton({ checks, onGo }: { checks: Check[]; onGo: (c: Chec
           const Icon = ICON[c.level];
           return (
             <li key={i}>
-              <button disabled={!c.target} onClick={() => { if (c.target) { select(c.target); onGo(c); setOpen(false); } }}
+              <button disabled={!c.target && !c.go} onClick={() => { if (c.target) select(c.target); onGo(c); setOpen(false); }}
                 className="flex w-full items-start gap-2 px-4 py-1.5 text-left font-talk text-[13px] leading-snug text-bone enabled:hover:bg-ink-3 enabled:hover:text-paper">
                 <Icon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", TONE[c.level])} />
                 <span className="min-w-0 flex-1 select-text">{c.message}</span>

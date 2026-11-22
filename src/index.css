@@ -128,6 +128,44 @@ details > summary::-webkit-details-marker { display: none; }
   margin-bottom: -4px; /* sit on the box border, like the game's 5px overlap */
 }
 
+/* ------------------------------------------------------------------ timeline board
+   Everything placed by the layout (cards, chapter heads, rules, lane labels) moves on one curve,
+   so folding, focusing or regrouping reads as a single movement. `.board-still` (zooming, dragging) turns it off. */
+.board-move {
+  transition-property: left, top, width, height, opacity, scale, background-color, box-shadow;
+  transition-duration: 300ms, 300ms, 300ms, 300ms, 200ms, 200ms, 120ms, 150ms;
+  transition-timing-function: cubic-bezier(.22, .8, .24, 1);
+}
+.board-still .board-move {
+  transition-property: opacity, background-color, box-shadow;
+  transition-duration: 200ms, 120ms, 150ms;
+}
+/* New things (an added event, lanes that appear) grow in from nothing. */
+@starting-style {
+  .board-enter { opacity: 0; scale: .94; }
+}
+
+/* The signature moment: selecting an event draws its arrows out of it, one after another,
+   and each event at the other end pulses when its arrow arrives. */
+.link-draw {
+  stroke-dasharray: 1 1;
+  animation: link-draw 520ms cubic-bezier(.3, .6, .2, 1) var(--d, 0ms) both;
+}
+.link-head { animation: link-fade 160ms ease-out calc(var(--d, 0ms) + 420ms) both; }
+.link-arrive { animation: link-arrive 700ms ease-out calc(var(--d, 0ms) + 440ms); }
+@keyframes link-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes link-fade { from { opacity: 0; } }
+@keyframes link-arrive {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--c) 80%, transparent); }
+  100% { box-shadow: 0 0 0 10px transparent; }
+}
+/* "You are here" after jumping to an event or chapter. */
+.board-ping { animation: board-ping 900ms ease-out 250ms; }
+@keyframes board-ping {
+  0% { box-shadow: 0 0 0 2px #faf5ef, 0 0 0 2px #faf5ef; }
+  100% { box-shadow: 0 0 0 2px #faf5ef, 0 0 0 16px transparent; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }

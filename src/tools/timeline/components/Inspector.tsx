@@ -3,6 +3,7 @@ import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Confirm } from "@/shared/ui/confirm";
 import { IconButton } from "@/shared/ui/icon-button";
+import { fade, m, spring } from "@/shared/ui/motion";
 import { Section } from "@/shared/ui/section";
 import { visible } from "../lib/colors";
 import { allEvents, castOf, deleteEvent, findEvent, moveEvent, orderBetween, threadsOf } from "../lib/model";
@@ -14,8 +15,12 @@ export function Inspector() {
   const sel = useTimeline(s => s.selection);
   return (
     <aside className="flex min-h-0 flex-col overflow-y-auto border-l border-ink-line/60 px-5 py-6">
-      {!sel ? <Help /> : sel.kind === "event" ? <EventPanel id={sel.id} /> : sel.kind === "chapter" ? <ChapterPanel id={sel.id} />
-        : sel.kind === "thread" ? <ThreadPanel id={sel.id} /> : sel.kind === "view" ? <ViewPanel id={sel.id} /> : <CharPanel id={sel.id} />}
+      {/* a new panel slides in a little, so it's clear the panel now shows something else */}
+      <m.div key={sel ? `${sel.kind}:${sel.id}` : "help"} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}
+        transition={{ ...spring.snappy, opacity: fade.in }}>
+        {!sel ? <Help /> : sel.kind === "event" ? <EventPanel id={sel.id} /> : sel.kind === "chapter" ? <ChapterPanel id={sel.id} />
+          : sel.kind === "thread" ? <ThreadPanel id={sel.id} /> : sel.kind === "view" ? <ViewPanel id={sel.id} /> : <CharPanel id={sel.id} />}
+      </m.div>
     </aside>
   );
 }
@@ -25,18 +30,41 @@ function Close() {
   return <IconButton icon={X} label="Close" kbd="Esc" onClick={() => select(null)} />;
 }
 
+const Key = ({ children }: { children: string }) => (
+  <kbd className="rounded-sm border border-ink-line bg-ink-2 px-1 font-sans text-[12px] text-paper">{children}</kbd>
+);
+
+/** What you can do on the board, as gesture → result, so it can be scanned rather than read. */
+const GESTURES: [React.ReactNode, string][] = [
+  ["Double-click a lane", "Add an event there"],
+  ["Drag a card", "Move it to another column or lane"],
+  ["Drag its right edge", "Make it last longer"],
+  ["Drag its dot onto a card", "Draw an arrow"],
+  ["Click a column label", "Name it: \u201cMo\u201d, \u201cafter school\u201d"],
+  ["Click a name on the left", "Focus on that character or thread"],
+  [<><Key>Ctrl</Key> + scroll</>, "Wider or narrower columns"],
+  [<><Key>Ctrl</Key> <Key>K</Key></>, "Find an event"],
+  [<><Key>Ctrl</Key> <Key>Z</Key></>, "Undo (add Shift to redo)"],
+  [<Key>Del</Key>, "Delete the selected event"],
+];
+
 function Help() {
   return (
-    <div className="space-y-4 font-talk text-sm text-bone">
-      <p className="font-sans text-xl text-paper">Timeline</p>
-      <ul className="space-y-2 text-[13.5px] leading-snug">
-        <li><b className="text-paper">Chapters</b> are stretches of story time, left to right. Each is a row of <b className="text-paper">columns</b>: events in the same column happen at the same time. Click a column label to name it ("Mo", "after school").</li>
-        <li><b className="text-paper">Threads</b> are storylines that run across chapters. Group the lanes by character or by thread at the top.</li>
-        <li>Click characters and threads on the left to <b className="text-paper">focus</b> on them; save that as a view everyone can use.</li>
-        <li><b className="text-paper">Double-click</b> a lane to add an event. <b className="text-paper">Drag</b> it to another column or lane, its right edge to make it last longer, its dot onto another event to draw an arrow.</li>
-        <li><b className="text-paper">Ctrl + scroll</b> zooms, <b className="text-paper">Ctrl+Z</b> / <b className="text-paper">Ctrl+Shift+Z</b> undo and redo, <b className="text-paper">Del</b> deletes the selected event.</li>
-      </ul>
-      <p className="text-[13px] text-taupe">Changes save on their own (on GitHub: when you click Save to GitHub). If someone else changed a file, it reloads, or asks when you had changes in it too.</p>
+    <div className="space-y-5 font-talk text-bone">
+      <Section title="Timeline" />
+      <p className="text-[13.5px] leading-snug">
+        Chapters run left to right. Inside a chapter, events in the same <b className="font-semibold text-paper">column</b> happen
+        at the same time. <b className="font-semibold text-paper">Threads</b> are storylines across chapters.
+      </p>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-[13px] leading-snug">
+        {GESTURES.map(([g, what], i) => (
+          <div key={i} className="contents">
+            <dt className="whitespace-nowrap font-semibold text-paper">{g}</dt>
+            <dd className="text-bone">{what}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="text-[12.5px] leading-snug text-taupe">Changes save on their own, except on GitHub: there, use Save to GitHub. If someone else changed a file, it reloads, or asks first when you had changes in it too.</p>
     </div>
   );
 }
@@ -76,7 +104,11 @@ function EventPanel({ id }: { id: string }) {
       </Field>
       <Field label="When">
         <div className="grid grid-cols-[1fr_auto] gap-2">
-          <select value={chapter.id} onChange={e => edit(d => moveEvent(d.chapters, id, e.target.value, 0))} className={inputCls}>
+          <select value={chapter.id} onChange={e => {
+            // keep its column, as far as the other chapter has columns
+            const to = e.target.value, cols = doc.chapters.find(c => c.id === to)?.columns.length ?? 1;
+            edit(d => moveEvent(d.chapters, id, to, Math.min(event.col, cols - 1)));
+          }} className={inputCls}>
             {doc.chapters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           <div className="flex items-center">

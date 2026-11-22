@@ -78,8 +78,8 @@ export function Sidebar() {
 function Group({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="mb-2 flex items-baseline justify-between gap-2 font-sans text-[13px] uppercase tracking-wider text-taupe">
-        {title}{hint && <span className="font-talk text-[11px] normal-case tracking-normal text-taupe/80">{hint}</span>}
+      <p className="mb-2 flex items-baseline justify-between gap-2 font-sans text-[15px] text-taupe">
+        {title}{hint && <span className="font-talk text-[11px] text-taupe/80">{hint}</span>}
       </p>
       <ul className="border-l-2 border-bone/40">{children}</ul>
     </div>
@@ -92,7 +92,7 @@ function Item({ label, color, active, faded, selected, onClick, onEdit, editLabe
   return (
     <li className="group/item relative flex items-center">
       {(active || color) && (
-        <span aria-hidden className={cn("absolute left-[-3px] top-1.5 h-[calc(100%-12px)] w-1 rounded-full transition-opacity", !active && "opacity-40")}
+        <span aria-hidden className={cn("absolute left-[-3px] top-1.5 h-[calc(100%-12px)] w-1 rounded-full transition-[opacity,scale] duration-200 ease-out", !active && "scale-y-50 opacity-40")}
           style={{ background: color ? visible(color) : "var(--color-paper)" }} />
       )}
       <button onClick={onClick} aria-pressed={active}
