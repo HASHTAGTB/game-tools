@@ -3,7 +3,7 @@
 Browser app (React + Base UI + Motion + Tailwind, served by Vite) with tools for the visual novel:
 
 * **Prompt Builder**: build Danbooru-tag character prompts. Pick a variation per category, switch extras on or off, and copy the finished prompt into any UI.
-* **Timeline**: the story's chronology. One lane per character, arcs on top, connections between events, scene files, checks and who-knows-what.
+* **Timeline**: the story's chronology. Chapters of ordered columns, events on character or thread lanes, storylines (threads), saved views and arrows between events.
 
 ```
 pnpm install
@@ -56,37 +56,21 @@ Build the static version locally with `VITE_STATIC=1 BASE=/<repo>/ pnpm build`.
 Files (in the data folder):
 
 ```
-.game-tools/characters.json        the cast, shared by all tools: id, name, color, birthday, narrator variable
-.game-tools/timeline/arcs/<id>.json  one arc: its start, events and the connections that start in it
-.game-tools/timeline/facts.json    facts characters can know (secrets, news) for "who knows what"
+.game-tools/characters.json                 the cast, shared by all tools: id, name, color
+.game-tools/timeline/chapters/<id>.json     one chapter: name, order, "when" label, column labels, its events
+.game-tools/timeline/threads.json           storylines that run across chapters: id, name, color, notes
+.game-tools/timeline/views.json             saved views (focus + lane grouping), shared by everyone
 ```
 
-One file per arc keeps git merges small when several people edit at once. The tool saves on its own, looks for changes on disk every few seconds (e.g. after a git pull) and reloads them. If you had unsaved changes in the same file it asks: **Load theirs** or **Keep mine**.
+One file per chapter keeps git merges small when several people edit at once. The tool saves on its own, looks for changes on disk every few seconds (e.g. after a git pull) and reloads them. If you had unsaved changes in the same file it asks: **Load theirs** or **Keep mine**.
 
-**Time.** Every event and arc has a *when*, which is one of:
+**Model.** Time is order, not maths. **Chapters** are stretches of story time, left to right (moving one only renumbers its `order`). Each chapter is a row of **columns**; events in the same column happen at the same time, and an event can span several. Dates are only labels: the chapter's `when` ("07. – 11.04.2025") and the column labels ("Mo", "after school"). An **event** has a title, an optional note, the characters who do something important in it (it shows on each of their lanes), its threads, and arrows (`links`) to other events in any chapter. **Threads** are storylines across chapters ("Love", "Kaishis Zerfall").
 
-* **Date**: a fixed in-world date. Its format is its precision: `2025`, `2025-04`, `2025-04-07` or `2025-04-07T10:00`.
-* **After** an event or arc, plus a gap (`4h`, `2d`, `1d6h`).
-* **With** an event or arc: its start plus an offset (negative is earlier).
+**Lanes and focus.** The lanes are grouped by character, by thread, or form a single lane (toolbar). Clicking characters and threads in the sidebar focuses on them: everything else is dimmed, or hidden with **Hide the rest** (then empty columns and chapters fold away). **Save as view** stores the focus for everyone; views are listed at the top of the sidebar. The current focus, zoom and folded chapters are remembered per browser only.
 
-So a plan can start vague ("2 days after X") and be pinned to dates later; everything timed from it moves along. Events last 12h unless set. Dashed borders mean the time is only known to the month or year, or not tied to a date at all. The scale is not linear: time with events is drawn at the zoom level, empty stretches shrink to a hatched gap with a "+3 wks" label.
+**Using it.** Double-click a lane to add an event (it gets that lane's character or thread, plus whatever is focused). Drag an event to another column or lane, its right edge to make it span more columns, its dot onto another event to draw an arrow. Click a column label to rename it; hover it to insert a column after it or remove it while empty. Ctrl+scroll changes the column width, Ctrl+Z / Ctrl+Shift+Z undo and redo, Del deletes the selected event.
 
-**Using it.** Double-click a lane to add an event. Drag an event to move it in time, onto another lane to give it to that character, its right edge to change its length, and its dot onto another event to connect them. Ctrl+scroll zooms, Ctrl+Z / Ctrl+Shift+Z undo and redo, Del deletes. Hidden and collapsed lanes and the zoom are remembered per browser only.
-
-**Scenes.** With a vault as data folder, events link to scene files in `CANON/03_Story/02_Scenes/`. The tool reads (never writes) their front matter (`status`, `renpy`, `owner`, `characters`), the first `set_date(...)` and the `narrator = …` lines, and shows them as badges, POV and date ("Use this date" pins the event to it). An arc's panel lists its folder's scenes and can add one as an event. Scenes no event points at are listed when nothing is selected.
-
-**Checks** (toolbar): broken references and cycles, a character in two events at once (where both are known to the day), events before their arc, connections leading back in time, scene dates that don't match, scenes told by someone not on the event, and characters acting on a fact before they learn it.
-
-**Who knows what.** An event can say which facts its characters *find out* there and which they *act on*. Select a fact to see who learns it when; the events that learn it are ringed green, those acting on it yellow.
-
-**Importing the old timeline** (once, from the vault's `timeline.md` files):
-
-```
-node scripts/import-timeline.ts ~/doc/VN --out /tmp/look   # look at the result first
-node scripts/import-timeline.ts ~/doc/VN                   # write into the vault's .game-tools
-```
-
-It keeps the old layout rules (each line follows the previous one of that character, `+gap`, `(length)`, `while:`/`offset:`), pins arcs whose name says when they happen (the `PINS` table in the script), fixes known broken `prev:` links (`FIXES`), folds empty spacer lines into gaps, and prints what it did.
+**Checks** (toolbar): arrows to deleted events, untitled events, events without characters, unknown character or thread ids, threads without events.
 
 ## Prompt Builder model
 

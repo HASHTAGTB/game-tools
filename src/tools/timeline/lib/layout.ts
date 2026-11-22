@@ -1,91 +1,139 @@
 import type { RosterCharacter } from "@/shared/lib/roster";
-import type { Resolved, Span } from "./resolve";
-import type { Scale } from "./scale";
-import type { Arc, StoryEvent } from "./types";
+import { matches } from "./model";
+import type { Chapter, Filter, StoryEvent, Thread } from "./types";
 
-export const ROW_H = 64;      // one sub-row of a lane
-export const CARD_H = 54;
+export const ROW_H = 70;
+export const CARD_H = 62;
 export const LANE_PAD = 6;
-export const ARC_ROW_H = 26;
-export const MIN_CARD_W = 28;
+export const CHAPTER_PAD = 8;
+/** Width of a folded chapter. */
+export const STRIP_W = 34;
+export const BASE_COL_W = 176;
+
+/** A lane is a character, a thread, everything ("none" grouping), or the catch-all for events with no character /
+ *  no thread (`id` null). */
+export type LaneDef = { key: string; id: string | null; name: string; color: string };
 
 export type Box = { x: number; y: number; w: number; h: number };
-export type PlacedEvent = { event: StoryEvent; arc: Arc; span: Span; lane: string; box: Box };
-export type PlacedArc = { arc: Arc; span: Span; box: Box };
-export type Lane = { char: RosterCharacter; y: number; h: number; rows: number; collapsed: boolean };
+export type PlacedColumn = { i: number; x: number; w: number; label: string };
+export type PlacedChapter = { chapter: Chapter; x: number; w: number; columns: PlacedColumn[]; folded: boolean };
+export type Lane = LaneDef & { y: number; h: number };
+export type Card = { event: StoryEvent; chapter: Chapter; lane: LaneDef; box: Box; dim: boolean };
 
 export type Layout = {
+  chapters: PlacedChapter[];
   lanes: Lane[];
-  events: PlacedEvent[];
-  /** Box of each event on the first lane it shows on (where connections attach). */
-  primary: Map<string, PlacedEvent>;
-  arcs: PlacedArc[];
-  arcBandH: number;
+  cards: Card[];
+  /** Each event's first card, where arrows attach. */
+  primary: Map<string, Card>;
+  width: number;
   height: number;
 };
 
-/** Greedy packing: each item goes into the first row whose last item ended before it starts. */
-function pack<T>(items: T[], x0: (t: T) => number, x1: (t: T) => number, gap = 4): Map<T, number> {
-  const ends: number[] = [];
-  const out = new Map<T, number>();
-  for (const it of [...items].sort((a, b) => x0(a) - x0(b))) {
-    let r = ends.findIndex(e => e + gap <= x0(it));
-    if (r < 0) { r = ends.length; ends.push(0); }
-    ends[r] = x1(it);
-    out.set(it, r);
-  }
-  return out;
+export const UNSORTED = "__none";
+
+export function laneDefs(filter: Filter, cast: RosterCharacter[], threads: Thread[], events: StoryEvent[]): LaneDef[] {
+  if (filter.groupBy === "none") return [{ key: "all", id: null, name: "Story", color: "var(--color-caramel)" }];
+  const byChar = filter.groupBy === "chars";
+  const items = byChar ? cast : threads;
+  const picked = byChar ? filter.chars : filter.threads;
+  const lanes: LaneDef[] = items
+    .filter(x => !picked.length || picked.includes(x.id))
+    .map(x => ({ key: x.id, id: x.id, name: x.name, color: x.color }));
+  if (events.some(e => (byChar ? e.chars : e.threads).length === 0))
+    lanes.push({ key: UNSORTED, id: null, name: byChar ? "No character" : "No thread", color: "var(--color-taupe)" });
+  return lanes;
 }
 
-/** Characters not in the roster but used by events still get a lane (grey), at the end. */
-export function laneChars(roster: RosterCharacter[], arcs: Arc[]): RosterCharacter[] {
-  const known = new Set(roster.map(c => c.id));
-  const extra: RosterCharacter[] = [];
-  for (const a of arcs) for (const e of a.events) for (const c of e.chars) {
-    if (!known.has(c)) { known.add(c); extra.push({ id: c, name: c, color: "#9a8f86" }); }
-  }
-  return [...roster, ...extra];
+/** Which lanes an event shows on. */
+export function lanesOf(e: StoryEvent, filter: Filter, lanes: LaneDef[]): LaneDef[] {
+  if (filter.groupBy === "none") return lanes;
+  const ids = filter.groupBy === "chars" ? e.chars : e.threads;
+  if (!ids.length) return lanes.filter(l => l.key === UNSORTED);
+  return lanes.filter(l => l.id && ids.includes(l.id));
 }
 
-export function layout(arcs: Arc[], chars: RosterCharacter[], res: Resolved, scale: Scale, hidden: Set<string>, collapsed: Set<string>): Layout {
-  // arc band
-  const arcItems = arcs.flatMap(arc => {
-    const span = res.arcs.get(arc.id);
-    return span ? [{ arc, span, x: scale.x(span.start), w: Math.max(scale.x(span.end) - scale.x(span.start), MIN_CARD_W) }] : [];
-  });
-  const arcRows = pack(arcItems, a => a.x, a => a.x + Math.max(a.w, a.arc.name.length * 7 + 16));
-  const arcRowCount = Math.max(1, ...[...arcRows.values()].map(r => r + 1));
-  const placedArcs: PlacedArc[] = arcItems.map(a => ({ arc: a.arc, span: a.span, box: { x: a.x, y: arcRows.get(a)! * ARC_ROW_H, w: a.w, h: ARC_ROW_H - 4 } }));
-  const arcBandH = arcRowCount * ARC_ROW_H + 8;
+export function layout(chapters: Chapter[], lanes: LaneDef[], filter: Filter, colW: number, folded: Set<string>): Layout {
+  const hide = filter.hideOthers;
+  const shown = (e: StoryEvent) => !hide || matches(e, filter);
 
-  // lanes
-  const lanes: Lane[] = [];
-  const events: PlacedEvent[] = [];
-  const primary = new Map<string, PlacedEvent>();
+  // which lanes have something to show (hidden mode drops empty ones)
+  const items = chapters.flatMap(chapter => chapter.events.filter(shown).flatMap(event =>
+    lanesOf(event, filter, lanes).map(lane => ({ chapter, event, lane }))));
+  const used = new Set(items.map(i => i.lane.key));
+  const liveLanes = hide ? lanes.filter(l => used.has(l.key)) : lanes;
+
+  // chapters and columns along x
+  let x = 0;
+  const placed: PlacedChapter[] = [];
+  for (const chapter of chapters) {
+    const covered = new Set<number>();
+    for (const e of chapter.events) if (shown(e)) for (let c = e.col; c < e.col + (e.span ?? 1); c++) covered.add(c);
+    const isFolded = folded.has(chapter.id) || (hide && covered.size === 0);
+    const columns: PlacedColumn[] = [];
+    let cx = x + CHAPTER_PAD;
+    chapter.columns.forEach((label, i) => {
+      const w = isFolded || (hide && !covered.has(i)) ? 0 : colW;
+      columns.push({ i, x: cx, w, label });
+      cx += w;
+    });
+    const w = isFolded ? STRIP_W : cx - x + CHAPTER_PAD;
+    placed.push({ chapter, x, w, columns, folded: isFolded });
+    x += w;
+  }
+  const chapterOf = new Map(placed.map(p => [p.chapter.id, p]));
+
+  // lanes along y: pack each chapter's cards into rows, the tallest chapter sets the lane height
+  const out: Lane[] = [];
+  const cards: Card[] = [];
+  const primary = new Map<string, Card>();
   let y = 0;
-  for (const char of chars) {
-    if (hidden.has(char.id)) continue;
-    const items = arcs.flatMap(arc => arc.events.filter(e => e.chars.includes(char.id)).flatMap(event => {
-      const span = res.events.get(event.id);
-      if (!span) return [];
-      const x = scale.x(span.start);
-      return [{ event, arc, span, x, w: Math.max(scale.x(span.end) - x, MIN_CARD_W) }];
-    }));
-    const isCollapsed = collapsed.has(char.id);
-    const rows = pack(items, i => i.x, i => i.x + i.w);
-    const rowCount = Math.max(1, ...[...rows.values()].map(r => r + 1));
-    const h = isCollapsed ? 28 : rowCount * ROW_H + LANE_PAD * 2;
-    for (const it of items) {
-      const r = isCollapsed ? 0 : rows.get(it)!;
-      const box = isCollapsed
-        ? { x: it.x, y: y + 6, w: it.w, h: 16 }
-        : { x: it.x, y: y + LANE_PAD + r * ROW_H + (ROW_H - CARD_H) / 2, w: it.w, h: CARD_H };
-      const p: PlacedEvent = { event: it.event, arc: it.arc, span: it.span, lane: char.id, box };
-      events.push(p);
-      if (!primary.has(it.event.id) || it.event.chars[0] === char.id) primary.set(it.event.id, p);
+  for (const lane of liveLanes) {
+    const mine = items.filter(i => i.lane.key === lane.key);
+    let rows = 1;
+    const rowOf = new Map<StoryEvent, number>();
+    for (const pc of placed) {
+      if (pc.folded) continue;
+      const evs = mine.filter(i => i.chapter === pc.chapter).map(i => i.event).sort((a, b) => a.col - b.col || (b.span ?? 1) - (a.span ?? 1));
+      const ends: number[] = [];
+      for (const e of evs) {
+        let r = ends.findIndex(end => end <= e.col);
+        if (r < 0) { r = ends.length; ends.push(0); }
+        ends[r] = e.col + (e.span ?? 1);
+        rowOf.set(e, r);
+      }
+      rows = Math.max(rows, ends.length);
     }
-    lanes.push({ char, y, h, rows: rowCount, collapsed: isCollapsed });
+    const h = rows * ROW_H + LANE_PAD * 2;
+    for (const it of mine) {
+      const pc = chapterOf.get(it.chapter.id)!;
+      if (pc.folded) continue;
+      const cols = pc.columns.slice(it.event.col, it.event.col + (it.event.span ?? 1));
+      if (!cols.length) continue;
+      const cx = cols[0].x, cw = cols.reduce((s, c) => s + c.w, 0);
+      if (cw <= 0) continue;
+      const card: Card = {
+        event: it.event, chapter: it.chapter, lane,
+        box: { x: cx + 3, y: y + LANE_PAD + rowOf.get(it.event)! * ROW_H + (ROW_H - CARD_H) / 2, w: cw - 6, h: CARD_H },
+        dim: !hide && !matches(it.event, filter),
+      };
+      cards.push(card);
+      if (!primary.has(it.event.id)) primary.set(it.event.id, card);
+    }
+    out.push({ ...lane, y, h });
     y += h;
   }
-  return { lanes, events, primary, arcs: placedArcs, arcBandH, height: y };
+  return { chapters: placed, lanes: out, cards, primary, width: x, height: y };
+}
+
+/** The chapter column under `x`, if any (folded chapters and hidden columns aren't targets). */
+export function columnAt(lay: Layout, x: number): { chapter: Chapter; col: number } | null {
+  for (const pc of lay.chapters) {
+    if (pc.folded || x < pc.x || x >= pc.x + pc.w) continue;
+    const vis = pc.columns.filter(c => c.w > 0);
+    if (!vis.length) return null;
+    const hit = vis.find(c => x >= c.x && x < c.x + c.w) ?? (x < vis[0].x ? vis[0] : vis[vis.length - 1]);
+    return { chapter: pc.chapter, col: hit.i };
+  }
+  return null;
 }

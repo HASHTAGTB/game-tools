@@ -6,10 +6,6 @@ export type RosterCharacter = {
   name: string;
   /** Hex color for lanes, cards and links. */
   color: string;
-  /** In-world birthday, "2007-11-30" (or "11-30" if only the day is known). */
-  birthday?: string;
-  /** Ren'Py narrator variable used when the scene is told from this character's view, e.g. "satoru_n". */
-  narrator?: string;
 };
 
 export type Roster = { version: 1; characters: RosterCharacter[] };

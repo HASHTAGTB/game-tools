@@ -16,7 +16,7 @@ export const TOOLS = {
   timeline: {
     path: "/timeline",
     name: "Timeline",
-    description: "The story's chronology: what each character does when, and how events connect.",
+    description: "The story's chronology: chapters, storylines and who does what when.",
   },
 } satisfies Record<string, ToolInfo>;
 

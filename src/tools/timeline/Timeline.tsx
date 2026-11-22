@@ -1,23 +1,28 @@
-import { useEffect, useMemo, useRef } from "react";
-import { Minus, Plus, Redo2, SquarePlus, Undo2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { BookmarkPlus, Minus, Plus, Redo2, SquarePlus, Undo2, X } from "lucide-react";
+import { cn, uniqueId } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { IconButton } from "@/shared/ui/icon-button";
+import { m, spring } from "@/shared/ui/motion";
+import { Popover } from "@/shared/ui/popover";
+import { Switch } from "@/shared/ui/switch";
 import { Toasts } from "@/shared/ui/toasts";
+import { visible } from "./lib/colors";
 import { runChecks, type Check } from "./lib/checks";
-import { allConnections, deleteEvent } from "./lib/edit";
-import type { Arc } from "./lib/types";
-import { useTimeline } from "./state";
+import { allEvents, castOf, deleteEvent, findEvent, isFiltered, orderBetween, threadsOf } from "./lib/model";
+import { nav } from "./lib/nav";
+import type { GroupBy } from "./lib/types";
+import { chapterIdFor, useTimeline } from "./state";
+import { Board } from "./components/Board";
 import { ChecksButton } from "./components/Checks";
 import { Inspector } from "./components/Inspector";
 import { Sidebar } from "./components/Sidebar";
-import { TimelineCanvas, type CanvasApi } from "./components/TimelineCanvas";
 
 const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
 
 export default function Timeline() {
   const s = useTimeline();
-  const { loc, loaded, doc, res, scenes, error, notice, conflicts, pxPerHour, canUndo, canRedo } = s;
-  const canvas = useRef<CanvasApi | null>(null);
+  const { loc, loaded, doc, error, notice, conflicts, zoom, canUndo, canRedo } = s;
 
   useEffect(() => useTimeline.getState().init(), []);
 
@@ -29,11 +34,10 @@ export default function Timeline() {
       if (mod && e.key.toLowerCase() === "y" && !typing(e.target)) { e.preventDefault(); st.redo(); return; }
       if (typing(e.target)) { if (e.key === "Escape") (e.target as HTMLElement).blur(); return; }
       if (e.key === "Escape") st.select(null);
-      if ((e.key === "Delete" || e.key === "Backspace") && st.selection) {
-        const sel = st.selection;
-        if (sel.kind === "event") st.edit((d, r) => { deleteEvent(d.arcs, sel.id, r); });
-        else if (sel.kind === "connection") st.edit(d => { for (const a of d.arcs) a.connections = a.connections.filter(c => c.id !== sel.id); });
-        else return;   // arcs and characters only from their panel, with a confirm
+      // only events: chapters, threads and characters are deleted from their panel, with a confirm
+      if ((e.key === "Delete" || e.key === "Backspace") && st.selection?.kind === "event") {
+        const id = st.selection.id;
+        st.edit(d => deleteEvent(d.chapters, id));
         st.select(null);
       }
     };
@@ -41,36 +45,30 @@ export default function Timeline() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const newArc = () => {
-    const last = [...doc.arcs].sort((a, b) => (res.arcs.get(b.id)?.end ?? 0) - (res.arcs.get(a.id)?.end ?? 0))[0];
-    const taken = new Set(doc.arcs.map(a => a.id));
-    let id = "new-arc";
-    for (let i = 2; taken.has(id); i++) id = `new-arc-${i}`;
-    const arc: Arc = { version: 1, id, name: "New arc", start: last ? { after: { arc: last.id }, gap: "1d" } : { at: "2025-04-07" }, events: [], connections: [] };
-    s.edit(d => { d.arcs.push(arc); });
-    s.select({ kind: "arc", id });
-    setTimeout(() => { const sp = useTimeline.getState().res.arcs.get(id); if (sp) canvas.current?.scrollToHours(sp.start); }, 50);
+  /** A new chapter after the selected one (or the selected event's), else at the end. */
+  const newChapter = () => {
+    const sel = s.selection;
+    const after = sel?.kind === "chapter" ? sel.id : sel?.kind === "event" ? findEvent(doc.chapters, sel.id)?.chapter.id : undefined;
+    const i = after ? doc.chapters.findIndex(c => c.id === after) : doc.chapters.length - 1;
+    const order = orderBetween(doc.chapters[i]?.order, doc.chapters[i + 1]?.order);
+    const id = chapterIdFor(doc.chapters, "new-chapter");
+    s.edit(d => { d.chapters.push({ version: 2, id, name: "New chapter", order, columns: ["", "", ""], events: [] }); });
+    s.select({ kind: "chapter", id });
+    setTimeout(() => nav.toChapter(id), 50);
   };
 
-  const checks = useMemo(() => runChecks(doc.arcs, doc.roster, doc.facts, res, loc?.kind === "browser" ? null : scenes), [doc, res, scenes, loc]);
-  /** Worst problem per event, for the dots on cards. */
+  const checks = useMemo(() => runChecks(doc.chapters, doc.roster, doc.threads), [doc]);
+  /** Worst problem per event, for the marks on cards. */
   const flagged = useMemo(() => {
     const m = new Map<string, Check["level"]>();
     for (const c of checks) if (c.target?.kind === "event" && c.level !== "info" && !m.has(c.target.id)) m.set(c.target.id, c.level);
     return m;
   }, [checks]);
-  const goTo = (c: Check) => {
-    const t = c.target;
-    if (!t) return;
-    const h = t.kind === "event" ? res.events.get(t.id)?.start : t.kind === "arc" ? res.arcs.get(t.id)?.start
-      : t.kind === "connection" ? res.events.get(allConnections(doc.arcs).find(x => x.conn.id === t.id)?.conn.from ?? "")?.start : undefined;
-    if (h !== undefined) canvas.current?.scrollToHours(h);
-  };
-  const events = doc.arcs.reduce((n, a) => n + a.events.length, 0);
+  const events = allEvents(doc.chapters).length;
 
   return (
     <div className="grid h-screen grid-cols-[210px_minmax(0,1fr)_300px] bg-ink text-paper xl:grid-cols-[230px_minmax(0,1fr)_340px]">
-      <Sidebar onPickArc={id => { const sp = res.arcs.get(id); if (sp) canvas.current?.scrollToHours(sp.start); }} />
+      <Sidebar />
 
       <main className="relative flex min-h-0 flex-col">
         <Toasts className="bottom-6" items={[
@@ -82,14 +80,17 @@ export default function Timeline() {
           <IconButton icon={Undo2} label="Undo" kbd="Ctrl+Z" onClick={s.undo} disabled={!canUndo} />
           <IconButton icon={Redo2} label="Redo" kbd="Ctrl+Shift+Z" onClick={s.redo} disabled={!canRedo} />
           <span className="mx-2 h-5 w-px bg-ink-line" />
-          <IconButton icon={Minus} label="Zoom out" kbd="Ctrl+scroll" onClick={() => s.setZoom(pxPerHour / 1.5)} />
-          <IconButton icon={Plus} label="Zoom in" kbd="Ctrl+scroll" onClick={() => s.setZoom(pxPerHour * 1.5)} />
+          <GroupSwitch />
           <span className="mx-2 h-5 w-px bg-ink-line" />
-          <Button size="sm" onClick={newArc} disabled={!loaded}><SquarePlus className="h-4 w-4" />New arc</Button>
+          <IconButton icon={Minus} label="Narrower columns" kbd="Ctrl+scroll" onClick={() => s.setZoom(zoom / 1.25)} />
+          <IconButton icon={Plus} label="Wider columns" kbd="Ctrl+scroll" onClick={() => s.setZoom(zoom * 1.25)} />
+          <span className="mx-2 h-5 w-px bg-ink-line" />
+          <Button size="sm" onClick={newChapter} disabled={!loaded}><SquarePlus className="h-4 w-4" />New chapter</Button>
           <span className="flex-1" />
-          {loaded && <ChecksButton checks={checks} onGo={goTo} />}
-          <span className="ml-3 font-talk text-[12px] text-taupe">{doc.arcs.length} arcs · {events} events · {allConnections(doc.arcs).length} links</span>
+          {loaded && <ChecksButton checks={checks} onGo={c => { if (c.target?.kind === "event") nav.toEvent(c.target.id); }} />}
+          <span className="ml-3 hidden font-talk text-[12px] text-taupe 2xl:inline">{doc.chapters.length} chapters · {events} events</span>
         </div>
+        <FocusBar />
 
         {conflicts.length > 0 && (
           <div className="shrink-0 space-y-2 border-b-2 border-coral bg-coral/10 px-4 py-2.5">
@@ -106,11 +107,11 @@ export default function Timeline() {
         )}
 
         {loaded ? (
-          doc.arcs.length ? <TimelineCanvas apiRef={canvas} flagged={flagged} /> : (
+          doc.chapters.length ? <Board flagged={flagged} /> : (
             <div className="grid flex-1 place-items-center px-8 text-center">
               <div className="max-w-md space-y-3">
-                <p className="font-sans text-2xl font-light text-bone">No arcs yet.</p>
-                <p className="font-talk text-sm text-taupe">Start with <b>New arc</b>, or import the old timeline.md files once (see the README).</p>
+                <p className="font-sans text-2xl font-light text-bone">No chapters yet.</p>
+                <p className="font-talk text-sm text-taupe">Start with <b>New chapter</b> at the top.</p>
               </div>
             </div>
           )
@@ -126,3 +127,81 @@ export default function Timeline() {
   );
 }
 
+const GROUPS: { id: GroupBy; label: string }[] = [
+  { id: "chars", label: "Characters" },
+  { id: "threads", label: "Threads" },
+  { id: "none", label: "One lane" },
+];
+
+/** Lanes by character, by thread, or a single one. */
+function GroupSwitch() {
+  const { filter, setFilter } = useTimeline();
+  return (
+    <div role="radiogroup" aria-label="Lanes" className="flex items-center gap-0.5 rounded-md bg-ink-2 p-0.5">
+      <span className="px-1.5 font-sans text-[13px] text-taupe">Lanes</span>
+      {GROUPS.map(g => {
+        const on = filter.groupBy === g.id;
+        return (
+          <button key={g.id} role="radio" aria-checked={on} onClick={() => setFilter({ groupBy: g.id })}
+            className={cn("relative h-7 rounded-sm px-2 font-sans text-[14px] transition-colors", on ? "text-paper" : "text-taupe hover:text-paper")}>
+            {on && <m.span layoutId="lane-group" transition={spring.bouncy} className="absolute inset-0 rounded-sm bg-ink-3" />}
+            <span className="relative">{g.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Shown while focusing: what's picked, dim or hide the rest, save as a view. */
+function FocusBar() {
+  const { doc, filter, viewId, setFilter, edit } = useTimeline();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  if (!isFiltered(filter)) return null;
+  const cast = castOf(doc.roster, doc.chapters), threads = threadsOf(doc.threads, doc.chapters);
+  const chips = [
+    ...filter.chars.map(id => ({ key: "chars" as const, id, name: cast.find(c => c.id === id)?.name ?? id, color: cast.find(c => c.id === id)?.color ?? "#9a8f86" })),
+    ...filter.threads.map(id => ({ key: "threads" as const, id, name: threads.find(t => t.id === id)?.name ?? id, color: threads.find(t => t.id === id)?.color ?? "#9a8f86" })),
+  ];
+  const view = doc.views.find(v => v.id === viewId);
+  const save = () => {
+    const n = name.trim();
+    if (!n) return;
+    const id = uniqueId(n, doc.views.map(v => v.id));
+    edit(d => { d.views.push({ id, name: n, ...filter }); });
+    setFilter({}, id);
+    setName("");
+    setOpen(false);
+  };
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-ink-line/60 bg-ink-2/50 px-4 py-1.5">
+      <span className="font-sans text-[14px] text-taupe">{view ? view.name : "Focus"}</span>
+      <div className="flex flex-wrap gap-1">
+        {chips.map(c => (
+          <span key={`${c.key}:${c.id}`} className="flex items-center gap-1 rounded-full border-2 py-px pl-2 pr-0.5 font-sans text-[13px] text-paper" style={{ borderColor: visible(c.color) }}>
+            {c.name}
+            <button aria-label={`Drop ${c.name}`} onClick={() => setFilter({ [c.key]: filter[c.key].filter(x => x !== c.id) }, null)}
+              className="grid h-4 w-4 place-items-center rounded-full text-taupe hover:text-paper"><X className="h-3 w-3" /></button>
+          </span>
+        ))}
+      </div>
+      <label className="flex items-center gap-2 font-talk text-[13px] text-bone">
+        <Switch checked={filter.hideOthers} onCheckedChange={v => setFilter({ hideOthers: v })} />
+        Hide the rest
+      </label>
+      <span className="flex-1" />
+      {!view && (
+        <Popover open={open} onOpenChange={setOpen} align="end" className="w-72" trigger={<Button size="sm"><BookmarkPlus className="h-4 w-4" />Save as view</Button>}>
+          <p className="mb-2">Save this focus as a view for everyone:</p>
+          <div className="flex items-center gap-2">
+            <input autoFocus value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === "Enter" && save()} placeholder="Name"
+              className="h-8 min-w-0 flex-1 rounded-md border-2 border-ink-line bg-ink px-2 font-talk text-sm text-paper focus:border-caramel focus:outline-hidden" />
+            <Button size="sm" variant="primary" onClick={save} disabled={!name.trim()}>Save</Button>
+          </div>
+        </Popover>
+      )}
+      <Button size="sm" variant="ghost" onClick={() => setFilter({ chars: [], threads: [], hideOthers: false }, null)}>Show everything</Button>
+    </div>
+  );
+}
