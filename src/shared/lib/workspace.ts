@@ -1,4 +1,5 @@
 import { folderSupported, STATIC } from "./env";
+import { connect, getConfig, github, refresh as refreshGitHub } from "./github";
 
 /** The one folder every tool works in, normally the story vault. Paths are relative to it and use "/".
  *  Tool data lives under `.game-tools/<tool>/` (Obsidian ignores dot-folders; git still syncs it). Other paths, like the
@@ -8,8 +9,10 @@ import { folderSupported, STATIC } from "./env";
  *  - server:  the Vite file API (`pnpm dev`), a folder path on this machine
  *  - folder:  a folder picked with the File System Access API (Chromium only)
  *  - browser: IndexedDB in this browser, a small file store with the same paths (no vault files to read)
- *  The static build (GitHub Pages) has no server, so it offers folder and browser. */
-export type Backend = "server" | "browser" | "folder";
+ *  - github:  the vault's GitHub repository through the REST API (github.ts); changes wait in this browser until the
+ *             user saves them as a commit
+ *  The static build (GitHub Pages) has no server, so it offers folder, browser and github. */
+export type Backend = "server" | "browser" | "folder" | "github";
 
 /** `ready` is false while a folder is remembered but the browser wants permission again, or no folder was picked yet
  *  (`picked` false). */
@@ -227,10 +230,11 @@ async function backend(): Promise<Backend> {
     rootDir = (await getSetting<DirHandle>("root")) ?? null;
     return (kind = "folder");
   }
+  if (saved === "github" && (await getConfig())) return (kind = "github");
   return (kind = "browser");
 }
 
-const stores: Record<Backend, Store> = { server, browser, folder };
+const stores: Record<Backend, Store> = { server, browser, folder, github };
 
 async function store(): Promise<Store> {
   const k = await backend();
@@ -265,8 +269,17 @@ export async function getLocation(): Promise<Location> {
     return { kind: k, label: root, ready: true, picked: true, name: root.split(/[\\/]/).filter(Boolean).pop() };
   }
   if (k === "browser") return { kind: k, label: "This browser", ready: true, picked: true };
+  if (k === "github") {
+    const c = (await getConfig())!;
+    return { kind: k, label: `GitHub: ${c.owner}/${c.repo} (${c.branch})`, ready: true, picked: true, name: c.repo };
+  }
   if (!rootDir) return { kind: k, label: "No folder picked yet", ready: false, picked: false };
   return { kind: k, label: `Folder: ${rootDir.name}`, ready: await permitted(rootDir), picked: true, name: rootDir.name };
+}
+
+/** Before "Reload": look at the GitHub branch again right away instead of within the next few seconds. */
+export async function refreshLocation() {
+  if ((await backend()) === "github") await refreshGitHub();
 }
 
 /** Ask again for access to the remembered folder. Must run from a click. */
@@ -331,4 +344,17 @@ export async function switchTo(target: "browser" | "folder"): Promise<{ label: s
     if (picked) await setSetting("root", picked);
   });
   return { label: target === "folder" ? `Folder: ${picked!.name}` : "This browser", copied };
+}
+
+/** Connect to a GitHub repository (checking the token) and use it. If it has no tool data yet, the current data is
+ *  copied there as unsaved changes. */
+export async function switchToGitHub(repo: string, branch: string, token: string) {
+  let label = "";
+  const copied = await moveData(async () => {
+    const c = await connect(repo, branch, token);
+    kind = "github";
+    await setSetting("backend", "github");
+    label = `GitHub: ${c.owner}/${c.repo} (${c.branch})`;
+  });
+  return { label, copied };
 }

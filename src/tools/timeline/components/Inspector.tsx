@@ -36,7 +36,7 @@ function Help() {
         <li><b className="text-paper">Double-click</b> a lane to add an event. <b className="text-paper">Drag</b> it to another column or lane, its right edge to make it last longer, its dot onto another event to draw an arrow.</li>
         <li><b className="text-paper">Ctrl + scroll</b> zooms, <b className="text-paper">Ctrl+Z</b> / <b className="text-paper">Ctrl+Shift+Z</b> undo and redo, <b className="text-paper">Del</b> deletes the selected event.</li>
       </ul>
-      <p className="text-[13px] text-taupe">Changes save on their own. If someone else changed a file (git pull), it reloads, or asks when you had changes in it too.</p>
+      <p className="text-[13px] text-taupe">Changes save on their own (on GitHub: when you click Save to GitHub). If someone else changed a file, it reloads, or asks when you had changes in it too.</p>
     </div>
   );
 }

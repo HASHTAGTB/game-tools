@@ -14,7 +14,7 @@ const PALETTE = ["#e86a92", "#7fae5a", "#e0b44a", "#6c8fd9", "#d9603b", "#4fb39b
 
 /** Like the game's menu: a vertical rule with text links. Characters and threads are focus toggles; the pencil edits. */
 export function Sidebar() {
-  const { doc, loc, filter, viewId, selection, select, edit, reload, setFilter } = useTimeline();
+  const { doc, loc, filter, viewId, selection, select, edit, reload, flush, setFilter } = useTimeline();
   const cast = castOf(doc.roster, doc.chapters);
   const threads = threadsOf(doc.threads, doc.chapters);
   const toggle = (key: "chars" | "threads", id: string) =>
@@ -69,7 +69,8 @@ export function Sidebar() {
           ))}
         </Group>
       </nav>
-      <WorkspaceLocation loc={loc} onChanged={reload} onReload={() => reload(loc?.kind === "browser" ? "Reloaded" : "Reloaded from disk")} />
+      <WorkspaceLocation loc={loc} onChanged={reload} onFlush={flush}
+        onReload={() => reload(loc?.kind === "browser" ? "Reloaded" : loc?.kind === "github" ? "Reloaded from GitHub" : "Reloaded from disk")} />
     </aside>
   );
 }

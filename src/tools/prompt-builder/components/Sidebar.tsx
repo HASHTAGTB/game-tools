@@ -13,12 +13,12 @@ import { m, spring } from "@/shared/ui/motion";
 
 type Props = {
   chars: Character[]; current: string | null; onSelect: (id: string) => void; onCreate: (name: string) => void;
-  loc: Location | null; onDirChanged: (msg: string) => void; onReload: () => void; onImport: (chars: Character[]) => void;
+  loc: Location | null; onDirChanged: (msg: string) => void; onReload: () => void; onFlush: () => Promise<void>; onImport: (chars: Character[]) => void;
   onError: (msg: string) => void;
 };
 
 /** Laid out like the game's main menu: a thin vertical rule with text links beside it. */
-export function Sidebar({ chars, current, onSelect, onCreate, loc, onDirChanged, onReload, onImport, onError }: Props) {
+export function Sidebar({ chars, current, onSelect, onCreate, loc, onDirChanged, onReload, onFlush, onImport, onError }: Props) {
   const [name, setName] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const importFiles = async (files: FileList | null) => {
@@ -80,7 +80,7 @@ export function Sidebar({ chars, current, onSelect, onCreate, loc, onDirChanged,
         <input ref={fileInput} type="file" accept=".json,application/json" multiple hidden onChange={e => importFiles(e.target.files)} />
       </nav>
 
-      <WorkspaceLocation loc={loc} onChanged={onDirChanged} onReload={onReload} />
+      <WorkspaceLocation loc={loc} onChanged={onDirChanged} onReload={onReload} onFlush={onFlush} />
     </aside>
   );
 }
