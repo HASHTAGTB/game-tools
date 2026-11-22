@@ -13,6 +13,11 @@ export const TOOLS = {
     name: "Prompt Builder",
     description: "Build Danbooru-tag character prompts from presets and toggles.",
   },
+  timeline: {
+    path: "/timeline",
+    name: "Timeline",
+    description: "The story's chronology: what each character does when, and how events connect.",
+  },
 } satisfies Record<string, ToolInfo>;
 
 export const DEFAULT_TOOL = TOOLS.promptBuilder;

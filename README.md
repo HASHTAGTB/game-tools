@@ -1,6 +1,9 @@
-# prompt-builder
+# game-tools
 
-Browser app (React + Base UI + Motion + Tailwind, served by Vite) for building Danbooru-tag character prompts. Pick a variation per category, switch extras on or off, and copy the finished prompt into any UI.
+Browser app (React + Base UI + Motion + Tailwind, served by Vite) with tools for the visual novel:
+
+* **Prompt Builder**: build Danbooru-tag character prompts. Pick a variation per category, switch extras on or off, and copy the finished prompt into any UI.
+* **Timeline**: the story's chronology. One lane per character, arcs on top, connections between events, scene files, checks and who-knows-what.
 
 ```
 pnpm install
@@ -33,7 +36,7 @@ The theme colors are CSS variables (`--color-caramel` etc., see `@theme` in `src
 
 All tools share one data folder, normally the story vault. Each tool keeps its files in the vault's `.game-tools/<tool>/` folder: Obsidian hides dot-folders, but git syncs it like everything else. The Prompt Builder stores one `<id>.json` per character in `.game-tools/prompt-builder/`, saved automatically. (Older versions kept them in `CANON/01_Characters/`; the first load moves them over.)
 
-With `pnpm dev`, change the folder under **Data folder** at the bottom left: type a path or click **Browse…** to pick one in your system's folder dialog (zenity or kdialog on Linux). The setting lives in `config.json` (`root`). The default is `./characters`. ⟳ reloads from disk (e.g. after `git pull`).
+With `pnpm dev`, change the folder under **Data folder** at the bottom left: type a path or click **Browse…** to pick one in your system's folder dialog (zenity or kdialog on Linux). The setting lives in `config.json` (`root`; `GAME_TOOLS_CONFIG=<file>` points a second server at another config). The default is `./characters`. ⟳ reloads from disk (e.g. after `git pull`).
 
 ## GitHub Pages
 
@@ -48,7 +51,44 @@ Switching to a place that has no tool data yet copies the current data there; ot
 
 Build the static version locally with `VITE_STATIC=1 BASE=/<repo>/ pnpm build`.
 
-## Model
+## Timeline
+
+Files (in the data folder):
+
+```
+.game-tools/characters.json        the cast, shared by all tools: id, name, color, birthday, narrator variable
+.game-tools/timeline/arcs/<id>.json  one arc: its start, events and the connections that start in it
+.game-tools/timeline/facts.json    facts characters can know (secrets, news) for "who knows what"
+```
+
+One file per arc keeps git merges small when several people edit at once. The tool saves on its own, looks for changes on disk every few seconds (e.g. after a git pull) and reloads them. If you had unsaved changes in the same file it asks: **Load theirs** or **Keep mine**.
+
+**Time.** Every event and arc has a *when*, which is one of:
+
+* **Date**: a fixed in-world date. Its format is its precision: `2025`, `2025-04`, `2025-04-07` or `2025-04-07T10:00`.
+* **After** an event or arc, plus a gap (`4h`, `2d`, `1d6h`).
+* **With** an event or arc: its start plus an offset (negative is earlier).
+
+So a plan can start vague ("2 days after X") and be pinned to dates later; everything timed from it moves along. Events last 12h unless set. Dashed borders mean the time is only known to the month or year, or not tied to a date at all. The scale is not linear: time with events is drawn at the zoom level, empty stretches shrink to a hatched gap with a "+3 wks" label.
+
+**Using it.** Double-click a lane to add an event. Drag an event to move it in time, onto another lane to give it to that character, its right edge to change its length, and its dot onto another event to connect them. Ctrl+scroll zooms, Ctrl+Z / Ctrl+Shift+Z undo and redo, Del deletes. Hidden and collapsed lanes and the zoom are remembered per browser only.
+
+**Scenes.** With a vault as data folder, events link to scene files in `CANON/03_Story/02_Scenes/`. The tool reads (never writes) their front matter (`status`, `renpy`, `owner`, `characters`), the first `set_date(...)` and the `narrator = …` lines, and shows them as badges, POV and date ("Use this date" pins the event to it). An arc's panel lists its folder's scenes and can add one as an event. Scenes no event points at are listed when nothing is selected.
+
+**Checks** (toolbar): broken references and cycles, a character in two events at once (where both are known to the day), events before their arc, connections leading back in time, scene dates that don't match, scenes told by someone not on the event, and characters acting on a fact before they learn it.
+
+**Who knows what.** An event can say which facts its characters *find out* there and which they *act on*. Select a fact to see who learns it when; the events that learn it are ringed green, those acting on it yellow.
+
+**Importing the old timeline** (once, from the vault's `timeline.md` files):
+
+```
+node scripts/import-timeline.ts ~/doc/VN --out /tmp/look   # look at the result first
+node scripts/import-timeline.ts ~/doc/VN                   # write into the vault's .game-tools
+```
+
+It keeps the old layout rules (each line follows the previous one of that character, `+gap`, `(length)`, `while:`/`offset:`), pins arcs whose name says when they happen (the `PINS` table in the script), fixes known broken `prev:` links (`FIXES`), folds empty spacer lines into gaps, and prints what it did.
+
+## Prompt Builder model
 
 | | |
 |---|---|

@@ -28,6 +28,7 @@ function toolRoute<P extends ToolInfo["path"]>(tool: ToolInfo & { path: P }, loa
 const routeTree = rootRoute.addChildren([
   indexRoute,
   toolRoute(TOOLS.promptBuilder, () => import("@/tools/prompt-builder/PromptBuilder")),
+  toolRoute(TOOLS.timeline, () => import("@/tools/timeline/Timeline")),
 ]);
 
 export const router = createRouter({

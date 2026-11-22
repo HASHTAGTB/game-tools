@@ -13,7 +13,11 @@ export type Backend = "server" | "browser" | "folder";
 
 /** `ready` is false while a folder is remembered but the browser wants permission again, or no folder was picked yet
  *  (`picked` false). */
-export type Location = { kind: Backend; label: string; ready: boolean; picked: boolean };
+export type Location = {
+  kind: Backend; label: string; ready: boolean; picked: boolean;
+  /** Name of the data folder (the vault's name in Obsidian); none for browser storage. */
+  name?: string;
+};
 
 export type Entry = { name: string; kind: "file" | "directory" };
 export type FileData = { text: string; mtime: number };
@@ -256,10 +260,13 @@ export async function listFiles(dir: string, ext: string) {
 
 export async function getLocation(): Promise<Location> {
   const k = await backend();
-  if (k === "server") return { kind: k, label: (await api<{ root: string }>("GET", "/api/config")).root, ready: true, picked: true };
+  if (k === "server") {
+    const root = (await api<{ root: string }>("GET", "/api/config")).root;
+    return { kind: k, label: root, ready: true, picked: true, name: root.split(/[\\/]/).filter(Boolean).pop() };
+  }
   if (k === "browser") return { kind: k, label: "This browser", ready: true, picked: true };
   if (!rootDir) return { kind: k, label: "No folder picked yet", ready: false, picked: false };
-  return { kind: k, label: `Folder: ${rootDir.name}`, ready: await permitted(rootDir), picked: true };
+  return { kind: k, label: `Folder: ${rootDir.name}`, ready: await permitted(rootDir), picked: true, name: rootDir.name };
 }
 
 /** Ask again for access to the remembered folder. Must run from a click. */

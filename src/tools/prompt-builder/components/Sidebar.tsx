@@ -6,6 +6,8 @@ import type { Location } from "@/shared/lib/workspace";
 import { castLook } from "../lib/cast";
 import { cn } from "@/shared/lib/utils";
 import { WorkspaceLocation } from "@/shared/ui/workspace-location";
+import { ToolNav } from "@/shared/ui/tool-nav";
+import { TOOLS } from "@/app/tools";
 import { IconButton } from "@/shared/ui/icon-button";
 import { m, spring } from "@/shared/ui/motion";
 
@@ -32,7 +34,7 @@ export function Sidebar({ chars, current, onSelect, onCreate, loc, onDirChanged,
   const create = () => { if (name.trim()) { onCreate(name.trim()); setName(""); } };
   return (
     <aside className="flex min-h-0 flex-col border-r border-ink-line/60">
-      <h1 className="px-6 pb-8 pt-7 font-sans text-[28px] font-light leading-none text-paper">Prompt Builder</h1>
+      <ToolNav current={TOOLS.promptBuilder} />
 
       <nav className="min-h-0 flex-1 overflow-y-auto px-6">
         <ul className="border-l-2 border-bone/40">

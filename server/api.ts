@@ -10,7 +10,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Plugin } from "vite";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const CONFIG = path.join(ROOT, "config.json");
+/** GAME_TOOLS_CONFIG points a second server at its own config (e.g. a test copy of the vault). */
+const CONFIG = process.env.GAME_TOOLS_CONFIG ? path.resolve(process.env.GAME_TOOLS_CONFIG) : path.join(ROOT, "config.json");
 const DEFAULT_DIR = path.join(ROOT, "characters");
 
 type Config = { root: string };
