@@ -1,15 +1,14 @@
 import { ExternalLink, Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useDnd } from "../lib/dnd";
-import { googleUrl, searchName } from "../lib/tag";
+import { danbooruUrl, googleUrl, searchName } from "../lib/tag";
 import { cn } from "../lib/utils";
 
 type Blocked = { label: string; name: string; url: string };
 
-/** Shown over the right column while a tag is dragged. Danbooru opens the image panel there;
- *  Google Images opens a new tab. Browsers may treat a drop as "not a click" and block that tab,
+/** Shown over the right column while a tag is dragged. Each zone opens the search in a new tab. Browsers may treat a drop as "not a click" and block that tab,
  *  then a link is shown instead (or allow popups for this page once). */
-export function SearchDropZones({ onDanbooru }: { onDanbooru: (name: string) => void }) {
+export function SearchDropZones() {
   const dnd = useDnd();
   const [blocked, setBlocked] = useState<Blocked | null>(null);
   useEffect(() => {
@@ -42,7 +41,7 @@ export function SearchDropZones({ onDanbooru }: { onDanbooru: (name: string) => 
   const name = searchName(dnd.drag.tag);
   return (
     <div className="pointer-events-none fixed inset-y-0 right-0 z-50 flex w-[270px] flex-col items-center justify-center gap-4 animate-pop-in lg:w-[340px] 2xl:w-[400px]">
-      <Zone label="Danbooru" sub={name} color="#7e9be3" onDrop={() => onDanbooru(name)} />
+      <Zone label="Danbooru" sub={name} color="#7e9be3" onDrop={() => open("Danbooru", name, danbooruUrl(dnd.drag!.tag))} />
       <Zone label="Google Images" sub={name} color="#8ce3a0" onDrop={() => open("Google Images", name, googleUrl(dnd.drag!.tag))} />
     </div>
   );

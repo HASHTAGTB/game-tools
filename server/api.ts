@@ -4,7 +4,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Readable } from "node:stream";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Plugin } from "vite";
 
@@ -84,31 +83,9 @@ function send(res: ServerResponse, status: number, data: unknown) {
   res.end(JSON.stringify(data));
 }
 
-/** Danbooru's CDN (Cloudflare) refuses cross-site image loads from a browser page, so thumbnails
- *  and full images go through here. Only cdn.donmai.us; Range is passed on so videos can seek. */
-const IMG_HOST = "cdn.donmai.us";
-// a browser-looking User-Agent from a non-browser client gets 403, an honest tool name passes
-const UA = "prompt-builder/0.1";
-const PASS = ["content-type", "content-length", "content-range", "accept-ranges", "last-modified", "etag"];
-
-async function proxyImage(req: IncomingMessage, res: ServerResponse, raw: string | null) {
-  let target: URL;
-  try { target = new URL(raw ?? ""); } catch { return send(res, 400, { error: "bad url" }); }
-  if (target.protocol !== "https:" || target.hostname !== IMG_HOST) return send(res, 400, { error: "host not allowed" });
-  const headers: Record<string, string> = { "User-Agent": UA, Accept: "image/*,video/*,*/*" };
-  if (typeof req.headers.range === "string") headers.Range = req.headers.range;
-  const up = await fetch(target, { headers });
-  res.statusCode = up.status;
-  for (const h of PASS) { const v = up.headers.get(h); if (v) res.setHeader(h, v); }
-  if (up.ok) res.setHeader("Cache-Control", "public, max-age=86400, immutable");
-  if (!up.body) return res.end();
-  Readable.fromWeb(up.body as any).on("error", () => res.destroy()).pipe(res);
-}
-
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
   const url = new URL(req.url ?? "/", "http://x");
   if (!url.pathname.startsWith("/api/")) return false;
-  if (req.method === "GET" && url.pathname === "/api/img") return await proxyImage(req, res, url.searchParams.get("u")), true;
   const cfg = await readConfig();
   const route = `${req.method} ${url.pathname}`;
 

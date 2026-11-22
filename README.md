@@ -23,8 +23,6 @@ With `pnpm dev`, characters are stored as one `<id>.json` file each, saved autom
 
 **Export** downloads every character as one JSON file. **Import** reads that file or single `<id>.json` files; a character with the same id is replaced.
 
-Danbooru images load straight from the CDN there. If they don't show up, deploy `worker/img-proxy.js` as a Cloudflare Worker and set a repository variable `IMG_PROXY` to its URL (Settings → Secrets and variables → Actions → Variables), then re-run the workflow.
-
 Build the static version locally with `VITE_STATIC=1 BASE=/<repo>/ pnpm build`.
 
 ## Model

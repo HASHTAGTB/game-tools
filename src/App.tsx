@@ -13,7 +13,6 @@ import { TogglesCard } from "./components/TogglesCard";
 import { PromptPanel } from "./components/PromptPanel";
 import { TagBrowser } from "./components/TagBrowser";
 import { SearchDropZones } from "./components/SearchDropZones";
-import { ImagePanel } from "./components/ImagePanel";
 import { Button } from "./components/ui/button";
 import { Confirm } from "./components/ui/confirm";
 import { Heading } from "./components/ui/heading";
@@ -29,7 +28,6 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragTag | null>(null);
-  const [lookup, setLookup] = useState<string | null>(null);   // tag shown in the image panel
   const savedJson = useRef(new Map<string, string>());
   const charsRef = useRef(chars);
   charsRef.current = chars;
@@ -151,8 +149,6 @@ export default function App() {
     return () => { window.removeEventListener("dragend", clear); window.removeEventListener("drop", clear); };
   }, [drag]);
 
-  const closeLookup = useCallback(() => setLookup(null), []);
-
   // ---------------------------------------------------------------- tag browser target
   const target = cur && listFor(cur, activeKey) ? activeKey : BASE;
   const targetTags = cur ? listFor(cur, target) ?? [] : [];
@@ -246,7 +242,7 @@ export default function App() {
                 </label>
                 <p className="max-w-[70ch] font-talk text-sm leading-relaxed text-taupe">
                   Click a tag to switch it off or on. Ctrl+scroll changes its weight and double-click edits it.
-                  Drag tags to move them, onto preset tabs and toggle rows too (hold Ctrl to copy). Drop a tag on the boxes that appear on the right to see pictures of it.
+                  Drag tags to move them, onto preset tabs and toggle rows too (hold Ctrl to copy). Drop a tag on the boxes that appear on the right to look it up on Danbooru or Google Images.
                 </p>
               </div>
               <PromptPanel ch={cur} onNegative={v => update(c => { c.negative = v; })} />
@@ -256,10 +252,9 @@ export default function App() {
 
         <div className="relative flex min-h-0 flex-col">
           <TagBrowser db={db} target={cur ? listLabel(cur, target) : "—"} selected={selected} onToggle={text => cur && toggleInTarget(text)} />
-          {lookup && <ImagePanel tag={lookup} onTag={setLookup} onClose={closeLookup} />}
         </div>
       </div>
-      <SearchDropZones onDanbooru={setLookup} />
+      <SearchDropZones />
     </DndContext.Provider>
   );
 }

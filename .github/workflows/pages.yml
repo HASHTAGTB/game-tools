@@ -35,7 +35,6 @@ jobs:
         env:
           VITE_STATIC: "1"
           BASE: ${{ steps.pages.outputs.base_path }}/
-          VITE_IMG_PROXY: ${{ vars.IMG_PROXY }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
