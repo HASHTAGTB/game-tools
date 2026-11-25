@@ -338,15 +338,15 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
                 <button key={pc.chapter.id} onClick={() => folded.has(pc.chapter.id) ? toggleFolded(pc.chapter.id) : select({ kind: "chapter", id: pc.chapter.id })}
                   title={folded.has(pc.chapter.id) ? `${pc.chapter.name}: unfold` : `${pc.chapter.name}: nothing here matches`}
                   className="board-move absolute inset-y-0 border-l border-ink-line/70 text-taupe hover:bg-ink-2 hover:text-paper" style={{ left: pc.x, width: pc.w }}>
-                  <span className="absolute left-1/2 top-2 origin-top-left translate-x-[7px] rotate-90 whitespace-nowrap font-sans text-[13px]">{pc.chapter.name}</span>
+                  <span className="absolute left-1/2 top-2 origin-top-left translate-x-[7px] rotate-90 whitespace-nowrap font-sans text-sm">{pc.chapter.name}</span>
                 </button>
               );
               return (
                 <div key={pc.chapter.id} className="board-move group/chapter absolute inset-y-0 border-l border-ink-line/70" style={{ left: pc.x, width: pc.w }}>
                   <div className="flex items-start gap-1 overflow-hidden px-2 pt-1.5" style={{ height: TITLE_H }}>
-                    <button data-chapter={pc.chapter.id} onClick={() => select({ kind: "chapter", id: pc.chapter.id })} className="min-w-0 flex-1 rounded-sm text-left">
-                      <span className={cn("block truncate font-sans text-[16px] leading-tight", on ? "text-paper underline decoration-caramel decoration-2 underline-offset-4" : "text-bone hover:text-paper")}>{pc.chapter.name}</span>
-                      {pc.chapter.when && <span className="block truncate font-talk text-[11.5px] text-taupe">{pc.chapter.when}</span>}
+                    <button data-chapter={pc.chapter.id} onClick={() => select({ kind: "chapter", id: pc.chapter.id })} className="min-w-0 flex-1 rounded-md text-left">
+                      <span className={cn("block truncate font-sans text-base leading-tight", on ? "text-paper underline decoration-caramel decoration-2 underline-offset-4" : "text-bone hover:text-paper")}>{pc.chapter.name}</span>
+                      {pc.chapter.when && <span className="block truncate font-talk text-xs text-taupe">{pc.chapter.when}</span>}
                     </button>
                     <div className="flex opacity-0 transition-opacity group-hover/chapter:opacity-100 [@media(hover:none)]:opacity-100">
                       <IconButton icon={Plus} size="sm" label="Add a column at the end" onClick={() => edit(d => { d.chapters.find(c => c.id === pc.chapter.id)?.columns.push(""); })} />
@@ -374,9 +374,9 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
                 <div key={l.key} className="board-move board-enter absolute inset-x-0 border-b border-ink-line/40 px-3 pt-2.5" style={{ top: l.y, height: l.h }}>
                   {l.id && filter.groupBy !== "none" ? (
                     <button onClick={() => select({ kind, id: l.id! })}
-                      className={cn("max-w-full truncate border-b-2 text-left font-sans text-[15px] leading-6", on ? "text-paper" : "text-bone hover:text-paper")}
+                      className={cn("max-w-full truncate border-b-2 text-left font-sans text-base leading-6", on ? "text-paper" : "text-bone hover:text-paper")}
                       style={{ borderColor: visible(l.color) }}>{l.name}</button>
-                  ) : <span className="font-sans text-[15px] leading-6 text-taupe">{l.name}</span>}
+                  ) : <span className="font-sans text-base leading-6 text-taupe">{l.name}</span>}
                 </div>
               );
             })}
@@ -394,7 +394,7 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
             ))}
             {lay.lanes.map(l => <div key={l.key} className="board-move pointer-events-none absolute inset-x-0 border-b border-ink-line/40" style={{ top: l.y, height: l.h }} />)}
             {slot && !drag && (
-              <div key={slot.key} className="board-enter pointer-events-none absolute flex items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-md border border-dashed border-taupe/50 font-talk text-[12px] text-taupe transition-[opacity,scale] duration-150"
+              <div key={slot.key} className="board-enter pointer-events-none absolute flex items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-md border border-dashed border-taupe/50 font-talk text-xs text-taupe transition-[opacity,scale] duration-150"
                 style={{ left: slot.x, top: slot.y, width: slot.w, height: slot.h }}>
                 <Plus className="h-3.5 w-3.5 shrink-0" />{slot.w > 120 && "Double-click to add"}
               </div>
@@ -446,7 +446,7 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
               if (!on || !label) return null;
               const p = linkPath(from, to);
               return (
-                <div key={`l${key}`} className="pointer-events-none absolute z-10 max-w-56 -translate-x-1/2 -translate-y-1/2 rounded-sm bg-ink-2 px-1.5 py-0.5 text-center font-talk text-[11px] leading-tight text-paper shadow"
+                <div key={`l${key}`} className="pointer-events-none absolute z-10 max-w-56 -translate-x-1/2 -translate-y-1/2 rounded-md bg-ink-2 px-1.5 py-0.5 text-center font-talk text-xs leading-tight text-paper shadow-lift"
                   style={{ left: p.mx, top: p.my }}>{label}</div>
               );
             })}
@@ -457,7 +457,7 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
               if (st.card.dim && !on) return null;
               return (
                 <div key={`sl${st.key}`} title={`${st.out ? "Leads to" : "Comes from"} an event in "${st.chapter}" that isn't shown. Click the arrow to go there.`}
-                  className={cn("pointer-events-none absolute z-10 max-w-40 -translate-y-1/2 truncate rounded-sm px-1 font-talk text-[10.5px] leading-tight",
+                  className={cn("pointer-events-none absolute z-10 max-w-40 -translate-y-1/2 truncate rounded-md px-1 font-talk text-xs leading-tight",
                     st.later ? "" : "-translate-x-full", on ? "bg-ink-2 text-paper" : "text-taupe")}
                   style={{ left: p.far + (st.later ? 2 : -2), top: p.y }}>
                   {st.chapter}{on && st.label && <span className="text-taupe"> · {st.label}</span>}
@@ -489,24 +489,24 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
                   onPointerMove={onMove} onPointerUp={onUp}
                   onPointerEnter={() => setHover(event.id)} onPointerLeave={() => setHover(h => (h === event.id ? null : h))}
                   title={[event.title || "(untitled)", event.note].filter(Boolean).join("\n\n")}
-                  className={cn("board-move board-enter group/card absolute cursor-grab overflow-hidden rounded-md border border-l-[3px] text-left active:cursor-grabbing",
-                    "border-[color-mix(in_srgb,var(--c)_35%,transparent)]",
-                    on ? "z-10 bg-[color-mix(in_srgb,var(--c)_32%,var(--color-ink-2))] shadow-[0_8px_24px_rgba(0,0,0,.4)] ring-2 ring-paper"
-                      : cn("bg-[color-mix(in_srgb,var(--c)_15%,var(--color-ink-2))] hover:z-10 hover:bg-[color-mix(in_srgb,var(--c)_24%,var(--color-ink-2))]",
+                  className={cn("board-move board-enter group/card absolute cursor-grab overflow-hidden rounded-md border-[1.5px] text-left active:cursor-grabbing",
+                    "border-[color-mix(in_srgb,var(--c)_50%,transparent)]",
+                    on ? "z-10 bg-[color-mix(in_srgb,var(--c)_34%,var(--color-ink-2))] shadow-lift ring-2 ring-paper"
+                      : cn("bg-[color-mix(in_srgb,var(--c)_20%,var(--color-ink-2))] hover:z-10 hover:border-[color-mix(in_srgb,var(--c)_70%,transparent)] hover:bg-[color-mix(in_srgb,var(--c)_27%,var(--color-ink-2))]",
                         focus === event.id && "z-10 ring-1 ring-paper/60"),
                     c.dim && !on && "opacity-25", lifted && "opacity-30", arrive !== undefined && "link-arrive")}
                   style={{
-                    left: box.x, top: box.y, width: box.w, height: box.h, borderLeftColor: color,
+                    left: box.x, top: box.y, width: box.w, height: box.h,
                     "--c": color, "--d": `${arrive ?? 0}ms`,
                   } as React.CSSProperties}>
-                  <p className={cn("overflow-hidden px-1.5 font-talk text-[12px] leading-[15px] text-paper", box.h < 30 ? "pt-0.5" : "pt-1", event.note && "pr-5")}
+                  <p className={cn("overflow-hidden px-1.5 font-talk text-xs leading-[15px] text-paper", box.h < 30 ? "pt-0.5" : "pt-1", event.note && "pr-5")}
                     style={{ display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: lines }}>
                     {event.title || <span className="italic text-taupe">untitled</span>}
                   </p>
                   {chips && (
                     <div className="absolute inset-x-1.5 bottom-1 flex items-center gap-1 overflow-hidden whitespace-nowrap">
                       {dots.map(t => <span key={t} className="h-1.5 w-3 shrink-0 rounded-full" style={{ background: threadColor.get(t) }} />)}
-                      {others.map(x => <span key={x} className="font-sans text-[11px] leading-none" style={{ color: charColor.get(x) }}>{nameOf.get(x) ?? x}</span>)}
+                      {others.map(x => <span key={x} className="font-sans text-xs leading-none" style={{ color: charColor.get(x) }}>{nameOf.get(x) ?? x}</span>)}
                     </div>
                   )}
                   {event.note && <StickyNote className={cn("absolute right-1 h-3 w-3 text-taupe", box.h < 30 ? "top-0.5" : "top-1")} />}
@@ -527,9 +527,9 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
               const c = lay.cards.find(x => x.event.id === moving.id && x.lane.key === moving.lane.key);
               if (!c) return null;
               return (
-                <div className="pointer-events-none absolute z-30 overflow-hidden rounded-md border-l-[3px] bg-ink-3 shadow-[0_10px_30px_rgba(0,0,0,.5)]"
-                  style={{ left: pointer.x - moving.offX, top: pointer.y - moving.offY, width: moving.w, height: moving.h, borderLeftColor: colorOf(c), rotate: "-1.5deg" }}>
-                  <p className="line-clamp-2 px-1.5 pt-1 font-talk text-[12px] leading-[15px] text-paper">{c.event.title || "untitled"}</p>
+                <div className="pointer-events-none absolute z-30 overflow-hidden rounded-md border-[1.5px] border-[color-mix(in_srgb,var(--c)_70%,transparent)] bg-[color-mix(in_srgb,var(--c)_30%,var(--color-ink-3))] shadow-panel"
+                  style={{ left: pointer.x - moving.offX, top: pointer.y - moving.offY, width: moving.w, height: moving.h, "--c": colorOf(c), rotate: "-1.5deg" } as React.CSSProperties}>
+                  <p className="line-clamp-2 px-1.5 pt-1 font-talk text-xs leading-[15px] text-paper">{c.event.title || "untitled"}</p>
                 </div>
               );
             })()}
@@ -555,14 +555,14 @@ function ColumnHead({ chapterId, col, label, empty, last, style }: { chapterId: 
     <div className="group/col absolute flex items-center border-l border-dashed border-ink-line/30 first-of-type:border-l-0" style={style}>
       <input value={text} onChange={e => { setText(e.target.value); commit(e.target.value); }} onKeyDown={e => e.key === "Enter" && e.currentTarget.blur()}
         placeholder="·" aria-label="Column label"
-        className="h-full min-w-0 flex-1 bg-transparent px-2 font-talk text-[12px] text-bone placeholder:text-ink-line hover:placeholder:text-taupe focus:text-paper focus:outline-hidden" />
+        className="h-full min-w-0 flex-1 bg-transparent px-2 font-talk text-xs text-bone placeholder:text-ink-line hover:placeholder:text-taupe focus:text-paper focus:outline-hidden" />
       <div className="flex shrink-0 opacity-0 transition-opacity group-hover/col:opacity-100">
         {empty && !last && (
           <button aria-label="Remove this empty column" title="Remove this empty column" onClick={() => edit(d => { const c = d.chapters.find(x => x.id === chapterId); if (c) removeColumn(c, col); })}
-            className="grid h-5 w-5 place-items-center rounded-sm text-taupe hover:text-coral"><X className="h-3 w-3" /></button>
+            className="grid h-5 w-5 place-items-center rounded-md text-taupe hover:text-coral"><X className="h-3 w-3" /></button>
         )}
         <button aria-label="Insert a column after this one" title="Insert a column after this one" onClick={() => edit(d => { const c = d.chapters.find(x => x.id === chapterId); if (c) insertColumn(c, col + 1); })}
-          className="grid h-5 w-5 place-items-center rounded-sm text-taupe hover:text-paper"><ChevronsLeftRight className="h-3 w-3" /></button>
+          className="grid h-5 w-5 place-items-center rounded-md text-taupe hover:text-paper"><ChevronsLeftRight className="h-3 w-3" /></button>
       </div>
     </div>
   );

@@ -14,7 +14,7 @@ import { SearchDropZones } from "./components/SearchDropZones";
 import { Button } from "@/shared/ui/button";
 import { Confirm } from "@/shared/ui/confirm";
 import { IconButton } from "@/shared/ui/icon-button";
-import { Popover } from "@/shared/ui/popover";
+import { Popover, PopoverTitle } from "@/shared/ui/popover";
 import { HoverActions, Section } from "@/shared/ui/section";
 import { Toasts } from "@/shared/ui/toasts";
 import { m, spring } from "@/shared/ui/motion";
@@ -41,7 +41,7 @@ export default function PromptBuilder() {
 
   return (
     <>
-      <div className="grid h-screen grid-cols-[190px_minmax(0,1fr)_270px] bg-ink text-paper lg:grid-cols-[230px_minmax(0,1fr)_340px] 2xl:grid-cols-[260px_minmax(0,1fr)_400px]">
+      <div className="grid h-screen grid-cols-[240px_minmax(0,1fr)_280px] bg-ink text-paper lg:grid-cols-[240px_minmax(0,1fr)_340px] xl:grid-cols-[280px_minmax(0,1fr)_360px] 2xl:grid-cols-[280px_minmax(0,1fr)_400px]">
         <Sidebar
           chars={chars} current={curId} onSelect={s.select} onCreate={n => s.create(n)} loc={loc} onImport={s.importChars} onError={setError}
           onDirChanged={s.reload} onFlush={s.flush} onRevert={s.revert}
@@ -54,7 +54,7 @@ export default function PromptBuilder() {
             ...(notice ? [{ id: "notice", kind: "notice" as const, text: notice, onDismiss: () => setNotice(null) }] : []),
           ]} />
           {!cur ? (
-            <div className="grid flex-1 place-items-center font-sans text-2xl font-light text-bone">Name a character on the left to start.</div>
+            <div className="grid flex-1 place-items-center font-sans text-xl font-light text-bone">Name a character on the left to start.</div>
           ) : (
             <>
               <div className="min-h-0 flex-1 space-y-10 overflow-y-auto px-8 pb-6 pt-6">
@@ -119,7 +119,7 @@ export default function PromptBuilder() {
                     rows={2}
                     aria-label="Notes"
                     placeholder="Anything to remember about this character"
-                    className="mt-3 field-sizing-content min-h-16 w-full resize-none rounded-xl border-2 border-ink-3 bg-ink-2 px-3 py-2 font-talk text-[15px] text-bone transition-colors placeholder:text-taupe hover:border-ink-line focus:border-caramel focus:outline-hidden"
+                    className="mt-3 field-sizing-content min-h-16 w-full resize-none rounded-lg border-2 border-ink-3 bg-ink-2 px-3 py-2 font-talk text-base text-bone transition-colors placeholder:text-taupe hover:border-ink-line focus:border-caramel focus:outline-hidden"
                   />
                 </Section>
               </div>
@@ -159,7 +159,7 @@ function HelpButton() {
   const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen} align="end" className="w-96" trigger={<IconButton icon={CircleHelp} label="Shortcuts" className="mb-2" />}>
-      <p className="mb-2 font-sans text-lg text-paper">Shortcuts</p>
+      <PopoverTitle>Shortcuts</PopoverTitle>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
         {HELP.map(([k, v]) => (
           <div key={k} className="contents">

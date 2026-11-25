@@ -1,10 +1,23 @@
 import { Popover as P } from "@base-ui/react/popover";
 import type { ReactElement, ReactNode } from "react";
 import { cn } from "@/shared/lib/utils";
+import { Rule } from "./heading";
 import { AnimatePresence, m, pop } from "./motion";
 
-/** Popover framed like the game's dialogue box. */
-export const popoverCls = "rounded-xl border-[3px] border-paper bg-ink-2 p-4 font-talk text-[15px] text-paper shadow-[0_12px_40px_rgba(0,0,0,.45)] outline-hidden origin-(--transform-origin)";
+/** The raised surface every popup uses (popovers, menus, dialogs, suggestion lists, toasts): one step lighter than the
+ *  page, a thin line and a soft shadow. Rows inside highlight with `bg-paper/8`, since ink-3 is the surface itself. */
+export const surfaceCls = "rounded-lg border border-ink-line bg-ink-3 font-talk text-base text-paper shadow-panel";
+export const popoverCls = cn(surfaceCls, "p-4 outline-hidden origin-(--transform-origin)");
+
+/** Popup heading: the title over the short colored rule, like a Section. */
+export function PopoverTitle({ children, color = "#c4956a", className }: { children: ReactNode; color?: string; className?: string }) {
+  return (
+    <div className={cn("mb-3", className)}>
+      <p className="font-sans text-lg text-paper">{children}</p>
+      <Rule color={color} short />
+    </div>
+  );
+}
 
 type Props = {
   open: boolean;

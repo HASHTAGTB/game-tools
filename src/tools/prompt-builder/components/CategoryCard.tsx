@@ -105,7 +105,7 @@ export function CategoryCard({ cat, color, db, activeKey, setActive, onChange, o
                     onChange={e => editPreset(p.id, x => { x.name = e.target.value; })}
                     onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur(); }}
                     onBlur={() => setRenaming(null)}
-                    className="field-sizing-content min-w-8 rounded-sm bg-ink-3 px-1 font-sans text-base text-paper outline-2 outline-(--c) focus:outline-solid"
+                    className="field-sizing-content min-w-8 rounded-md bg-ink-3 px-1 font-sans text-base text-paper outline-2 outline-(--c) focus:outline-solid"
                     style={{ "--c": hex } as React.CSSProperties}
                   />
                   {sel?.id === p.id && <Underline color={hex} />}
@@ -149,7 +149,7 @@ export function CategoryCard({ cat, color, db, activeKey, setActive, onChange, o
             exit={{ opacity: 0, transition: { duration: 0.08 } }}
           >
             {!sel ? (
-              <p className="flex min-h-11 items-center rounded-xl border-2 border-dashed border-ink-3 px-3 font-talk text-[15px] text-taupe">
+              <p className="flex min-h-11 items-center rounded-lg border-2 border-dashed border-ink-3 px-3 font-talk text-base text-taupe">
                 Left out of the prompt. {cat.presets.length ? "Pick a preset above to use it." : "Add a preset with +."}
               </p>
             ) : (

@@ -164,6 +164,34 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<boolea
     return send(res, 200, { ok: true }), true;
   }
 
+  if (route === "POST /api/fs/move") {
+    const { from, to } = await body(req);
+    const src = inRoot(root, from), dst = inRoot(root, to);
+    if (src === root || dst === root) throw new Error("can't move the root folder");
+    if (dst === src || dst.startsWith(src + path.sep)) throw new Error("can't move a folder into itself");
+    // a different case of the same name (Rin.md → rin.md) is the same file on case-insensitive disks
+    // (on a case-sensitive disk rin.md and Rin.md can be two files: only the same file may be "overwritten")
+    const there = await fs.stat(dst).catch(() => null);
+    if (there) {
+      const self = await fs.stat(src);
+      if (there.ino !== self.ino || there.dev !== self.dev) throw new Error(`${to} already exists`);
+    }
+    await fs.mkdir(path.dirname(dst), { recursive: true });
+    await fs.rename(src, dst);
+    return send(res, 200, { ok: true }), true;
+  }
+
+  if (route === "DELETE /api/fs/dir") {
+    if (full === root) throw new Error("can't delete the root folder");
+    await fs.rm(full, { recursive: true, force: true });
+    return send(res, 200, { ok: true }), true;
+  }
+
+  if (route === "POST /api/fs/dir") {
+    await fs.mkdir(full, { recursive: true });
+    return send(res, 200, { ok: true }), true;
+  }
+
   send(res, 404, { error: `no route ${route}` });
   return true;
 }

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { Button } from "@/shared/ui/button";
+import { MenuMarker, MenuRule } from "@/shared/ui/menu";
 import { Popover } from "@/shared/ui/popover";
 import { SearchField } from "@/shared/ui/search-field";
 import { visible } from "../lib/colors";
@@ -81,9 +83,9 @@ export function FindButton() {
 
   return (
     <Popover open={open} onOpenChange={setOpen} side="bottom" align="end" className="w-[30rem] p-0" trigger={
-      <button className="mr-1 flex items-center gap-1.5 rounded-sm px-1.5 py-1 font-talk text-[13px] text-taupe hover:bg-ink-3 hover:text-paper">
-        <Search className="h-4 w-4" />Find<kbd className="ml-1 font-sans text-[11px] text-taupe/80">Ctrl K</kbd>
-      </button>
+      <Button size="sm" variant="quiet" className="mr-1">
+        <Search className="h-4 w-4" />Find<kbd className="ml-1 font-talk text-xs text-taupe/80">Ctrl K</kbd>
+      </Button>
     }>
       <div className="px-4 pt-2">
         <SearchField ref={input} autoFocus value={query} onValueChange={setQuery} placeholder="Titles, notes, characters…" aria-label="Find an event"
@@ -93,23 +95,23 @@ export function FindButton() {
             if (e.key === "Enter") { e.preventDefault(); go(active); }
           }} />
       </div>
-      <ul ref={list} className="max-h-[55vh] overflow-y-auto py-1.5">
+      <MenuRule ref={list} className="mx-4 my-2.5 max-h-[55vh] overflow-y-auto">
         {results.map((r, i) => (
-          <li key={r.event.id}>
+          <li key={r.event.id} className="relative">
+            {i === active && <MenuMarker layoutId="find-marker" color={r.color ? visible(r.color) : undefined} />}
             <button data-i={i} onClick={() => go(i)} onPointerMove={() => setActive(i)}
-              className={cn("block w-full border-l-[3px] px-4 py-1.5 text-left", i === active ? "bg-ink-3" : "")}
-              style={{ borderLeftColor: i === active && r.color ? visible(r.color) : "transparent" }}>
-              <span className="block truncate font-talk text-[14px] text-paper">{r.event.title || <i className="text-taupe">untitled</i>}</span>
-              <span className="block truncate font-talk text-[12px] text-taupe">
+              className={cn("block w-full py-1 pl-3 pr-1 text-left transition-colors", i === active ? "text-paper" : "text-bone/80")}>
+              <span className="block truncate font-talk text-base">{r.event.title || <i className="text-taupe">untitled</i>}</span>
+              <span className="block truncate font-talk text-xs text-taupe">
                 {r.chapter.name}{r.chapter.columns[r.event.col] && <> · {r.chapter.columns[r.event.col]}</>}
               </span>
-              {r.snippet && <span className="mt-0.5 block line-clamp-2 font-talk text-[12px] text-bone">{r.snippet}</span>}
+              {r.snippet && <span className="mt-0.5 block line-clamp-2 font-talk text-xs text-bone">{r.snippet}</span>}
             </button>
           </li>
         ))}
-        {query.trim() && !results.length && <li className="px-4 py-2 font-talk text-[13px] text-taupe">Nothing found.</li>}
-        {!query.trim() && <li className="px-4 py-2 font-talk text-[13px] text-taupe">↑ ↓ to pick, Enter to jump there.</li>}
-      </ul>
+        {query.trim() && !results.length && <li className="py-1 pl-3 font-talk text-sm text-taupe">Nothing found.</li>}
+        {!query.trim() && <li className="py-1 pl-3 font-talk text-sm text-taupe">↑ ↓ to pick, Enter to jump there.</li>}
+      </MenuRule>
     </Popover>
   );
 }

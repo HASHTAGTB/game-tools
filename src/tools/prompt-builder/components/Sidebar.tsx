@@ -1,15 +1,16 @@
-import { useRef, useState } from "react";
-import { Download, Plus, Upload } from "lucide-react";
+import { useRef } from "react";
+import { Download, Upload } from "lucide-react";
 import type { Character } from "../lib/types";
 import { exportCharacter, readImport } from "../lib/store";
 import type { Location } from "@/shared/lib/workspace";
 import { castLook } from "../lib/cast";
-import { cn } from "@/shared/lib/utils";
 import { WorkspaceLocation } from "@/shared/ui/workspace-location";
 import { ToolNav } from "@/shared/ui/tool-nav";
 import { TOOLS } from "@/app/tools";
 import { IconButton } from "@/shared/ui/icon-button";
-import { m, spring } from "@/shared/ui/motion";
+import { Button } from "@/shared/ui/button";
+import { AddField } from "@/shared/ui/field";
+import { MenuGroup, MenuItem, MenuRule } from "@/shared/ui/menu";
 
 type Props = {
   chars: Character[]; current: string | null; onSelect: (id: string) => void; onCreate: (name: string) => void;
@@ -19,7 +20,6 @@ type Props = {
 
 /** Laid out like the game's main menu: a thin vertical rule with text links beside it. */
 export function Sidebar({ chars, current, onSelect, onCreate, loc, onDirChanged, onReload, onFlush, onRevert, onImport, onError }: Props) {
-  const [name, setName] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const importFiles = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -31,52 +31,27 @@ export function Sidebar({ chars, current, onSelect, onCreate, loc, onDirChanged,
       if (fileInput.current) fileInput.current.value = "";
     }
   };
-  const create = () => { if (name.trim()) { onCreate(name.trim()); setName(""); } };
   return (
     <aside className="flex min-h-0 flex-col border-r border-ink-line/60">
       <ToolNav current={TOOLS.promptBuilder} />
 
-      <nav className="min-h-0 flex-1 overflow-y-auto px-6">
-        <ul className="border-l-2 border-bone/40">
-          {chars.map(c => {
-            const on = c.id === current;
-            return (
-              <li key={c.id} className="group/char relative flex items-center">
-                {/* One shared layoutId: the bar slides to the selected character and takes on their color. */}
-                {on && <m.span layoutId="char-marker" aria-hidden transition={spring.bouncy}
-                  className="absolute left-[-3px] top-1 h-[calc(100%-8px)] w-1 rounded-full"
-                  initial={false} animate={{ backgroundColor: castLook(c.name).color }} />}
-                <button
-                  onClick={() => onSelect(c.id)}
-                  aria-current={on || undefined}
-                  className={cn(
-                    "block min-w-0 flex-1 truncate py-1.5 pl-5 text-left font-sans text-xl underline-offset-[6px] decoration-2 transition-colors",
-                    on ? "text-paper" : "text-bone/70 hover:text-paper hover:underline",
-                  )}
-                >{c.name || c.id}</button>
-                <IconButton icon={Download} size="sm" tooltipSide="right" label={`Export as ${c.id}.json`} onClick={() => exportCharacter(c)}
-                  className="opacity-0 focus-visible:opacity-100 group-hover/char:opacity-100 [@media(hover:none)]:opacity-100" />
-              </li>
-            );
-          })}
-        </ul>
+      <nav className="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
+        <MenuGroup title="Characters">
+          <MenuRule>
+            {chars.map(c => (
+              // One shared layoutId: the bar slides to the selected character and takes on their color.
+              <MenuItem key={c.id} label={c.name || c.id} active={c.id === current} color={castLook(c.name).color} layoutId="char-marker"
+                onClick={() => onSelect(c.id)}
+                actions={<IconButton icon={Download} size="sm" tooltipSide="right" label={`Export as ${c.id}.json`} onClick={() => exportCharacter(c)} />} />
+            ))}
+          </MenuRule>
+        </MenuGroup>
 
-        <div className="mt-5 flex items-center gap-1 border-b-2 border-ink-line focus-within:border-caramel">
-          <input
-            value={name}
-            onChange={e => setName(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && create()}
-            placeholder="New character"
-            aria-label="New character name"
-            className="h-9 min-w-0 flex-1 bg-transparent font-talk text-[15px] text-paper placeholder:text-taupe focus:outline-hidden"
-          />
-          <IconButton icon={Plus} size="sm" label="Create character" kbd="Enter" onClick={create} disabled={!name.trim()} />
-        </div>
+        <AddField className="ml-4 mt-3" placeholder="New character" label="Create character" onAdd={onCreate} />
 
-        <button onClick={() => fileInput.current?.click()} title="Load one or more character files (<id>.json)"
-          className="mt-2 flex items-center gap-2 py-1 font-sans text-[15px] text-taupe underline-offset-4 decoration-2 hover:text-paper hover:underline">
+        <Button size="sm" variant="ghost" className="ml-3 mt-2" onClick={() => fileInput.current?.click()} title="Load one or more character files (<id>.json)">
           <Upload className="h-3.5 w-3.5" />Import characters
-        </button>
+        </Button>
         <input ref={fileInput} type="file" accept=".json,application/json" multiple hidden onChange={e => importFiles(e.target.files)} />
       </nav>
 

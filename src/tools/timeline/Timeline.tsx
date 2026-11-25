@@ -4,7 +4,8 @@ import { cn, uniqueId } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { IconButton } from "@/shared/ui/icon-button";
 import { AnimatePresence, m, pop, spring } from "@/shared/ui/motion";
-import { Popover } from "@/shared/ui/popover";
+import { Popover, PopoverTitle } from "@/shared/ui/popover";
+import { fieldCls } from "@/shared/ui/field";
 import { Switch } from "@/shared/ui/switch";
 import { Toasts } from "@/shared/ui/toasts";
 import { visible } from "./lib/colors";
@@ -79,7 +80,7 @@ export default function Timeline() {
   const events = allEvents(doc.chapters).length;
 
   return (
-    <div className="grid h-screen grid-cols-[210px_minmax(0,1fr)_300px] bg-ink text-paper xl:grid-cols-[230px_minmax(0,1fr)_340px]">
+    <div className="grid h-screen grid-cols-[240px_minmax(0,1fr)_300px] bg-ink text-paper xl:grid-cols-[280px_minmax(0,1fr)_340px]">
       <Sidebar />
 
       <main className="relative flex min-h-0 flex-col">
@@ -101,7 +102,7 @@ export default function Timeline() {
           <span className="flex-1" />
           {loaded && <FindButton />}
           {loaded && <ChecksButton checks={checks} onGo={goToCheck} />}
-          <span className="ml-3 hidden font-talk text-[12px] text-taupe 2xl:inline">{doc.chapters.length} chapters · {events} events</span>
+          <span className="ml-3 hidden font-talk text-xs text-taupe 2xl:inline">{doc.chapters.length} chapters · {events} events</span>
         </div>
         <AnimatePresence initial={false}>
           {isFiltered(s.filter) && (
@@ -115,7 +116,7 @@ export default function Timeline() {
         {conflicts.length > 0 && (
           <div className="shrink-0 space-y-2 border-b-2 border-coral bg-coral/10 px-4 py-2.5">
             {conflicts.map(c => (
-              <div key={c.path} className="flex flex-wrap items-center gap-x-4 gap-y-1 font-talk text-[14px]">
+              <div key={c.path} className="flex flex-wrap items-center gap-x-4 gap-y-1 font-talk text-base">
                 <span className="min-w-0 flex-1 text-paper">
                   {c.label} was {c.theirs === null ? "deleted" : "changed"} by someone else (git pull?) while you had unsaved changes in it.
                 </span>
@@ -130,13 +131,13 @@ export default function Timeline() {
           doc.chapters.length ? <Board flagged={flagged} /> : (
             <div className="grid flex-1 place-items-center px-8 text-center">
               <div className="max-w-md space-y-3">
-                <p className="font-sans text-2xl font-light text-bone">No chapters yet.</p>
+                <p className="font-sans text-xl font-light text-bone">No chapters yet.</p>
                 <p className="font-talk text-sm text-taupe">Start with <b>New chapter</b> at the top.</p>
               </div>
             </div>
           )
         ) : (
-          <div className="grid flex-1 place-items-center font-sans text-xl font-light text-bone">
+          <div className="grid flex-1 place-items-center font-sans text-lg font-light text-bone">
             {loc && !loc.ready ? "Pick the story folder at the bottom left." : "Loading…"}
           </div>
         )}
@@ -158,13 +159,13 @@ function GroupSwitch() {
   const { filter, setFilter } = useTimeline();
   return (
     <div role="radiogroup" aria-label="Lanes" className="flex items-center gap-0.5 rounded-md bg-ink-2 p-0.5">
-      <span className="px-1.5 font-sans text-[13px] text-taupe">Lanes</span>
+      <span className="px-1.5 font-sans text-sm text-taupe">Lanes</span>
       {GROUPS.map(g => {
         const on = filter.groupBy === g.id;
         return (
           <button key={g.id} role="radio" aria-checked={on} onClick={() => setFilter({ groupBy: g.id })}
-            className={cn("relative h-7 rounded-sm px-2 font-sans text-[14px] transition-colors", on ? "text-paper" : "text-taupe hover:text-paper")}>
-            {on && <m.span layoutId="lane-group" transition={spring.bouncy} className="absolute inset-0 rounded-sm bg-ink-3" />}
+            className={cn("relative h-7 rounded-md px-2 font-sans text-base transition-colors", on ? "text-paper" : "text-taupe hover:text-paper")}>
+            {on && <m.span layoutId="lane-group" transition={spring.bouncy} className="absolute inset-0 rounded-md bg-ink-3" />}
             <span className="relative">{g.label}</span>
           </button>
         );
@@ -199,11 +200,11 @@ function FocusBar() {
   };
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-ink-line/60 bg-ink-2/50 px-4 py-1.5">
-      <span className="font-sans text-[14px] text-taupe">{view ? view.name : "Focus"}</span>
+      <span className="font-sans text-base text-taupe">{view ? view.name : "Focus"}</span>
       <div className="flex flex-wrap gap-1">
         <AnimatePresence mode="popLayout" initial={false}>
         {chips.map(c => (
-          <m.span key={`${c.key}:${c.id}`} layout {...pop} className="flex items-center gap-1 rounded-full border-2 py-px pl-2 pr-0.5 font-sans text-[13px] text-paper" style={{ borderColor: visible(c.color) }}>
+          <m.span key={`${c.key}:${c.id}`} layout {...pop} className="flex items-center gap-1 rounded-full border-2 py-px pl-2 pr-0.5 font-sans text-sm text-paper" style={{ borderColor: visible(c.color) }}>
             {c.name}
             <button aria-label={`Drop ${c.name}`} onClick={() => setFilter({ [c.key]: filter[c.key].filter(x => x !== c.id) }, null)}
               className="grid h-4 w-4 place-items-center rounded-full text-taupe hover:text-paper"><X className="h-3 w-3" /></button>
@@ -211,17 +212,18 @@ function FocusBar() {
         ))}
         </AnimatePresence>
       </div>
-      <label className="flex items-center gap-2 font-talk text-[13px] text-bone">
+      <label className="flex items-center gap-2 font-talk text-sm text-bone">
         <Switch checked={shown.hideOthers} onCheckedChange={v => setFilter({ hideOthers: v })} />
         Hide the rest
       </label>
       <span className="flex-1" />
       {!view && (
         <Popover open={open} onOpenChange={setOpen} align="end" className="w-72" trigger={<Button size="sm"><BookmarkPlus className="h-4 w-4" />Save as view</Button>}>
-          <p className="mb-2">Save this focus as a view for everyone:</p>
+          <PopoverTitle>Save as view</PopoverTitle>
+          <p className="mb-3 text-sm text-bone">Saves this focus for everyone.</p>
           <div className="flex items-center gap-2">
             <input autoFocus value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === "Enter" && save()} placeholder="Name"
-              className="h-8 min-w-0 flex-1 rounded-md border-2 border-ink-line bg-ink px-2 font-talk text-sm text-paper focus:border-caramel focus:outline-hidden" />
+              className={cn(fieldCls, "flex-1")} />
             <Button size="sm" variant="primary" onClick={save} disabled={!name.trim()}>Save</Button>
           </div>
         </Popover>

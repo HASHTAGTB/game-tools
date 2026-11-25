@@ -48,7 +48,7 @@ export function TogglesCard({ toggles, db, activeKey, setActive, onChange }: Pro
     >
       <div className="mt-3">
         {!toggles.length && (
-          <button onClick={add} className="flex min-h-11 w-full items-center gap-2 rounded-xl border-2 border-dashed border-ink-3 px-3 text-left font-talk text-[15px] text-taupe transition-colors hover:border-ink-line hover:text-bone">
+          <button onClick={add} className="flex min-h-11 w-full items-center gap-2 rounded-lg border-2 border-dashed border-ink-3 px-3 text-left font-talk text-base text-taupe transition-colors hover:border-ink-line hover:text-bone">
             <Plus className="h-4 w-4" />Add a toggle for accessories, props or effects you switch on and off.
           </button>
         )}
@@ -71,7 +71,7 @@ export function TogglesCard({ toggles, db, activeKey, setActive, onChange }: Pro
                       value={t.name}
                       onChange={e => edit(t.id, x => { x.name = e.target.value; })}
                       aria-label="Toggle name"
-                      className={cn("field-sizing-content min-w-16 max-w-56 bg-transparent font-sans text-[17px] transition-colors focus:outline-hidden", t.on ? "text-paper" : "text-taupe")}
+                      className={cn("field-sizing-content min-w-16 max-w-56 bg-transparent font-sans text-lg transition-colors focus:outline-hidden", t.on ? "text-paper" : "text-taupe")}
                     />
                     <Collapsible.Trigger render={
                       <button className="flex min-w-0 flex-1 items-center gap-1.5 text-left font-talk text-sm text-taupe hover:text-bone">

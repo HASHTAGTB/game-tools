@@ -42,7 +42,7 @@ export function PromptPanel({ ch, onNegative }: { ch: Character; onNegative: (v:
             key={ch.id}
             initial={{ y: 28 }} animate={{ y: 0 }} exit={{ y: 28, transition: { duration: 0.12, ease: "easeIn" } }}
             transition={spring.bouncy}
-            className="say-tab px-5 pb-1.5 pt-2.5 font-sans text-xl font-bold leading-none"
+            className="say-tab px-5 pb-1.5 pt-2.5 font-sans text-lg font-bold leading-none"
             style={{ color: `color-mix(in srgb, ${look.color} 78%, #2f2924)` }}
           >
             {ch.name || ch.id}
@@ -51,7 +51,7 @@ export function PromptPanel({ ch, onNegative }: { ch: Character; onNegative: (v:
         <button
           onClick={() => copy("p")}
           title="Copy prompt (Ctrl+Shift+C)"
-          className="say-tab inline-flex items-center gap-2 px-4 pb-1.5 pt-2 font-sans text-[17px] font-semibold leading-none text-ink transition-colors hover:bg-bone"
+          className="say-tab inline-flex items-center gap-2 px-4 pb-1.5 pt-2 font-sans text-lg font-semibold leading-none text-ink transition-colors hover:bg-bone"
         >
           <Swap on={copied === "p"} yes={<Check className="h-4 w-4" />} no={<ClipboardCopy className="h-4 w-4" />} />
           {copied === "p" ? "Copied" : "Copy prompt"}
@@ -65,7 +65,7 @@ export function PromptPanel({ ch, onNegative }: { ch: Character; onNegative: (v:
         transition={{ duration: 0.3, ease: "easeOut" }}
         onClick={skip}
       >
-        <p className="say-text max-h-[min(11.75rem,22vh)] min-h-22 select-text overflow-y-auto px-6 py-4 text-[17px] leading-[1.75]">
+        <p className="say-text max-h-[min(11.75rem,22vh)] min-h-22 select-text overflow-y-auto px-6 py-4 text-lg leading-[1.75]">
           <Crawled segs={segs} shown={shown} />
           {!segs.length && <span className="opacity-70">No tags yet. Add some above and the prompt appears here.</span>}
         </p>
@@ -80,7 +80,7 @@ export function PromptPanel({ ch, onNegative }: { ch: Character; onNegative: (v:
             value={ch.negative}
             onChange={e => onNegative(e.target.value)}
             placeholder="optional, for this character only"
-            className="h-9 flex-1 bg-transparent font-talk text-[15px] text-paper placeholder:text-taupe focus:outline-hidden"
+            className="h-9 flex-1 bg-transparent font-talk text-base text-paper placeholder:text-taupe focus:outline-hidden"
           />
         </div>
         <Button size="md" onClick={() => copy("n")} disabled={!ch.negative}>
@@ -139,7 +139,7 @@ function Crawled({ segs, shown }: { segs: Segment[]; shown: number }) {
     const hl = s.color === 0 ? undefined : {
       backgroundImage: `linear-gradient(transparent 52%, ${segColor(s.color)} 52%, ${segColor(s.color)} 90%, transparent 90%)`,
     };
-    const hlCls = s.color === 0 ? undefined : "rounded-xs px-0.5 [box-decoration-break:clone] [-webkit-box-decoration-break:clone]";
+    const hlCls = s.color === 0 ? undefined : "rounded-md px-0.5 [box-decoration-break:clone] [-webkit-box-decoration-break:clone]";
     return (
       <span key={i} title={s.source}>
         {vis === s.tag.length

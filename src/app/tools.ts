@@ -18,6 +18,11 @@ export const TOOLS = {
     name: "Timeline",
     description: "The story's chronology: chapters, storylines and who does what when.",
   },
+  notes: {
+    path: "/notes",
+    name: "Notes",
+    description: "The vault's Markdown notes, with a folder tree like Obsidian's.",
+  },
 } satisfies Record<string, ToolInfo>;
 
 export const DEFAULT_TOOL = TOOLS.promptBuilder;

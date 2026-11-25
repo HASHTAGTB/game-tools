@@ -2,7 +2,8 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { commit, defaultMessage, discard, keepMine, onPendingChange, pendingSnapshot } from "@/shared/lib/github";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "./button";
-import { Popover } from "./popover";
+import { fieldCls } from "./field";
+import { Popover, PopoverTitle } from "./popover";
 
 type Props = {
   /** Write the tool's in-memory edits out first, so the commit has them. */
@@ -78,35 +79,38 @@ export function GitHubSave({ onFlush, onRevert }: Props) {
     <div className="px-4 pt-3">
       <Popover open={open} onOpenChange={setOpen} side="top" align="start" className="w-md" trigger={
         <button disabled={busy && !open}
-          className={cn("group w-full rounded-sm border-l-4 p-2 text-left transition-colors",
-            n ? "border-caramel bg-caramel/15" : "border-ink-line")}>
-          <span className="block font-sans text-[15px] text-paper underline-offset-4 decoration-2 group-hover:underline">
-            {busy ? "Saving…" : n ? "Save to GitHub" : "Saved on GitHub"}
+          className={cn("w-full rounded-md p-2 text-left font-sans transition-colors disabled:opacity-60",
+            n ? "bg-paper text-ink hover:bg-bone" : "group text-bone hover:text-paper")}>
+          <span className="flex items-baseline gap-2">
+            <span className={cn("flex-1 text-base underline-offset-4 decoration-2", !n && "group-hover:underline")}>
+              {busy ? "Saving…" : n ? "Save to GitHub" : "Saved on GitHub"}
+            </span>
+            {n > 0 && <kbd className="font-talk text-xs text-taupe">Ctrl+S</kbd>}
           </span>
-          <span className="mt-0.5 block font-talk text-[11px] leading-snug text-bone">
-            {n ? `${plural(n, "unsaved change")} · Ctrl+S` : saved || "No unsaved changes"}
+          <span className={cn("mt-0.5 block font-talk text-xs", n ? "text-ink-3" : "text-taupe")}>
+            {n ? plural(n, "unsaved change") : saved || "No unsaved changes"}
           </span>
         </button>
       }>
         {conflicts.length ? (
           <>
-            <p className="mb-2 font-sans text-lg text-paper">Changed on GitHub too</p>
+            <PopoverTitle color="var(--color-coral)">Changed on GitHub too</PopoverTitle>
             <p className="mb-2 text-sm text-bone">Someone saved these files since you started editing them here. Nothing was saved yet.</p>
             <ul className="mb-3 max-h-40 overflow-y-auto font-talk text-sm text-coral">{conflicts.map(p => <li key={p}>{short(p)}</li>)}</ul>
             <div className="flex items-center justify-end gap-3">
               <Button size="sm" variant="ghost" onClick={() => resolve("theirs")} disabled={busy}>Take theirs (drop my edits)</Button>
-              <Button size="sm" variant="primary" className="px-3" onClick={() => resolve("mine")} disabled={busy}>Keep mine and save</Button>
+              <Button size="sm" variant="primary" onClick={() => resolve("mine")} disabled={busy}>Keep mine and save</Button>
             </div>
           </>
         ) : (
           <>
-            <p className="mb-2 font-sans text-lg text-paper">Save to GitHub</p>
+            <PopoverTitle>Save to GitHub</PopoverTitle>
             {n ? (
               <>
                 <ul className="mb-3 max-h-40 overflow-y-auto font-talk text-sm text-bone">{paths.map(p => <li key={p}>{short(p)}</li>)}</ul>
                 <input value={message} onChange={e => setMessage(e.target.value)} onKeyDown={e => e.key === "Enter" && save()} autoFocus disabled={busy}
                   aria-label="Commit message"
-                  className="h-9 w-full rounded-md border-2 border-ink-line bg-ink px-2 font-talk text-sm text-paper focus:border-caramel focus:outline-hidden disabled:opacity-40" />
+                  className={fieldCls} />
               </>
             ) : <p className="text-sm text-bone">Everything is saved. Edits wait here until you save them.</p>}
           </>
@@ -117,7 +121,7 @@ export function GitHubSave({ onFlush, onRevert }: Props) {
             {n > 0 && <DiscardAll busy={busy} onDiscard={async () => { await onRevert(() => discard()); setOpen(false); }} />}
             <span className="flex-1" />
             <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Close</Button>
-            {n > 0 && <Button size="sm" variant="primary" className="px-3" onClick={() => save()} disabled={busy}>Save</Button>}
+            {n > 0 && <Button size="sm" variant="primary" onClick={() => save()} disabled={busy}>Save</Button>}
           </div>
         )}
       </Popover>

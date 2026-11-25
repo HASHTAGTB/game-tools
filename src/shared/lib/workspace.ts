@@ -44,6 +44,12 @@ interface Store {
   list(dir: string): Promise<Entry[]>;
   /** Last change time of a file, null if it doesn't exist. */
   stat(path: string): Promise<number | null>;
+  /** Move or rename a file or a whole folder, any kind of file (images too). `to` must not exist yet. */
+  move(from: string, to: string): Promise<void>;
+  /** Delete a folder and everything in it. */
+  removeDir(dir: string): Promise<void>;
+  /** Make an empty folder. Browser storage and GitHub can't hold empty folders: there it does nothing. */
+  mkdir(dir: string): Promise<void>;
 }
 
 function check(path: string) {
@@ -74,6 +80,9 @@ const server: Store = {
   remove: async path => void (await api("DELETE", `/api/fs/file${q(path)}`)),
   list: dir => api("GET", `/api/fs/list${q(dir)}`),
   stat: async path => (await api<{ mtime: number | null }>("GET", `/api/fs/stat${q(path)}`)).mtime,
+  move: async (from, to) => void (await api("POST", "/api/fs/move", { from: check(from).join("/"), to: check(to).join("/") })),
+  removeDir: async dir => void (await api("DELETE", `/api/fs/dir${q(dir)}`)),
+  mkdir: async dir => void (await api("POST", `/api/fs/dir${q(dir)}`)),
 };
 
 // ---------------------------------------------------------------- IndexedDB (files + settings)
@@ -123,6 +132,22 @@ const browser: Store = {
     return [...out.values()];
   },
   stat: async path => (await browser.read(path))?.mtime ?? null,
+  move: async (from, to) => {
+    const [f, t] = [check(from).join("/"), check(to).join("/")];
+    const keys = (await tx("files", "readonly", s => s.getAllKeys())) as string[];
+    const moving = keys.filter(k => k === f || k.startsWith(f + "/"));
+    if (keys.some(k => k === t || k.startsWith(t + "/"))) throw new Error(`${to} already exists`);
+    for (const k of moving) {
+      const v = await tx<Stored>("files", "readonly", s => s.get(k));
+      await tx("files", "readwrite", s => s.put(v, t + k.slice(f.length)));
+      await tx("files", "readwrite", s => s.delete(k));
+    }
+  },
+  removeDir: async dir => {
+    const d = check(dir).join("/") + "/";
+    await tx("files", "readwrite", s => s.delete(IDBKeyRange.bound(d, d + "\uffff")));
+  },
+  mkdir: async () => {},
 };
 
 /** The Prompt Builder used to keep its own database ("prompt-builder": characters + settings). Copy it over once. */
@@ -154,14 +179,14 @@ type Perm = "granted" | "denied" | "prompt";
 type FileHandle = {
   kind: "file"; name: string;
   getFile(): Promise<File>;
-  createWritable(): Promise<{ write(d: string): Promise<void>; close(): Promise<void> }>;
+  createWritable(): Promise<{ write(d: string | Blob): Promise<void>; close(): Promise<void> }>;
 };
 type DirHandle = {
   kind: "directory"; name: string;
   values(): AsyncIterable<FileHandle | DirHandle>;
   getFileHandle(name: string, o?: { create?: boolean }): Promise<FileHandle>;
   getDirectoryHandle(name: string, o?: { create?: boolean }): Promise<DirHandle>;
-  removeEntry(name: string): Promise<void>;
+  removeEntry(name: string, o?: { recursive?: boolean }): Promise<void>;
   queryPermission(o: { mode: "readwrite" }): Promise<Perm>;
   requestPermission(o: { mode: "readwrite" }): Promise<Perm>;
 };
@@ -218,7 +243,55 @@ const folder: Store = {
     return out;
   },
   stat: async path => (await (await fileAt(path, false))?.getFile())?.lastModified ?? null,
+  // The API has no general move for picked folders: copy the bytes over, then delete the old ones
+  move: async (from, to) => {
+    const fp = check(from), tp = check(to);
+    const src = await dirAt(fp.slice(0, -1), false);
+    if (!src) throw new Error(`${from} doesn't exist`);
+    const dst = (await dirAt(tp.slice(0, -1), true))!;
+    const name = fp[fp.length - 1], newName = tp[tp.length - 1];
+    const h = await entryIn(src, name);
+    if (!h) throw new Error(`${from} doesn't exist`);
+    // Only the case changes (rin.md → Rin.md) in the same folder: on Windows and macOS both names are one file, so
+    // copying onto the new name and deleting the old one would delete it. Go through a temporary name instead.
+    if (from.toLowerCase() === to.toLowerCase()) {
+      if (name === newName) return;
+      // On a case-sensitive disk both names can be listed as two different files: don't overwrite the other one
+      if (await entryIn(src, newName)) throw new Error(`${to} already exists`);
+      const tmp = `${newName}.moving-${Date.now()}`;
+      await copyInto(h, src, tmp);
+      await src.removeEntry(name, { recursive: true });
+      await copyInto((await entryIn(src, tmp))!, src, newName);
+      await src.removeEntry(tmp, { recursive: true });
+      return;
+    }
+    if (await entryIn(dst, newName)) throw new Error(`${to} already exists`);
+    await copyInto(h, dst, newName);
+    await src.removeEntry(name, { recursive: true });
+  },
+  removeDir: async dir => {
+    const parts = check(dir);
+    const d = await dirAt(parts.slice(0, -1), false);
+    await d?.removeEntry(parts[parts.length - 1], { recursive: true }).catch(e => { if (!notFound(e)) throw e; });
+  },
+  mkdir: async dir => void (await dirAt(check(dir), true)),
 };
+
+async function entryIn(d: DirHandle, name: string): Promise<FileHandle | DirHandle | null> {
+  for await (const h of d.values()) if (h.name === name) return h;
+  return null;
+}
+
+async function copyInto(h: FileHandle | DirHandle, dst: DirHandle, name: string): Promise<void> {
+  if (h.kind === "file") {
+    const w = await (await dst.getFileHandle(name, { create: true })).createWritable();
+    await w.write(await h.getFile());
+    await w.close();
+    return;
+  }
+  const d = await dst.getDirectoryHandle(name, { create: true });
+  for await (const c of h.values()) await copyInto(c, d, c.name);
+}
 
 // ---------------------------------------------------------------- active backend
 
@@ -257,6 +330,10 @@ export const removeFile = async (path: string) => (await store()).remove(path);
 /** Entries of a folder; empty if it doesn't exist. */
 export const listDir = async (dir: string) => (await store()).list(dir);
 export const statFile = async (path: string) => (await store()).stat(path);
+/** Move or rename a file or folder (with everything in it, any file type). Fails if `to` exists. */
+export const movePath = async (from: string, to: string) => (await store()).move(from, to);
+export const removeDir = async (dir: string) => (await store()).removeDir(dir);
+export const makeDir = async (dir: string) => (await store()).mkdir(dir);
 
 /** Files directly in `dir` with the given extension, as full paths. */
 export async function listFiles(dir: string, ext: string) {

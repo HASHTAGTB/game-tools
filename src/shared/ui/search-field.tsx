@@ -18,7 +18,7 @@ export const SearchField = forwardRef<HTMLInputElement, Props>(({ value, onValue
       value={value}
       onChange={e => onValueChange(e.target.value)}
       onKeyDown={e => { if (e.key === "Escape" && value) { e.preventDefault(); onValueChange(""); } onKeyDown?.(e); }}
-      className="h-10 min-w-0 flex-1 bg-transparent font-talk text-[15px] text-paper placeholder:text-taupe focus:outline-hidden [&::-webkit-search-cancel-button]:hidden"
+      className="h-10 min-w-0 flex-1 bg-transparent font-talk text-base text-paper placeholder:text-taupe focus:outline-hidden [&::-webkit-search-cancel-button]:hidden"
       {...p}
     />
     <AnimatePresence initial={false}>
@@ -28,7 +28,7 @@ export const SearchField = forwardRef<HTMLInputElement, Props>(({ value, onValue
           aria-label="Clear search"
           onClick={() => onValueChange("")}
           initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.6 }}
-          className="grid h-6 w-6 place-items-center rounded-sm text-taupe hover:text-paper"
+          className="grid h-6 w-6 place-items-center rounded-md text-taupe hover:text-paper"
         ><X className="h-3.5 w-3.5" /></m.button>
       )}
     </AnimatePresence>

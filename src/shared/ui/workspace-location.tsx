@@ -8,7 +8,9 @@ import {
 } from "@/shared/lib/workspace";
 import { Button } from "./button";
 import { GitHubSave, usePendingPaths } from "./github-save";
-import { Popover } from "./popover";
+import { fieldCls } from "./field";
+import { IconButton } from "./icon-button";
+import { Popover, PopoverTitle } from "./popover";
 
 type Props = {
   loc: Location | null;
@@ -78,9 +80,9 @@ export function WorkspaceLocation({ loc, onChanged, onReload: reloadTool, onFlus
     return (
       <div className="px-4 py-4">
         <button onClick={action.go} disabled={busy}
-          className="group w-full rounded-sm border-l-4 border-caramel bg-caramel/15 p-2 text-left">
-          <span className="block font-sans text-[15px] text-paper underline-offset-4 decoration-2 group-hover:underline">{action.title}</span>
-          <span className="mt-0.5 block break-all font-talk text-[11px] leading-snug text-bone">{action.text}</span>
+          className="w-full rounded-md bg-paper p-2 text-left text-ink transition-colors hover:bg-bone disabled:opacity-60">
+          <span className="block font-sans text-base">{action.title}</span>
+          <span className="mt-0.5 block break-all font-talk text-xs text-ink-3">{action.text}</span>
         </button>
         {err && <p className="mt-2 text-sm text-coral">{err}</p>}
       </div>
@@ -93,12 +95,12 @@ export function WorkspaceLocation({ loc, onChanged, onReload: reloadTool, onFlus
     {loc?.kind === "github" && <GitHubSave onFlush={onFlush} onRevert={onRevert} />}
     <div className="flex items-end gap-1 px-4 py-4">
       <Popover open={open} onOpenChange={setOpen} side="top" align="start" className="w-md" trigger={
-        <button className="group min-w-0 flex-1 rounded-sm p-2 text-left" title="Change the data folder">
-          <span className="block font-sans text-[15px] text-bone underline-offset-4 decoration-2 group-hover:text-paper group-hover:underline">Data folder</span>
-          <span className="mt-0.5 block break-all font-talk text-[11px] leading-snug text-taupe">{loc?.label || "…"}</span>
+        <button className="group min-w-0 flex-1 rounded-md p-2 text-left" title="Change the data folder">
+          <span className="block font-sans text-base text-bone underline-offset-4 decoration-2 group-hover:text-paper group-hover:underline">Data folder</span>
+          <span className="mt-0.5 block break-all font-talk text-xs leading-snug text-taupe">{loc?.label || "…"}</span>
         </button>
       }>
-        <p className="mb-2 font-sans text-lg text-paper">Data folder</p>
+        <PopoverTitle>Data folder</PopoverTitle>
         {!STATIC ? (
           <>
             <p className="mb-3 text-sm text-bone">
@@ -107,7 +109,7 @@ export function WorkspaceLocation({ loc, onChanged, onReload: reloadTool, onFlus
             </p>
             <div className="flex gap-2">
               <input value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => e.key === "Enter" && saveDir()} autoFocus disabled={busy}
-                className="h-9 min-w-0 flex-1 rounded-md border-2 border-ink-line bg-ink px-2 font-talk text-sm text-paper focus:border-caramel focus:outline-hidden disabled:opacity-40" />
+                className={cn(fieldCls, "flex-1")} />
               <Button size="sm" className="h-9 shrink-0" onClick={chooseDir} disabled={busy}>Browse…</Button>
             </div>
             {busy && <p className="mt-2 text-sm text-bone">Pick a folder in the dialog that opened.</p>}
@@ -120,7 +122,7 @@ export function WorkspaceLocation({ loc, onChanged, onReload: reloadTool, onFlus
               </p>
             )}
             {loc?.kind === "folder" ? (
-              <div className="rounded-md border-2 border-caramel px-3 py-2">
+              <div className="rounded-md border border-caramel bg-caramel/8 px-3 py-2">
                 <span className="block font-sans text-paper">The story folder<span className="ml-2 text-sm text-caramel">in use</span></span>
                 <span className="block text-sm text-bone">{loc.label}. Every tool keeps its files in its {TOOLS_DIR} folder.</span>
                 <div className="mt-1 flex gap-3">
@@ -130,7 +132,7 @@ export function WorkspaceLocation({ loc, onChanged, onReload: reloadTool, onFlus
               </div>
             ) : (
               <button onClick={() => use("folder")} disabled={!folderSupported || busy}
-                className="block w-full rounded-md border-2 border-ink-line px-3 py-2 text-left hover:border-bone disabled:opacity-40">
+                className="block w-full rounded-md border border-ink-line px-3 py-2 text-left transition-colors hover:border-bone hover:bg-paper/5 disabled:opacity-40">
                 <span className="block font-sans text-paper">The story folder</span>
                 <span className="block text-sm text-bone">
                   {folderSupported ? `Pick the vault once; every tool keeps its files in its ${TOOLS_DIR} folder. If that has no tool data yet, the current data is copied there.`
@@ -139,7 +141,7 @@ export function WorkspaceLocation({ loc, onChanged, onReload: reloadTool, onFlus
               </button>
             )}
             {loc?.kind === "github" && !gh.show ? (
-              <div className="rounded-md border-2 border-caramel px-3 py-2">
+              <div className="rounded-md border border-caramel bg-caramel/8 px-3 py-2">
                 <span className="block font-sans text-paper">GitHub<span className="ml-2 text-sm text-caramel">in use</span></span>
                 <span className="block text-sm text-bone">
                   {REPO.owner}/{REPO.repo} ({REPO.branch}){gh.login && <>, signed in as {gh.login}</>}. Edits wait in this browser until you click <b>Save to GitHub</b>.
@@ -161,14 +163,13 @@ export function WorkspaceLocation({ loc, onChanged, onReload: reloadTool, onFlus
           {!STATIC ? (
             <>
               <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button size="sm" variant="primary" className="px-3" onClick={saveDir} disabled={busy}>Use this folder</Button>
+              <Button size="sm" variant="primary" onClick={saveDir} disabled={busy}>Use this folder</Button>
             </>
           ) : <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Close</Button>}
         </div>
       </Popover>
-      <Button size="icon" variant="ghost" onClick={onReload} title={loc?.kind === "browser" ? "Reload" : loc?.kind === "github" ? "Reload from GitHub" : "Reload from disk (e.g. after git pull)"} className="mb-2">
-        <RefreshCw className="h-4 w-4" />
-      </Button>
+      <IconButton icon={RefreshCw} onClick={onReload} className="mb-2" tooltipSide="top"
+        label={loc?.kind === "browser" ? "Reload" : loc?.kind === "github" ? "Reload from GitHub" : "Reload from disk (e.g. after git pull)"} />
     </div>
     </>
   );
@@ -176,7 +177,6 @@ export function WorkspaceLocation({ loc, onChanged, onReload: reloadTool, onFlus
 
 const TOKEN_URL = "https://github.com/settings/personal-access-tokens/new";
 const CLASSIC_TOKEN_URL = "https://github.com/settings/tokens/new?scopes=repo&description=game-tools";
-const field = "h-9 min-w-0 w-full rounded-md border-2 border-ink-line bg-ink px-2 font-talk text-sm text-paper focus:border-caramel focus:outline-hidden disabled:opacity-40";
 
 type GhForm = { token: string };
 
@@ -184,16 +184,16 @@ function GitHubForm({ value, busy, expanded, onChange, onConnect, onExpand }: {
   value: GhForm; busy: boolean; expanded: boolean; onChange: (v: Partial<GhForm>) => void; onConnect: () => void; onExpand: () => void;
 }) {
   if (!expanded) return (
-    <button onClick={onExpand} disabled={busy} className="block w-full rounded-md border-2 border-ink-line px-3 py-2 text-left hover:border-bone disabled:opacity-40">
+    <button onClick={onExpand} disabled={busy} className="block w-full rounded-md border border-ink-line px-3 py-2 text-left transition-colors hover:border-bone hover:bg-paper/5 disabled:opacity-40">
       <span className="block font-sans text-paper">GitHub</span>
       <span className="block text-sm text-bone">{REPO.owner}/{REPO.repo}, from any browser. Edits wait here until you save them as a commit.</span>
     </button>
   );
   const enter = (e: React.KeyboardEvent) => e.key === "Enter" && onConnect();
   return (
-    <div className="space-y-2 rounded-md border-2 border-bone px-3 py-2">
+    <div className="space-y-2 rounded-md border border-bone px-3 py-2">
       <span className="block font-sans text-paper">GitHub: {REPO.owner}/{REPO.repo}</span>
-      <input value={value.token} onChange={e => onChange({ token: e.target.value })} onKeyDown={enter} type="password" autoComplete="off" placeholder="github_pat_…" aria-label="Token" disabled={busy} autoFocus className={field} />
+      <input value={value.token} onChange={e => onChange({ token: e.target.value })} onKeyDown={enter} type="password" autoComplete="off" placeholder="github_pat_…" aria-label="Token" disabled={busy} autoFocus className={fieldCls} />
       <p className="text-sm text-bone">
         <a href={TOKEN_URL} target="_blank" rel="noreferrer" className="text-caramel underline underline-offset-2">Create a fine-grained token</a>{" "}
         for only this repository with <b>Contents: Read and write</b>. If GitHub doesn't offer {REPO.owner} as the owner, use a{" "}
@@ -201,7 +201,7 @@ function GitHubForm({ value, busy, expanded, onChange, onConnect, onExpand }: {
         with <b>repo</b> instead. It stays in this browser; disconnect on shared computers.
       </p>
       <div className="flex justify-end">
-        <Button size="sm" variant="primary" className="px-3" onClick={onConnect} disabled={busy || !value.token.trim()}>
+        <Button size="sm" variant="primary" onClick={onConnect} disabled={busy || !value.token.trim()}>
           {busy ? "Connecting…" : "Connect"}
         </Button>
       </div>

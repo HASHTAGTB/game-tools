@@ -1,7 +1,8 @@
 import { CircleAlert, CircleCheck, Info, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/shared/lib/utils";
-import { Popover } from "@/shared/ui/popover";
+import { Button } from "@/shared/ui/button";
+import { Popover, PopoverTitle } from "@/shared/ui/popover";
 import type { Check } from "../lib/checks";
 import { useTimeline } from "../state";
 
@@ -19,15 +20,15 @@ export function ChecksButton({ checks, onGo }: { checks: Check[]; onGo: (c: Chec
   const select = useTimeline(s => s.select);
   return (
     <Popover open={open} onOpenChange={setOpen} side="bottom" align="end" className="w-[30rem] p-0" trigger={
-      <button className={cn("flex items-center gap-1.5 rounded-sm px-1.5 py-1 font-talk text-[13px] hover:bg-ink-3", errors ? "text-coral" : warnings ? "text-butter" : "text-taupe")}>
+      <Button size="sm" variant="quiet" className={cn(errors ? "text-coral" : warnings ? "text-butter" : "")}>
         {errors + warnings ? <TriangleAlert className="h-4 w-4" /> : <CircleCheck className="h-4 w-4" />}
         {errors + warnings ? `${errors + warnings} to check` : "No problems"}
-      </button>
+      </Button>
     }>
-      <div className="flex items-baseline gap-3 border-b border-ink-line px-4 py-2.5">
-        <p className="flex-1 font-sans text-[17px] text-paper">Checks</p>
-        <span className="font-talk text-[12px] text-taupe">{errors} errors · {warnings} warnings</span>
-        <label className="flex items-center gap-1 font-talk text-[12px] text-taupe">
+      <div className="flex items-start gap-3 border-b border-ink-line px-4 pb-2.5 pt-3">
+        <PopoverTitle className="mb-0 flex-1">Checks</PopoverTitle>
+        <span className="font-talk text-xs text-taupe">{errors} errors · {warnings} warnings</span>
+        <label className="flex items-center gap-1 font-talk text-xs text-taupe">
           <input type="checkbox" checked={showInfo} onChange={e => setShowInfo(e.target.checked)} /> {infos} notes
         </label>
       </div>
@@ -37,13 +38,13 @@ export function ChecksButton({ checks, onGo }: { checks: Check[]; onGo: (c: Chec
           return (
             <li key={i}>
               <button disabled={!c.target && !c.go} onClick={() => { if (c.target) select(c.target); onGo(c); setOpen(false); }}
-                className="flex w-full items-start gap-2 px-4 py-1.5 text-left font-talk text-[13px] leading-snug text-bone enabled:hover:bg-ink-3 enabled:hover:text-paper">
+                className="flex w-full items-start gap-2 px-4 py-1.5 text-left font-talk text-sm leading-snug text-bone enabled:hover:bg-paper/8 enabled:hover:text-paper">
                 <Icon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", TONE[c.level])} />
                 <span className="min-w-0 flex-1 select-text">{c.message}</span>
               </button>
             </li>
           );
-        }) : <li className="px-4 py-3 font-talk text-[13px] text-taupe">Nothing to check.</li>}
+        }) : <li className="px-4 py-3 font-talk text-sm text-taupe">Nothing to check.</li>}
       </ul>
     </Popover>
   );

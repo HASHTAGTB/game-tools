@@ -22,7 +22,7 @@ export function Section({ title, note, color, actions, className, children }: Pr
       <header className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-3">
-            <div className="min-w-0 font-sans text-[22px] leading-tight text-paper">{title}</div>
+            <div className="min-w-0 font-sans text-xl leading-tight text-paper">{title}</div>
             {note && <span className="shrink-0 font-talk text-sm text-taupe">{note}</span>}
           </div>
           <Rule color={color} />

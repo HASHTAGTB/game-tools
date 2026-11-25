@@ -24,10 +24,10 @@ export function Tooltip({ label, kbd, side = "top", children }: Props) {
       <T.Portal>
         <T.Positioner side={side} sideOffset={6} className="z-60">
           <T.Popup
-            className="flex origin-(--transform-origin) items-center gap-2 rounded-md bg-paper px-2 py-1 font-talk text-[13px] font-semibold text-ink shadow-[0_6px_20px_rgba(0,0,0,.4)] transition-[opacity,scale] duration-100 data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0"
+            className="flex origin-(--transform-origin) items-center gap-2 rounded-md bg-paper px-2 py-1 font-talk text-sm font-semibold text-ink shadow-[0_6px_20px_rgba(0,0,0,.4)] transition-[opacity,scale] duration-100 data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0"
           >
             {label}
-            {kbd && <kbd className="font-talk text-[12px] font-bold text-taupe">{kbd}</kbd>}
+            {kbd && <kbd className="font-talk text-xs font-bold text-taupe">{kbd}</kbd>}
           </T.Popup>
         </T.Positioner>
       </T.Portal>

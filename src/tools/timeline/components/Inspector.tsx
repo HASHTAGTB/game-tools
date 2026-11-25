@@ -31,7 +31,7 @@ function Close() {
 }
 
 const Key = ({ children }: { children: string }) => (
-  <kbd className="rounded-sm border border-ink-line bg-ink-2 px-1 font-sans text-[12px] text-paper">{children}</kbd>
+  <kbd className="rounded-md border border-ink-line bg-ink-2 px-1 font-sans text-xs text-paper">{children}</kbd>
 );
 
 /** What you can do on the board, as gesture → result, so it can be scanned rather than read. */
@@ -52,11 +52,11 @@ function Help() {
   return (
     <div className="space-y-5 font-talk text-bone">
       <Section title="Timeline" />
-      <p className="text-[13.5px] leading-snug">
+      <p className="text-sm leading-snug">
         Chapters run left to right. Inside a chapter, events in the same <b className="font-semibold text-paper">column</b> happen
         at the same time. <b className="font-semibold text-paper">Threads</b> are storylines across chapters.
       </p>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-[13px] leading-snug">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-sm leading-snug">
         {GESTURES.map(([g, what], i) => (
           <div key={i} className="contents">
             <dt className="whitespace-nowrap font-semibold text-paper">{g}</dt>
@@ -64,7 +64,7 @@ function Help() {
           </div>
         ))}
       </dl>
-      <p className="text-[12.5px] leading-snug text-taupe">Changes save on their own, except on GitHub: there, use Save to GitHub. If someone else changed a file, it reloads, or asks first when you had changes in it too.</p>
+      <p className="text-xs leading-snug text-taupe">Changes save on their own, except on GitHub: there, use Save to GitHub. If someone else changed a file, it reloads, or asks first when you had changes in it too.</p>
     </div>
   );
 }
@@ -91,7 +91,7 @@ function EventPanel({ id }: { id: string }) {
         <Close />
       </>} />
 
-      <AutoText key={id} value={event.title} autoFocus={!event.title} placeholder="What happens?" onChange={v => set(e => { e.title = v; }, `title:${id}`)} className="text-[15px]" />
+      <AutoText key={id} value={event.title} autoFocus={!event.title} placeholder="What happens?" onChange={v => set(e => { e.title = v; }, `title:${id}`)} className="text-base" />
       <Field label="Note">
         <AutoText key={`n${id}`} value={event.note ?? ""} placeholder="Details, ideas, open questions…" minRows={2}
           onChange={v => set(e => { if (v) e.note = v; else delete e.note; }, `note:${id}`)} />
@@ -116,7 +116,7 @@ function EventPanel({ id }: { id: string }) {
             <IconButton icon={ChevronRight} size="sm" label="One column later" onClick={() => edit(d => moveEvent(d.chapters, id, chapter.id, event.col + 1))} />
           </div>
         </div>
-        <p className="mt-1 font-talk text-[12px] text-taupe">
+        <p className="mt-1 font-talk text-xs text-taupe">
           {colName(event.col)}{(event.span ?? 1) > 1 && <> to {colName(event.col + event.span! - 1)}</>}
           {chapter.when && <> · {chapter.when}</>}
         </p>
@@ -128,17 +128,17 @@ function EventPanel({ id }: { id: string }) {
             <li key={l.to} className="space-y-1">
               <div className="flex items-center gap-1">
                 <ArrowRight className="h-3.5 w-3.5 shrink-0 text-taupe" />
-                <button onClick={() => go(l.to)} className="min-w-0 flex-1 truncate text-left font-talk text-[13px] text-bone hover:text-paper hover:underline">{titleOf(l.to)}</button>
+                <button onClick={() => go(l.to)} className="min-w-0 flex-1 truncate text-left font-talk text-sm text-bone hover:text-paper hover:underline">{titleOf(l.to)}</button>
                 <IconButton icon={X} size="sm" label="Remove arrow" tone="danger" onClick={() => set(e => { e.links!.splice(i, 1); if (!e.links!.length) delete e.links; })} />
               </div>
-              <TextInput value={l.label ?? ""} placeholder="Label (why it leads there)" className="h-7 text-[13px]"
+              <TextInput value={l.label ?? ""} placeholder="Label (why it leads there)" className="h-7 text-sm"
                 onChange={v => set(e => { const x = e.links!.find(y => y.to === l.to)!; if (v) x.label = v; else delete x.label; }, `link:${id}:${l.to}`)} />
             </li>
           ))}
           {incoming.map(({ from, label }) => (
             <li key={from.id} className="flex items-center gap-1">
               <ArrowLeft className="h-3.5 w-3.5 shrink-0 text-taupe" />
-              <button onClick={() => go(from.id)} className="min-w-0 flex-1 truncate text-left font-talk text-[13px] text-bone hover:text-paper hover:underline">
+              <button onClick={() => go(from.id)} className="min-w-0 flex-1 truncate text-left font-talk text-sm text-bone hover:text-paper hover:underline">
                 {from.title || "(untitled)"}{label && <span className="text-taupe"> · {label}</span>}
               </button>
             </li>
@@ -180,7 +180,7 @@ function ChapterPanel({ id }: { id: string }) {
       <Field label="Notes">
         <AutoText key={id} value={ch.notes ?? ""} minRows={3} onChange={v => set(c => { if (v) c.notes = v; else delete c.notes; }, `notes:${id}`)} />
       </Field>
-      <p className="font-talk text-[13px] text-taupe">
+      <p className="font-talk text-sm text-taupe">
         {ch.events.length} events in {ch.columns.length} columns.{" "}
         <button className="text-bone underline-offset-4 hover:text-paper hover:underline" onClick={() => toggleFolded(id)}>{folded.has(id) ? "Unfold" : "Fold"} it</button> (only for you).
       </p>
@@ -215,7 +215,7 @@ function ThreadPanel({ id }: { id: string }) {
         <AutoText key={id} value={t.notes ?? ""} minRows={3} placeholder="What this storyline is about, where it should go…"
           onChange={v => set(x => { if (v) x.notes = v; else delete x.notes; }, `tnotes:${id}`)} />
       </Field>
-      <div className="flex items-center gap-3 font-talk text-[13px] text-taupe">
+      <div className="flex items-center gap-3 font-talk text-sm text-taupe">
         <span>{count} events</span>
         <Button size="sm" onClick={() => setFilter({ threads: [id], chars: [] }, null)}><Eye className="h-4 w-4" />Focus on it</Button>
       </div>
@@ -246,7 +246,7 @@ function CharPanel({ id }: { id: string }) {
       </>} />
       <Field label="Name"><TextInput value={c.name} onChange={v => set(x => { x.name = v; }, `cname:${id}`)} /></Field>
       <Field label="Color"><ColorInput value={c.color} onChange={v => set(x => { x.color = v; }, `ccolor:${id}`)} /></Field>
-      <div className="flex items-center gap-3 font-talk text-[13px] text-taupe">
+      <div className="flex items-center gap-3 font-talk text-sm text-taupe">
         <span>{count} events</span>
         <Button size="sm" onClick={() => setFilter({ chars: [id], threads: [] }, null)}><Eye className="h-4 w-4" />Focus on {c.name}</Button>
       </div>
@@ -270,7 +270,7 @@ function ViewPanel({ id }: { id: string }) {
         <Close />
       </>} />
       <Field label="Name"><TextInput value={v.name} onChange={x => edit(d => { const y = d.views.find(z => z.id === id); if (y) y.name = x; }, `vname:${id}`)} /></Field>
-      <dl className="space-y-1 font-talk text-[13px]">
+      <dl className="space-y-1 font-talk text-sm">
         <div><dt className="inline text-taupe">Lanes: </dt><dd className="inline text-bone">{v.groupBy === "chars" ? "characters" : v.groupBy === "threads" ? "threads" : "one lane"}</dd></div>
         <div><dt className="inline text-taupe">Characters: </dt><dd className="inline text-bone">{v.chars.length ? names(v.chars, cast) : "all"}</dd></div>
         <div><dt className="inline text-taupe">Threads: </dt><dd className="inline text-bone">{v.threads.length ? names(v.threads, threads) : "all"}</dd></div>

@@ -1,5 +1,8 @@
 import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { extendTailwindMerge } from "tailwind-merge";
+
+/** Knows the app's own shadow names (index.css), so `shadow-panel` and `shadow-lift` replace each other. */
+const twMerge = extendTailwindMerge({ extend: { theme: { shadow: ["panel", "lift"] } } });
 
 export const cn = (...v: ClassValue[]) => twMerge(clsx(v));
 

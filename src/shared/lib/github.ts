@@ -17,7 +17,10 @@ export type GitHubConfig = { owner: string; repo: string; branch: string; token:
 /** The story vault. Fixed: every author works on this repository and branch. */
 export const REPO = { owner: "HASHTAGTB", repo: "game", branch: "main" } as const;
 
-type Pending = { text: string | null; base: string | null; mtime: number };
+/** A pending change: new text, a deletion (`text` null), or, for a moved file, the repo blob it keeps (`sha`, with
+ *  `text` null). Moves go by blob, so images and other binary files are moved without being read. */
+type Pending = { text: string | null; sha?: string; base: string | null; mtime: number };
+const deleted = (p: Pending) => p.text === null && !p.sha;
 type Tree = { head: string; tree: string; files: Map<string, string>; dirs: Set<string>; etag: string | null; at: number };
 
 const API = "https://api.github.com";
@@ -216,6 +219,7 @@ const shaTime = (sha: string) => parseInt(sha.slice(0, 12), 16);
 export const github = {
   async read(path: string): Promise<FileData | null> {
     const p = (await pend()).get(path);
+    if (p?.sha) return { text: await blob(p.sha), mtime: p.mtime };
     if (p) return p.text === null ? null : { text: p.text, mtime: p.mtime };
     const sha = (await currentTree()).files.get(path);
     return sha ? { text: await blob(sha), mtime: shaTime(sha) } : null;
@@ -255,19 +259,63 @@ export const github = {
       const [name, ...more] = path.slice(prefix.length).split("/");
       if (name && (!out.has(name) || more.length)) out.set(name, { name, kind: more.length ? "directory" : kind });
     };
-    for (const d of t.dirs) add(d, "directory");
-    for (const [f] of t.files) if (ps.get(f)?.text !== null) add(f, "file");
-    for (const [f, p] of ps) if (p.text !== null) add(f, "file");
+    // folders come from the files in them, not the repo's folder list: a folder whose files were all moved or deleted
+    // here is gone (git keeps no empty folders either)
+    for (const [f] of t.files) { const p = ps.get(f); if (!p || !deleted(p)) add(f, "file"); }
+    for (const [f, p] of ps) if (!deleted(p)) add(f, "file");
     return [...out.values()];
   },
 
   async stat(path: string): Promise<number | null> {
     const p = (await pend()).get(path);
-    if (p) return p.text === null ? null : p.mtime;
+    if (p) return deleted(p) ? null : p.mtime;
     const sha = (await currentTree()).files.get(path);
     return sha ? shaTime(sha) : null;
   },
+
+  async move(from: string, to: string): Promise<void> {
+    const [ps, t] = await Promise.all([pend(), currentTree()]);
+    const live = filesUnder(ps, t, from);
+    if (!live.length) throw new Error(`${from} doesn't exist`);
+    if (filesUnder(ps, t, to).length) throw new Error(`${to} already exists`);
+    for (const path of live) {
+      const dest = to + path.slice(from.length);
+      const p = ps.get(path);
+      const remote = t.files.get(dest) ?? null;
+      const base = ps.has(dest) ? ps.get(dest)!.base : remote;
+      const sha = p ? p.sha : t.files.get(path)!;
+      if (p && !p.sha) ps.set(dest, { text: p.text, base, mtime: p.mtime });
+      else if (sha === remote && base === remote) ps.delete(dest);   // moved back to where the repo has it
+      else ps.set(dest, { text: null, sha, base, mtime: shaTime(sha!) });
+      markRemoved(ps, t, path);
+    }
+    changed();
+  },
+
+  async removeDir(dir: string): Promise<void> {
+    const [ps, t] = await Promise.all([pend(), currentTree()]);
+    for (const path of filesUnder(ps, t, dir)) markRemoved(ps, t, path);
+    changed();
+  },
+
+  async mkdir(): Promise<void> {},
 };
+
+/** Files (not deleted) that are `path` itself or inside the folder `path`. */
+function filesUnder(ps: Map<string, Pending>, t: Tree, path: string) {
+  const inside = (f: string) => f === path || f.startsWith(path + "/");
+  const out = new Set<string>();
+  for (const f of t.files.keys()) if (inside(f) && !(ps.has(f) && deleted(ps.get(f)!))) out.add(f);
+  for (const [f, p] of ps) if (inside(f) && !deleted(p)) out.add(f);
+  return [...out];
+}
+
+function markRemoved(ps: Map<string, Pending>, t: Tree, path: string) {
+  const remote = t.files.get(path) ?? null;
+  const base = ps.has(path) ? ps.get(path)!.base : remote;
+  if (base === null && remote === null) ps.delete(path);   // only ever existed here
+  else ps.set(path, { text: null, base, mtime: 0 });
+}
 
 // ---------------------------------------------------------------- connecting
 
@@ -315,8 +363,8 @@ export async function commit(message: string): Promise<CommitResult> {
     const conflicts = snap.filter(([path, p]) => (t.files.get(path) ?? null) !== p.base).map(([path]) => path);
     if (conflicts.length) return { ok: false, conflicts };
 
-    const entries = snap.map(([path, p]) => p.text === null
-      ? { path, mode: "100644", type: "blob", sha: null }
+    const entries = snap.map(([path, p]) => p.sha ? { path, mode: "100644", type: "blob", sha: p.sha }
+      : p.text === null ? { path, mode: "100644", type: "blob", sha: null }
       : { path, mode: "100644", type: "blob", content: p.text });
     const newTree = (await call<{ sha: string }>("POST", `${r}/git/trees`, { base_tree: t.tree, tree: entries })).data;
     const made = (await call<{ sha: string }>("POST", `${r}/git/commits`, { message, tree: newTree.sha, parents: [t.head] })).data;
@@ -332,6 +380,7 @@ export async function commit(message: string): Promise<CommitResult> {
     // still answer with the tree from before the commit.
     const files = new Map(t.files);
     for (const [path, p] of snap) {
+      if (p.sha) { files.set(path, p.sha); continue; }
       if (p.text === null) { files.delete(path); continue; }
       const sha = await blobSha(p.text);
       blobs.set(sha, p.text);

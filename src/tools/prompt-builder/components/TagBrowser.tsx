@@ -40,13 +40,13 @@ export function TagBrowser({ db, target, targetColor, selected, onToggle }: Prop
         aria-pressed={on}
         title={`${t}: ${n.toLocaleString()} posts${extra ?? ""}`}
         className={cn(
-          "inline-flex items-center gap-1 rounded-lg border px-1.5 py-0.5 font-talk text-[13.5px] font-semibold leading-5 transition-[color,background-color,border-color,scale] active:scale-95",
+          "inline-flex items-center gap-1 rounded-lg border px-1.5 py-0.5 font-talk text-sm font-semibold leading-5 transition-[color,background-color,border-color,scale] active:scale-95",
           on ? "border-(--target) bg-(--target) text-ink"
             : n < RARE ? "border-butter/40 text-butter/90 hover:bg-ink-3"
             : "border-ink-line text-bone hover:border-taupe hover:bg-ink-3 hover:text-paper",
         )}
       >
-        {text}<small className={cn("text-[11px] font-normal", on ? "text-ink/70" : "text-taupe")}>{fmtCount(n)}</small>
+        {text}<small className={cn("text-xs font-normal", on ? "text-ink/70" : "text-taupe")}>{fmtCount(n)}</small>
       </button>
     );
   };
@@ -70,7 +70,7 @@ export function TagBrowser({ db, target, targetColor, selected, onToggle }: Prop
               key={target}
               initial={{ opacity: 0, y: -6, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: 0.9 }}
               transition={spring.bouncy}
-              className="inline-flex max-w-full items-center gap-1.5 truncate rounded-full border-2 border-(--target) px-2.5 py-0.5 font-sans text-[15px] text-paper"
+              className="inline-flex max-w-full items-center gap-1.5 truncate rounded-full border-2 border-(--target) px-2.5 py-0.5 font-sans text-base text-paper"
             >
               <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-(--target)" />
               <span className="truncate">{target}</span>
@@ -95,13 +95,13 @@ export function TagBrowser({ db, target, targetColor, selected, onToggle }: Prop
         {sections.map((s, si) => (
           <div key={s.id}>
             {(si === 0 || sections[si - 1].group !== s.group) && (
-              <h3 className="mb-1 mt-6 font-sans text-xl text-paper">{s.group}<Rule /></h3>
+              <h3 className="mb-1 mt-6 font-sans text-lg text-paper">{s.group}<Rule /></h3>
             )}
             {/* Filtering opens every matching group; the key remounts it so clearing the search closes them again. */}
             <TagGroup key={filter ? "f" : "all"} label={s.label} count={s.n} defaultOpen={!!filter}>
               {s.subs.map(sub => (
                 <div key={sub.title} className="mb-3">
-                  <h4 className="mb-1.5 mt-2 font-talk text-[13px] font-bold text-taupe">{sub.title}</h4>
+                  <h4 className="mb-1.5 mt-2 font-talk text-sm font-bold text-taupe">{sub.title}</h4>
                   <div className="flex flex-wrap gap-1">{sub.tags.map(t => chip(t.t, t.n))}</div>
                 </div>
               ))}
@@ -116,7 +116,7 @@ export function TagBrowser({ db, target, targetColor, selected, onToggle }: Prop
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="mt-3">
-      <h3 className="mb-2 font-sans text-xl text-paper">{title}<Rule /></h3>
+      <h3 className="mb-2 font-sans text-lg text-paper">{title}<Rule /></h3>
       {children}
     </div>
   );
@@ -128,7 +128,7 @@ function TagGroup({ label, count, defaultOpen, children }: { label: string; coun
   const [seen, setSeen] = useState(defaultOpen);
   return (
     <Collapsible.Root open={open} onOpenChange={v => { setOpen(v); if (v) setSeen(true); }}>
-      <Collapsible.Trigger className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-center gap-1 rounded-md px-1.5 py-1 font-talk text-[15px] text-bone transition-colors hover:bg-ink-2 hover:text-paper data-panel-open:text-paper">
+      <Collapsible.Trigger className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-center gap-1 rounded-md px-1.5 py-1 font-talk text-base text-bone transition-colors hover:bg-ink-2 hover:text-paper data-panel-open:text-paper">
         <m.span animate={{ rotate: open ? 90 : 0 }} transition={spring.snappy} className="grid place-items-center text-taupe">
           <ChevronRight className="h-4 w-4" />
         </m.span>

@@ -6,7 +6,9 @@ import { RARE, searchTags, toPromptText, type TagDb } from "../lib/tags";
 import { DRAG_MIME, useDnd } from "../lib/dnd";
 import type { ListKey } from "../lib/types";
 import { cn, fmtCount } from "@/shared/lib/utils";
+import { MenuMarker, MenuRule } from "@/shared/ui/menu";
 import { AnimatePresence, fade, m, pop, spring } from "@/shared/ui/motion";
+import { surfaceCls } from "@/shared/ui/popover";
 
 type Props = {
   listKey: ListKey;
@@ -88,7 +90,7 @@ export function TagList({ listKey, tags, onChange, db, active, onActivate, place
       onDrop={e => dropAt(e, Infinity)}
       style={{ "--accent": accent } as React.CSSProperties}
       className={cn(
-        "relative flex min-h-11 flex-wrap items-center gap-1.5 rounded-xl border-2 bg-ink-2 p-2 transition-colors",
+        "relative flex min-h-11 flex-wrap items-center gap-1.5 rounded-lg border-2 bg-ink-2 p-2 transition-colors",
         active ? "border-(--accent)" : "border-ink-3 hover:border-ink-line",
         dnd.drag && "border-dashed",
         dnd.drag && over !== null && "border-(--accent) bg-(--accent)/10",
@@ -127,22 +129,25 @@ export function TagList({ listKey, tags, onChange, db, active, onActivate, place
             const p = e.clipboardData.getData("text");
             if (/[,\n]/.test(p)) { e.preventDefault(); add(splitTags(text + p)); setText(""); }
           }}
-          className="h-7 w-full bg-transparent px-1 font-talk text-[15px] text-paper placeholder:text-taupe focus:outline-hidden"
+          className="h-7 w-full bg-transparent px-1 font-talk text-base text-paper placeholder:text-taupe focus:outline-hidden"
         />
         {suggestions.length > 0 && (
-          <m.ul {...pop} className="absolute left-0 top-full z-40 mt-1.5 w-72 origin-top-left overflow-hidden rounded-xl border-[3px] border-paper bg-ink-2 py-1 font-talk shadow-[0_12px_40px_rgba(0,0,0,.45)]">
-            {suggestions.map((s, i) => (
-              <li
-                key={s.t}
-                onMouseDown={e => { e.preventDefault(); add([toPromptText(s.t)]); setText(""); setHi(0); }}
-                onMouseEnter={() => setHi(i)}
-                className={cn("flex cursor-pointer items-center justify-between px-3 py-1 text-[15px]", i === hi ? "bg-caramel/25 text-paper" : "text-bone")}
-              >
-                <span>{toPromptText(s.t)}{s.alias && <small className="ml-1 text-taupe">(alias)</small>}</span>
-                <small className="text-taupe">{fmtCount(s.n)}</small>
-              </li>
-            ))}
-          </m.ul>
+          <m.div {...pop} className={cn(surfaceCls, "absolute left-0 top-full z-40 mt-1.5 w-72 origin-top-left px-3 py-2")}>
+            <MenuRule>
+              {suggestions.map((s, i) => (
+                <li
+                  key={s.t}
+                  onMouseDown={e => { e.preventDefault(); add([toPromptText(s.t)]); setText(""); setHi(0); }}
+                  onMouseEnter={() => setHi(i)}
+                  className={cn("relative flex cursor-pointer items-center justify-between py-1 pl-3 text-base", i === hi ? "text-paper" : "text-bone")}
+                >
+                  {i === hi && <MenuMarker layoutId="tag-suggestion" />}
+                  <span>{toPromptText(s.t)}{s.alias && <small className="ml-1 text-taupe">(alias)</small>}</span>
+                  <small className="text-taupe">{fmtCount(s.n)}</small>
+                </li>
+              ))}
+            </MenuRule>
+          </m.div>
         )}
       </div>
     </div>
@@ -222,7 +227,7 @@ function ChipBody({ raw, count, known, marker, dragging, onDragStart, onDragOver
           "Click to switch off or on. Ctrl+scroll changes the weight, double-click edits, drag moves (hold Ctrl to copy).",
         ].join("\n")}
         className={cn(
-          "group inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2 py-0.5 font-talk text-[14px] font-semibold leading-6 transition-opacity",
+          "group inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2 py-0.5 font-talk text-base font-semibold leading-6 transition-opacity",
           rare ? "border-butter/50 bg-butter/10 text-paper" : "border-ink-line bg-ink-3 text-paper hover:border-taupe",
           off && "border-dashed opacity-40 [&>.label]:line-through",
           dragging && "opacity-30",
@@ -234,14 +239,14 @@ function ChipBody({ raw, count, known, marker, dragging, onDragStart, onDragOver
           <button
             title="weight (click to reset to 1)"
             onClick={e => { e.stopPropagation(); onWeight(1); }}
-            className={cn("rounded-sm px-1 text-[12px] font-extrabold tabular-nums text-ink", weight > 1 ? "bg-caramel" : "bg-periwinkle")}
+            className={cn("rounded-md px-1 text-xs font-extrabold tabular-nums text-ink", weight > 1 ? "bg-caramel" : "bg-periwinkle")}
           >{weight}</button>
         )}
-        {count !== undefined && <small className="text-[11px] font-normal text-taupe">{fmtCount(count)}</small>}
+        {count !== undefined && <small className="text-xs font-normal text-taupe">{fmtCount(count)}</small>}
         <button
           onClick={e => { e.stopPropagation(); onRemove(); }}
           aria-label="Remove tag"
-          className="-mr-1 rounded-sm text-taupe opacity-70 hover:text-coral group-hover:opacity-100"
+          className="-mr-1 rounded-md text-taupe opacity-70 hover:text-coral group-hover:opacity-100"
         ><X className="h-3 w-3" /></button>
       </span>
     </>
