@@ -180,9 +180,10 @@ function build(view: EditorView, live: boolean): DecorationSet {
           return false;
         }
         switch (name) {
-          case "Emphasis": case "StrongEmphasis": case "Strikethrough":
+          case "Emphasis": case "StrongEmphasis": case "Strikethrough": case "Highlight":
             if (!touches(n.from, n.to)) {
-              for (const m of n.node.getChildren(name === "Strikethrough" ? "StrikethroughMark" : "EmphasisMark")) hide(m.from, m.to);
+              const mark = name === "Strikethrough" ? "StrikethroughMark" : name === "Highlight" ? "HighlightMark" : "EmphasisMark";
+              for (const m of n.node.getChildren(mark)) hide(m.from, m.to);
             }
             return;
           case "Blockquote":
@@ -256,9 +257,9 @@ export const markdownView = (live: boolean) => ViewPlugin.fromClass(class {
 
 // ---------------------------------------------------------------- table cells
 
-const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*|__[^_]+__)|(\*[^*\s][^*]*\*|_[^_\s][^_]*_)|(~~[^~]+~~)|(!?\[\[[^\[\]]+\]\])|(\[[^\]]+\]\([^)\s]+\))/g;
+const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*|__[^_]+__)|(\*[^*\s][^*]*\*|_[^_\s][^_]*_)|(~~[^~]+~~)|(==[^=]+==)|(!?\[\[[^\[\]]+\]\])|(\[[^\]]+\]\([^)\s]+\))/g;
 
-/** A table cell's Markdown as DOM: bold, italic, strike, code, links and arrows (one level, no nesting — enough for
+/** A table cell's Markdown as DOM: bold, italic, strike, highlight, code, links and arrows (one level, no nesting — enough for
  *  a cell). */
 export function renderInline(parent: HTMLElement, text: string) {
   const add = (tag: string, cls: string, content: string, attrs?: Record<string, string>) => {
@@ -271,11 +272,12 @@ export function renderInline(parent: HTMLElement, text: string) {
   let at = 0;
   for (const m of text.matchAll(INLINE)) {
     if (m.index > at) appendText(parent, text.slice(at, m.index));
-    const [all, code, strong, em, strike, wiki, md] = m;
+    const [all, code, strong, em, strike, mark, wiki, md] = m;
     if (code) add("code", "cm-inline-code", code.slice(1, -1));
     else if (strong) add("strong", "", strong.slice(2, -2));
     else if (em) add("em", "", em.slice(1, -1));
     else if (strike) add("s", "cm-strike", strike.slice(2, -2));
+    else if (mark) add("mark", "cm-highlight", mark.slice(2, -2));
     else if (wiki) {
       const [target, alias] = wiki.replace(/^!?\[\[|\]\]$/g, "").split("|");
       add("span", "cm-wikilink cm-live-link", alias || target, { "data-link": target, "data-kind": "wiki" });

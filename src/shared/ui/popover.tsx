@@ -27,12 +27,14 @@ type Props = {
   side?: P.Positioner.Props["side"];
   align?: P.Positioner.Props["align"];
   className?: string;
+  /** Where focus goes on close (default: back to the trigger). */
+  finalFocus?: P.Popup.Props["finalFocus"];
   children: ReactNode;
 };
 
 /** Controlled popover that springs open and fades out on close.
     The Portal is kept mounted so AnimatePresence, not Base UI, removes it after the exit animation. */
-export function Popover({ open, onOpenChange, trigger, side = "bottom", align = "center", className, children }: Props) {
+export function Popover({ open, onOpenChange, trigger, side = "bottom", align = "center", className, finalFocus, children }: Props) {
   return (
     <P.Root open={open} onOpenChange={v => onOpenChange(v)}>
       <P.Trigger render={trigger} />
@@ -40,7 +42,7 @@ export function Popover({ open, onOpenChange, trigger, side = "bottom", align = 
         {open && (
           <P.Portal keepMounted>
             <P.Positioner side={side} align={align} sideOffset={6} className="z-50">
-              <P.Popup className={cn(popoverCls, className)} render={<m.div {...pop} />}>
+              <P.Popup className={cn(popoverCls, className)} finalFocus={finalFocus} render={<m.div {...pop} />}>
                 {children}
               </P.Popup>
             </P.Positioner>

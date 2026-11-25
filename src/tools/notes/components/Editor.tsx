@@ -3,10 +3,11 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import { markdownKeymap, markdownLanguage } from "@codemirror/lang-markdown";
 import { defineLanguageFacet, HighlightStyle, Language, syntaxHighlighting } from "@codemirror/language";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorSelection, EditorState, type Extension } from "@codemirror/state";
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { drawSelection, EditorView, keymap, placeholder } from "@codemirror/view";
-import { styleTags, tags as t } from "@lezer/highlight";
+import { styleTags, Tag, tags as t } from "@lezer/highlight";
 import type { MarkdownConfig, MarkdownParser } from "@lezer/markdown";
+import { formatTracker, publish, toggleInline } from "../lib/format";
 import { markdownView } from "../lib/livePreview";
 import { liveTables } from "../lib/tableEditor";
 import { TableMenuHost } from "./TableMenu";
@@ -18,12 +19,16 @@ import type { Mode } from "../state";
 
 const MONO = "ui-monospace, 'JetBrains Mono', 'Cascadia Code', monospace";
 
+/** `==highlighted==` text (Obsidian's, not CommonMark's). */
+const highlighted = Tag.define();
+
 /** Live Preview: headings, bold and the like look like what they mean (sizes come from the line classes). */
 const liveStyle = HighlightStyle.define([
   { tag: [t.heading1, t.heading2, t.heading3, t.heading4, t.heading5, t.heading6], fontFamily: "var(--font-sans)", color: "var(--color-paper)" },
   { tag: t.strong, fontWeight: "800", color: "var(--color-paper)" },
   { tag: t.emphasis, fontStyle: "italic" },
   { tag: t.strikethrough, textDecoration: "line-through", color: "var(--color-taupe)" },
+  { tag: highlighted, backgroundColor: "color-mix(in srgb, var(--color-butter) 26%, transparent)", color: "var(--color-paper)", borderRadius: "3px" },
   { tag: [t.processingInstruction, t.punctuation, t.contentSeparator], color: "var(--color-taupe)" },
   { tag: t.url, color: "var(--color-taupe)" },
   { tag: t.monospace, fontFamily: MONO, fontSize: ".9em", color: "var(--color-butter)" },
@@ -35,6 +40,7 @@ const sourceStyle = HighlightStyle.define([
   { tag: [t.heading1, t.heading2, t.heading3, t.heading4, t.heading5, t.heading6], color: "var(--color-paper)", fontWeight: "700" },
   { tag: t.strong, color: "var(--color-paper)", fontWeight: "700" },
   { tag: t.emphasis, color: "var(--color-paper)" },
+  { tag: highlighted, backgroundColor: "color-mix(in srgb, var(--color-butter) 16%, transparent)" },
   { tag: [t.processingInstruction, t.punctuation, t.contentSeparator], color: "var(--color-taupe)" },
   { tag: t.link, color: "var(--color-caramel)" },
   { tag: t.url, color: "var(--color-taupe)" },
@@ -89,6 +95,7 @@ const liveTheme = EditorView.theme({
   ".cm-table th": { fontFamily: "var(--font-sans)", fontWeight: "600", color: "var(--color-paper)", textAlign: "left", backgroundColor: "var(--color-ink-2)" },
   ".cm-table strong": { fontWeight: "800", color: "var(--color-paper)" },
   ".cm-table .cm-strike": { color: "var(--color-taupe)" },
+  ".cm-table .cm-highlight": { backgroundColor: "color-mix(in srgb, var(--color-butter) 26%, transparent)", color: "var(--color-paper)", borderRadius: "3px" },
   // the table editor: handles in a bar above and a column to the left, + bars right and below
   // handles hang in the left margin, so the table lines up with the text
   ".cm-tg": { overflowX: "auto", padding: "0 0 .2em", marginLeft: "-20px" },
@@ -144,9 +151,31 @@ const frontmatter: MarkdownConfig = {
   }],
 };
 
-/** GitHub-flavoured Markdown plus frontmatter. Built here instead of with `markdown()`, which also loads HTML, CSS and
+/** `==text==`, parsed like `~~strike~~`. */
+const HighlightDelim = { resolve: "Highlight", mark: "HighlightMark" };
+const highlight: MarkdownConfig = {
+  defineNodes: [
+    { name: "Highlight", style: { "Highlight/...": highlighted } },
+    { name: "HighlightMark", style: t.processingInstruction },
+  ],
+  parseInline: [{
+    name: "Highlight",
+    after: "Emphasis",
+    parse(cx, next, pos) {
+      // exactly two: not part of `===` (a setext underline, or someone's ASCII art)
+      if (next !== 61 || cx.char(pos + 1) !== 61 || cx.char(pos + 2) === 61 || cx.char(pos - 1) === 61) return -1;
+      const before = cx.slice(pos - 1, pos), after = cx.slice(pos + 2, pos + 3);
+      const sBefore = /\s|^$/.test(before), sAfter = /\s|^$/.test(after);
+      const pBefore = /\p{P}|\p{S}/u.test(before), pAfter = /\p{P}|\p{S}/u.test(after);
+      return cx.addDelimiter(HighlightDelim, pos, pos + 2,
+        !sAfter && (!pAfter || sBefore || pBefore), !sBefore && (!pBefore || sAfter || pAfter));
+    },
+  }],
+};
+
+/** GitHub-flavoured Markdown plus frontmatter and highlights. Built here instead of with `markdown()`, which also loads HTML, CSS and
  *  JavaScript support for HTML inside notes (~350 KB) that the vault doesn't need. */
-const notesMarkdown = new Language(defineLanguageFacet(), (markdownLanguage.parser as MarkdownParser).configure([frontmatter]), [], "markdown");
+const notesMarkdown = new Language(defineLanguageFacet(), (markdownLanguage.parser as MarkdownParser).configure([frontmatter, highlight]), [], "markdown");
 
 const MODES: Record<Mode, Extension> = {
   live: [syntaxHighlighting(liveStyle), markdownView(true), liveTables, liveTheme],
@@ -159,20 +188,6 @@ const modeSlot = new Compartment();
 const external = (url: string) => /^[a-z][a-z0-9+.-]*:/i.test(url);
 /** Only these open: notes can come from other people's commits, and a javascript: link would run on this page. */
 const safeUrl = (url: string) => /^(https?|mailto):/i.test(url.trim());
-
-/** Ctrl+B / Ctrl+I: wrap the selection in `mark`, or take it off again. */
-const wrap = (mark: string) => (view: EditorView) => {
-  const { state } = view;
-  view.dispatch(state.changeByRange(r => {
-    const n = mark.length;
-    const before = state.sliceDoc(r.from - n, r.from), after = state.sliceDoc(r.to, r.to + n);
-    if (before === mark && after === mark) {
-      return { changes: [{ from: r.from - n, to: r.from }, { from: r.to, to: r.to + n }], range: EditorSelection.range(r.from - n, r.to - n) };
-    }
-    return { changes: [{ from: r.from, insert: mark }, { from: r.to, insert: mark }], range: EditorSelection.range(r.from + n, r.to + n) };
-  }));
-  return true;
-};
 
 type Props = {
   path: string;
@@ -209,8 +224,8 @@ export function Editor({ path, text, rev, mode, onChange, onOpenLink }: Props) {
     theme,
     placeholder("Start writing…"),
     keymap.of([
-      { key: "Mod-b", run: wrap("**") },
-      { key: "Mod-i", run: wrap("*") },
+      { key: "Mod-b", run: toggleInline("bold") },
+      { key: "Mod-i", run: toggleInline("italic") },
       ...markdownKeymap, ...searchKeymap, ...historyKeymap, ...defaultKeymap, indentWithTab,
     ]),
     // rendered links open on a click; any link (also in Source mode) on Ctrl/Cmd+click
@@ -227,12 +242,13 @@ export function Editor({ path, text, rev, mode, onChange, onOpenLink }: Props) {
       },
     }),
     EditorView.updateListener.of(u => { if (u.docChanged) change.current(u.state.doc.toString()); }),
+    formatTracker,
   ]).current;
 
   useEffect(() => {
     const v = new EditorView({ parent: host.current! });
     view.current = v;
-    return () => { states.set(current.current, v.state); v.destroy(); view.current = null; };
+    return () => { states.set(current.current, v.state); v.destroy(); view.current = null; publish(null); };
   }, []);
 
   // a different note, or this one reloaded: keep the outgoing note's state (undo, cursor), load the incoming one
@@ -243,6 +259,7 @@ export function Editor({ path, text, rev, mode, onChange, onOpenLink }: Props) {
     const cached = states.get(path);
     v.setState(cached && cached.doc.toString() === text ? cached : EditorState.create({ doc: text, extensions }));
     v.dispatch({ effects: modeSlot.reconfigure(MODES[modeNow.current]) });   // a kept state may be in the other mode
+    publish(v);
     v.focus();
   }, [path, rev]);   // eslint-disable-line react-hooks/exhaustive-deps
 

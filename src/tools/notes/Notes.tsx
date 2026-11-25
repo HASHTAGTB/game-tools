@@ -9,6 +9,7 @@ import { ToolNav } from "@/shared/ui/tool-nav";
 import { WorkspaceLocation } from "@/shared/ui/workspace-location";
 import { Editor } from "./components/Editor";
 import { FileTree } from "./components/FileTree";
+import { FormatBar } from "./components/FormatBar";
 import { PathBar } from "./components/PathBar";
 import { useNotes } from "./state";
 
@@ -110,6 +111,7 @@ export default function Notes() {
         ]} />
 
         <PathBar>
+          {path && <FormatBar />}
           {path && (
             <span className="shrink-0 font-talk text-xs text-taupe">
               {words(text)} words · {saving ? "Saving…" : unsaved ? "Unsaved" : loc?.kind === "github" ? "Staged" : "Saved"}
