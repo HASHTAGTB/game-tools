@@ -8,7 +8,7 @@ import { cn } from "@/shared/lib/utils";
 import type { Box } from "../../lib/blocks";
 import { addOption, removeOption, routeOption, setOptionText } from "../../lib/ops";
 import { unescapeText } from "../../lib/script";
-import { useSceneUi } from "../../lib/ui";
+import { idAt, useSceneUi } from "../../lib/ui";
 import { follow, problemsOf, useBox, type ListLayout } from "./context";
 import { Acts, BoxItem, List, Problems } from "./List";
 
@@ -17,8 +17,9 @@ type Menu = Extract<Box, { kind: "menu" }>;
 /** A choice: one tab per option, each holding what happens when the player picks it (its route). */
 export function ChoiceBox({ box: b, prev, next }: { box: Menu; prev: Box | null; next: Box | null; layout: ListLayout }) {
   const c = useBox();
-  const tab = Math.min(useSceneUi(s => s.tabs[b.from] ?? 0), Math.max(0, b.options.length - 1));
-  const setTab = (i: number) => useSceneUi.setState(s => ({ tabs: { ...s.tabs, [b.from]: i } }));
+  const id = idAt(c.view, b.from);
+  const tab = Math.min(useSceneUi(s => s.tabs[id] ?? 0), Math.max(0, b.options.length - 1));
+  const setTab = (i: number) => useSceneUi.setState(s => ({ tabs: { ...s.tabs, [id]: i } }));
   const o = b.options[tab];
   const add = () => { addOption(c.view, b, c.base, new Set(c.labels)); setTab(b.options.length); };
 

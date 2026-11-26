@@ -3,8 +3,10 @@
 
 export type Tok =
   | { kind: "text"; from: number; to: number; text: string }
-  /** `\"`, `\n`, `{{`: what it stands for in `text` */
+  /** `\"`, `\n`, `{{`, `[[`: what it stands for in `text` */
   | { kind: "escape"; from: number; to: number; text: string }
+  /** `[name]`: a variable Ren'Py fills in; `text` is it as written */
+  | { kind: "var"; from: number; to: number; text: string }
   | { kind: "tag"; from: number; to: number; name: string; value: string | null; close: boolean };
 
 export function tokenize(raw: string): Tok[] {
@@ -19,10 +21,18 @@ export function tokenize(raw: string): Tok[] {
       out.push({ kind: "escape", from: i, to: i + 2, text: n === "n" ? "\n" : n });
       i += 2; runFrom = i; continue;
     }
-    if (c === "{" && raw[i + 1] === "{") {
+    if ((c === "{" || c === "[") && raw[i + 1] === c) {
       flush(i);
-      out.push({ kind: "escape", from: i, to: i + 2, text: "{" });
+      out.push({ kind: "escape", from: i, to: i + 2, text: c });
       i += 2; runFrom = i; continue;
+    }
+    if (c === "[") {
+      const end = raw.indexOf("]", i);
+      if (end > i) {
+        flush(i);
+        out.push({ kind: "var", from: i, to: end + 1, text: raw.slice(i, end + 1) });
+        i = end + 1; runFrom = i; continue;
+      }
     }
     if (c === "{") {
       const end = raw.indexOf("}", i);

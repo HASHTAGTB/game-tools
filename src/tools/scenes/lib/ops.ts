@@ -36,10 +36,57 @@ export function removeLines(view: EditorView, from: number, to: number) {
   ev(view, { from: start, to: end }, "delete.box");
 }
 
-/** The box `b` goes away. Returns the line to put the cursor on (the line before it). */
+/** The box `b` goes away. Returns the line to put the cursor on (the line before it). A choice takes its routes
+ *  (their labels and lines) with it, and the label where they met goes too, so its lines join the section again. */
 export function removeBox(view: EditorView, b: Box): number {
-  removeLines(view, b.from, b.to);
+  if (b.kind === "menu") removeMenu(view, b);
+  else removeLines(view, b.from, b.to);
   return Math.max(1, b.from - 1);
+}
+
+/** The lines of label `name` (its label line up to the next label or the end of the block), or null. */
+function labelLines(view: EditorView, name: string): [number, number] | null {
+  const { doc } = view.state;
+  const head = new RegExp(`^label\\s+${name}\\b`);
+  let n = 1;
+  while (n <= doc.lines && !head.test(doc.line(n).text)) n++;
+  if (n > doc.lines) return null;
+  let e = n + 1;
+  while (e <= doc.lines && !/^label\s/.test(doc.line(e).text) && !/^```/.test(doc.line(e).text)) e++;
+  return [n, e - 1];
+}
+/** Lines `a`–`b` as a change that takes their line breaks too. */
+const wholeLines = (view: EditorView, a: number, b: number) => {
+  const { doc } = view.state;
+  return { from: doc.line(a).from, to: Math.min(doc.length, doc.line(b).to + 1) };
+};
+
+function removeMenu(view: EditorView, b: Extract<Box, { kind: "menu" }>) {
+  const { doc } = view.state;
+  const gone: [number, number][] = [];
+  let a = b.from;
+  if (isBlank(view, a - 1)) a--;
+  gone.push([a, b.to]);
+  const routes = (m: Extract<Box, { kind: "menu" }>) => {
+    for (const o of m.options) {
+      if (o.route) { const r = labelLines(view, o.route); if (r) gone.push(r); }
+      for (const x of o.boxes) if (x.kind === "menu") routes(x);
+    }
+  };
+  routes(b);
+  // where the routes met: unwrapped, unless something else still jumps there
+  if (b.cont) {
+    const name = /label\s+(\w+)/.exec(doc.line(b.cont).text)?.[1];
+    const to = name && new RegExp(`^[^#]*\\b(jump|call)\\s+${name}\\b`);
+    let used = false;
+    if (to) for (let n = 1; n <= doc.lines && !used; n++) used = to.test(doc.line(n).text) && !gone.some(([x, y]) => n >= x && n <= y);
+    if (!used) gone.push([b.cont, b.cont]);
+  }
+  const changes = gone
+    .sort((x, y) => x[0] - y[0])
+    .filter((r, i, all) => !all.slice(0, i).some(o => r[0] >= o[0] && r[1] <= o[1]))
+    .map(([x, y], i) => (i === 0 && x > 1 ? { from: doc.line(x - 1).to, to: doc.line(y).to } : wholeLines(view, x, y)));
+  view.dispatch({ changes, userEvent: "delete.box" });
 }
 
 /** Replace the text between a say line's quotes, as a small change (so typing undoes in sensible steps). */
@@ -74,12 +121,14 @@ export function splitSay(view: EditorView, b: Extract<Box, { kind: "say" }>, bef
 }
 
 /** Backspace at the start of `b`: its text goes to the end of `prev` (with a space between words), and the line
- *  goes. Returns whether a space was put in. */
-export function joinSays(view: EditorView, prev: Extract<Box, { kind: "say" }>, b: Extract<Box, { kind: "say" }>): boolean {
+ *  goes. Only for the same speaker, and only when `b` has nothing after its text (`with vpunch`, `(reply=…)`) that
+ *  would be lost. Returns whether a space was put in, or null if the lines weren't joined. */
+export function joinSays(view: EditorView, prev: Extract<Box, { kind: "say" }>, b: Extract<Box, { kind: "say" }>): boolean | null {
+  if (prev.who !== b.who || b.tail) return null;
   const { doc } = view.state;
   const P = doc.line(prev.from), L = doc.line(b.from);
   const pp = parseLine(P.text);
-  if (pp.kind !== "say") return false;
+  if (pp.kind !== "say") return null;
   const end = P.from + pp.to;
   const gap = /\S$/.test(prev.raw) && /^\S/.test(b.raw);
   view.dispatch({
@@ -222,13 +271,8 @@ export function removeOption(view: EditorView, menu: Extract<Box, { kind: "menu"
   changes.push({ from: doc.line(o.line - 1).to, to: doc.line(optEnd).to });
   if (o.route) {
     // the route label's lines, up to the next label
-    let n = 1;
-    for (; n <= doc.lines; n++) if (new RegExp(`^label\\s+${o.route}\\b`).test(doc.line(n).text)) break;
-    if (n <= doc.lines) {
-      let e = n + 1;
-      while (e <= doc.lines && !/^label\s/.test(doc.line(e).text) && !/^```/.test(doc.line(e).text)) e++;
-      changes.push({ from: doc.line(n).from, to: doc.line(e - 1).to + 1 });
-    }
+    const r = labelLines(view, o.route);
+    if (r) changes.push(wholeLines(view, ...r));
   }
   view.dispatch({ changes, userEvent: "delete.box" });
 }

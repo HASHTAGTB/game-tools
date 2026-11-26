@@ -5,7 +5,7 @@ import type { Box } from "../../lib/blocks";
 import { formatStmt, type Stmt } from "../../lib/script";
 import { describe, EDITABLE } from "../../lib/scriptView";
 import { setStmt } from "../../lib/ops";
-import { useSceneUi } from "../../lib/ui";
+import { idAt, useSceneUi } from "../../lib/ui";
 import { follow, problemsOf, speaker, stageBefore, useBox, type ListLayout } from "./context";
 import { Fields, validStmt } from "./fields";
 import { Acts, Problems, useMoves, worst } from "./List";
@@ -16,7 +16,8 @@ type StmtBox = Extract<Box, { kind: "stmt" }>;
  *  every change is written right away (Ctrl+Z undoes it), Done or Esc closes it. */
 export function StageCard({ box: b, prev, next }: { box: StmtBox; prev: Box | null; next: Box | null; layout: ListLayout }) {
   const c = useBox();
-  const open = useSceneUi(s => s.openCard === b.from);
+  const id = idAt(c.view, b.from);
+  const open = useSceneUi(s => s.openCard === id);
   const moves = useMoves(b, prev, next);
   const before = stageBefore(c, b.from);
   const d = describe(b.stmt, before, c.manifest);
@@ -33,7 +34,7 @@ export function StageCard({ box: b, prev, next }: { box: StmtBox; prev: Box | nu
         title={bad === "info" ? probs.map(p => p.message).join("\n") : undefined}>
         <button type="button" className="bx-card-head" data-card
           onFocus={() => follow(c.view, b.from)}
-          onClick={() => editable && useSceneUi.setState({ openCard: open ? null : b.from })}
+          onClick={() => editable && useSceneUi.setState({ openCard: open ? null : id })}
           onKeyDown={e => {
             if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); (e.key === "ArrowUp" ? moves.up : moves.down)?.(); }
             if (e.key === "Escape" && open) close();
@@ -77,6 +78,9 @@ function hint(x: Stmt) {
     case "date": return "pick a day.";
     case "time": return "write it like 13:12.";
     case "phone": return "name the chat.";
+    case "show": if (x.at && !/^\w+(\([^)]*\))?$/.test(x.at)) return "write the place like center or sprite(xalign=0.3).";
+      return "names can't have spaces.";
+    case "play": case "stop": case "pause": return "names can't have spaces, and times are numbers like 2.0.";
     default: return "names can't have spaces.";
   }
 }

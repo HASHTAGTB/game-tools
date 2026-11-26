@@ -8,7 +8,7 @@ import { inScript, type Line, type Script, type Stmt } from "./script";
  *
  *  Choices: a `menu:` whose options each `jump` to a label in this file shows those labels' lines as its options'
  *  tabs. If the routes all end with a jump to one more label of this file (`con_…`), that label's lines continue
- *  right after the choice. Labels nothing pulls in this way are shown as their own sections at the end. */
+ *  right after the choice (only if every option gets there). Labels nothing pulls in this way are shown as their own sections at the end. */
 
 export type Box =
   | { kind: "say"; from: number; to: number; indent: number; who: string | null; raw: string; tail: string }
@@ -212,22 +212,30 @@ export function buildTree(s: Script, raw: ReadonlySet<number> = new Set()): Tree
       const ends = new Set(b.options.map(targetOf).flatMap(sec => (sec && endOf(sec) ? [endOf(sec)!] : [])));
       const meets = new Set<string>();
       let routed = 0;
+      /** every option ends up at a meeting point: its route jumps there at its end, or it jumps there right away */
+      let allMeet = true;
       for (const o of b.options) {
         const sec = targetOf(o);
         // an option that jumps straight to where the others meet isn't a route: it just goes on
-        if (!sec || ends.has(sec.name)) { resolve(o.boxes); continue; }
+        if (!sec || ends.has(sec.name)) {
+          if (sec) meets.add(sec.name); else allMeet = false;
+          resolve(o.boxes);
+          continue;
+        }
         used.add(sec.name);
         routed++;
         o.route = sec.name;
         let boxes = sec.boxes;
         const end = endOf(sec);
         if (end) { meets.add(end); o.hiddenJump = boxes[boxes.length - 1].from; boxes = boxes.slice(0, -1); }
+        else allMeet = false;
         o.boxes = boxes;
         o.start = sec.place;
         o.tight = false;
         resolve(o.boxes);
       }
-      if (routed && meets.size === 1) {
+      // the meeting point's lines show after the choice only if every option really goes on there
+      if (routed && allMeet && meets.size === 1) {
         const con = byName.get([...meets][0])!;
         if (!used.has(con.name)) {
           used.add(con.name);

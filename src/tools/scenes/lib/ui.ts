@@ -30,9 +30,9 @@ type SceneUi = {
 
   /** where the caret goes once the boxes have been drawn again (after an edit that moved lines) */
   focus: { line: number; caret: Caret } | null;
-  /** the stage card that's open for editing (its line) */
+  /** the stage card that's open for editing (its line's `lineIds` name, so it stays open when lines above move) */
   openCard: number | null;
-  /** the tab each choice shows (by the choice's line) */
+  /** the tab each choice shows (by the choice line's `lineIds` name) */
   tabs: Record<number, number>;
   /** a line to scroll to and point at (from the checks list) */
   reveal: { line: number; at: number } | null;
@@ -54,6 +54,9 @@ export const useSceneUi = create<SceneUi>(() => ({
 
 export const focusLine = (line: number, caret: Caret = "end") => useSceneUi.setState({ focus: { line, caret } });
 export const closeMenu = () => useSceneUi.setState({ menu: null });
+
+/** Line `line`'s `lineIds` name: stays with the line when lines above it come or go. */
+export const idAt = (view: EditorView, line: number) => view.state.field(lineIds)[line - 1];
 
 /** Show the box starting at `line` as Ren'Py (`on`), or as the editor draws it again. */
 export function markRaw(view: EditorView, line: number, on: boolean) {

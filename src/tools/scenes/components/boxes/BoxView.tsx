@@ -10,7 +10,7 @@ import { labelOf } from "../../lib/script";
 import { playScript } from "../../lib/stage";
 import { setCaret } from "../../lib/richtext";
 import { lineIds } from "../../lib/scriptView";
-import { useSceneUi } from "../../lib/ui";
+import { idAt, useSceneUi } from "../../lib/ui";
 import { applyFix } from "../Editor";
 import { BoxMenus } from "./BoxMenus";
 import { BoxContext, type BoxCtx } from "./context";
@@ -81,7 +81,7 @@ export function BoxView({ view }: { view: EditorView }) {
   // a problem clicked in the checks list: open the tab it's in, scroll there, point at it
   useEffect(() => {
     if (!reveal || !tree || !page.current) return;
-    const path = tabsTo(tree, reveal.line);
+    const path = tabsTo(tree, reveal.line).map(([menu, i]) => [idAt(view, menu), i] as const);
     const need = path.filter(([menu, i]) => (tabs[menu] ?? 0) !== i);
     if (need.length) { useSceneUi.setState(s => ({ tabs: { ...s.tabs, ...Object.fromEntries(need) } })); return; }
     const hit = [...page.current.querySelectorAll<HTMLElement>("[data-from]")]

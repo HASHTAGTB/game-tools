@@ -10,7 +10,7 @@ import { popoverCls } from "@/shared/ui/popover";
 import { insertAt, insertChoice, removeBox, sayText, setRaw, setSpeaker } from "../../lib/ops";
 import { formatStmt, type Stmt } from "../../lib/script";
 import { EMPTY_STAGE } from "../../lib/stage";
-import { closeMenu, focusLine, markRaw, useSceneUi, type BoxMenu } from "../../lib/ui";
+import { closeMenu, focusLine, idAt, markRaw, useSceneUi, type BoxMenu } from "../../lib/ui";
 import { speaker, useBox } from "./context";
 import { defaults } from "./fields";
 
@@ -120,7 +120,7 @@ function AddMenu({ menu }: { menu: Extract<BoxMenu, { kind: "add" }> }) {
   const line = (who: string | null) => () => focusLine(put([sayText(who, "")]), "end");
   /** an empty Ren'Py box (`pass` until something's typed) */
   const raw = () => { const n = put(["pass"]); markRaw(view, n, true); focusLine(n, "end"); };
-  const card = (x: Stmt) => () => { const n = put([formatStmt(x)]); useSceneUi.setState({ openCard: n, focus: { line: n, caret: "end" } }); };
+  const card = (x: Stmt) => () => { const n = put([formatStmt(x)]); useSceneUi.setState({ openCard: idAt(view, n), focus: { line: n, caret: "end" } }); };
 
   const thread = useMemo(() => {
     const count = new Map<string, number>();

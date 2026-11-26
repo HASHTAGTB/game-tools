@@ -8,6 +8,7 @@ import type { Box } from "../../lib/blocks";
 import { newline, rawColours, rawIndent, rawTheme, recolour, tabKeys } from "../../lib/codeEditor";
 import { rawText, redoBox, removeBox, setNote, setRaw, undoBox } from "../../lib/ops";
 import { focusLine, isRaw, markRaw } from "../../lib/ui";
+import { stepToText } from "../../lib/richtext";
 import { follow, problemsOf, useAutosize, useBox, type ListLayout } from "./context";
 import { Acts, addAfter, Problems, useMoves } from "./List";
 
@@ -39,7 +40,12 @@ export function NoteBox({ box: b, prev, next, layout }: Props<"note">) {
           const el = e.currentTarget;
           if (e.key === "Enter") { e.preventDefault(); if (e.ctrlKey || e.metaKey) addAfter(el, b, layout); return; }
           if (e.key === "Backspace" && !el.value) { e.preventDefault(); const n = removeBox(view, b); focusLine(prev ? prev.from : n); return; }
-          if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); (e.key === "ArrowUp" ? moves.up : moves.down)?.(); }
+          if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); (e.key === "ArrowUp" ? moves.up : moves.down)?.(); return; }
+          // Up on the first line (or Down on the last): to the box above (or below), as in a line's text
+          const up = e.key === "ArrowUp", down = e.key === "ArrowDown";
+          if ((up || down) && !e.shiftKey && el.selectionStart === el.selectionEnd
+            && !(up ? el.value.slice(0, el.selectionStart) : el.value.slice(el.selectionEnd)).includes("\n")
+            && stepToText(el, up ? "up" : "down")) e.preventDefault();
         }} />
       <Acts box={b} prev={prev} next={next} />
     </div>

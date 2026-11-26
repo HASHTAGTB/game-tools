@@ -54,7 +54,7 @@ export function setChip(e: HTMLElement, raw: string) {
   if (raw === "{nw}") return look("bx-pause bx-nw", "on", "", "Goes on by itself, without a click");
   e.className = "bx-chip bx-tag";
   e.textContent = raw;
-  e.title = "A Ren'Py text tag";
+  e.title = raw.startsWith("[") ? "A Ren'Py variable, filled in by the game" : "A Ren'Py text tag";
 }
 
 /** The lengths the pause popup offers ({w=…}; no unit shown, Ren'Py scales it by the text speed). */
@@ -175,6 +175,7 @@ export function toDOM(el: HTMLElement, raw: string) {
   for (const t of tokenize(raw)) {
     if (t.kind === "text") { top().append(t.text); continue; }
     if (t.kind === "escape") { top().append(t.text === "\n" ? chip("\\n") : t.text); continue; }
+    if (t.kind === "var") { top().append(chip(t.text)); continue; }
     const src = raw.slice(t.from, t.to);
     const styled = STYLE[t.name] && t.value === null;
     if ((styled || t.name === "cps") && !t.close) {
@@ -235,8 +236,8 @@ export function zwAtCaret(dir: "backward" | "forward") {
   return (dir === "backward" ? t[r.startOffset - 1] : t[r.startOffset]) === ZW;
 }
 
-/** Typed text as Ren'Py: quotes and backslashes escaped, `{` doubled. */
-const esc = (s: string) => s.replace(/​/g, "").replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\{/g, "{{").replace(/\n/g, "\\n");
+/** Typed text as Ren'Py: quotes and backslashes escaped, `{` and `[` doubled (Ren'Py reads `[x]` as a variable). */
+const esc = (s: string) => s.replace(/​/g, "").replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\{/g, "{{").replace(/\[/g, "[[").replace(/\n/g, "\\n");
 
 export function fromDOM(node: Node): string {
   let s = "";
@@ -345,4 +346,45 @@ export function insertAtCaret(el: HTMLElement, node: Node) {
   r.insertNode(node);
   caretAfter(node);
   padMarks(el);
+}
+
+/** An arrow at the inner edge of italic/bold/a speed span with no text beyond it (the box's end, a mark, another
+ *  span): the caret steps out of it, one level a press, so what's typed next isn't italic (or that speed) any more.
+ *  The browser won't put the caret there by itself; an invisible character holds the spot. */
+export function stepOutOfWrap(el: HTMLElement, dir: "backward" | "forward"): boolean {
+  const r = selRange();
+  if (!r || !r.collapsed || !el.contains(r.startContainer)) return false;
+  const n = r.startContainer;
+  const w = (n.nodeType === Node.ELEMENT_NODE ? n as HTMLElement : n.parentElement)?.closest<HTMLElement>("em, i, strong, b, u, s, [data-f]");
+  if (!w || w === el || !el.contains(w) || w.dataset.raw != null) return false;
+  const x = document.createRange();
+  x.selectNodeContents(w);
+  if (dir === "forward") x.setStart(r.startContainer, r.startOffset); else x.setEnd(r.startContainer, r.startOffset);
+  const f = x.cloneContents();
+  if (f.textContent!.replaceAll(ZW, "") || f.querySelector("[data-raw]")) return false;
+  const side = dir === "forward" ? w.nextSibling : w.previousSibling;
+  if (side?.nodeType === Node.TEXT_NODE && (side as Text).data.replaceAll(ZW, "")) return false;
+  let t = side?.nodeType === Node.TEXT_NODE ? side as Text : null;
+  if (!t) { t = document.createTextNode(ZW); if (dir === "forward") w.after(t); else w.before(t); }
+  const c = document.createRange();
+  c.setStart(t, dir === "forward" ? Math.min(1, t.data.length) : t.data.length);
+  c.collapse(true);
+  const s = getSelection()!;
+  s.removeAllRanges();
+  s.addRange(c);
+  return true;
+}
+
+/** Up from the start of a box's text (or Down from its end): the caret goes to the box above (or below). */
+export function stepToText(from: HTMLElement, dir: "up" | "down"): boolean {
+  const all = [...document.querySelectorAll<HTMLElement>(".bx-page [data-text]")];
+  const to = all[all.indexOf(from) + (dir === "up" ? -1 : 1)];
+  if (!to) return false;
+  if (to instanceof HTMLTextAreaElement) {
+    to.focus({ preventScroll: true });
+    const at = dir === "up" ? to.value.length : 0;
+    to.setSelectionRange(at, at);
+  } else setCaret(to, dir === "up" ? "end" : "start");
+  to.scrollIntoView({ block: "nearest" });
+  return true;
 }

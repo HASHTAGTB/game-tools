@@ -5,7 +5,7 @@ import { openAnchoredMenu } from "@/shared/ui/anchored-menu";
 import type { Box } from "../../lib/blocks";
 import { pastedLines } from "../../lib/cast";
 import { insertAt, joinSays, redoBox, removeBox, setRaw, setSayRaw, setSpeaker, splitSay, undoBox } from "../../lib/ops";
-import { atEdge, caretCount, chip, fromDOM, insertAtCaret, isEmpty, markBeforeCaret, marksAt, onSpeedLabel, padMarks, pauseOf, plainCount, setCaret, splitAtCaret, toDOM, zwAtCaret } from "../../lib/richtext";
+import { atEdge, caretCount, chip, fromDOM, insertAtCaret, isEmpty, markBeforeCaret, marksAt, onSpeedLabel, padMarks, pauseOf, plainCount, setCaret, splitAtCaret, stepOutOfWrap, stepToText, toDOM, zwAtCaret } from "../../lib/richtext";
 import { focusLine, useSceneUi } from "../../lib/ui";
 import { follow, problemsOf, speaker, stageBefore, useBox, useHot, type ListLayout } from "./context";
 import { Acts, addAfter, addInstead, Problems, useMoves } from "./List";
@@ -122,6 +122,7 @@ export const SayBox = memo(function SayBox({ box: b, prev, next, layout }: { box
     }
     if ((k === "ArrowLeft" || k === "ArrowRight") && !e.shiftKey && !mod) {
       const dir = k === "ArrowLeft" ? "backward" : "forward";
+      if (stepOutOfWrap(el, dir)) { e.preventDefault(); return; }
       if (zwAtCaret(dir)) getSelection()!.modify("move", dir, "character");
     }
     if (k === "Backspace" && atEdge(el, "start")) {
@@ -131,13 +132,18 @@ export const SayBox = memo(function SayBox({ box: b, prev, next, layout }: { box
         focusLine(prev?.kind === "say" || prev?.kind === "note" ? prev.from : n, "end");
       } else if (prev?.kind === "say") {
         const gap = joinSays(view, prev, b);
-        focusLine(prev.from, plainCount(prev.raw) + (gap ? 1 : 0));
+        // another speaker, or Ren'Py after the text: no join, just step into the line above
+        focusLine(prev.from, gap === null ? "end" : plainCount(prev.raw) + (gap ? 1 : 0));
       }
       return;
     }
     if (k === "Delete" && atEdge(el, "end")) {
       e.preventDefault();
-      if (next?.kind === "say") { const at = plainCount(b.raw); const gap = joinSays(view, b, next); focusLine(b.from, at + (gap ? 1 : 0)); }
+      if (next?.kind === "say") {
+        const at = plainCount(b.raw);
+        const gap = joinSays(view, b, next);
+        focusLine(gap === null ? next.from : b.from, gap === null ? "start" : at + (gap ? 1 : 0));
+      }
       return;
     }
     if (e.altKey && (k === "ArrowUp" || k === "ArrowDown")) {
@@ -146,9 +152,7 @@ export const SayBox = memo(function SayBox({ box: b, prev, next, layout }: { box
       return;
     }
     if ((k === "ArrowUp" && atEdge(el, "start")) || (k === "ArrowDown" && atEdge(el, "end"))) {
-      const all = [...document.querySelectorAll<HTMLElement>(".bx-page [data-text]")];
-      const to = all[all.indexOf(el) + (k === "ArrowUp" ? -1 : 1)];
-      if (to) { e.preventDefault(); setCaret(to, k === "ArrowUp" ? "end" : "start"); to.scrollIntoView({ block: "nearest" }); }
+      if (stepToText(el, k === "ArrowUp" ? "up" : "down")) e.preventDefault();
       return;
     }
     if (k === "Escape") el.blur();

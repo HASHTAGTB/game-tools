@@ -14,7 +14,9 @@ export type Problem = {
   to?: number;
   severity: "error" | "warning" | "info";
   message: string;
-  fix?: { label: string; /** the line's new text (may hold several lines), or for `at: "end"` text added at the end of the file */ text: string; at?: "line" | "end" | "after" };
+  fix?: { label: string; /** the line's new text (may hold several lines), or for `at: "end"` text added at the end of the file */ text: string; at?: "line" | "end" | "after";
+    /** the line's text when it was checked: the fix only applies while the line still reads so */
+    was?: string };
 };
 
 export type CheckContext = {
@@ -179,6 +181,7 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
         break;
     }
   });
+  for (const p of out) if (p.fix && p.fix.at !== "end") p.fix.was = lines[p.line - 1];
   return out;
 }
 

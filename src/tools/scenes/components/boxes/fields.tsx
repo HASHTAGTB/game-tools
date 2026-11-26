@@ -36,13 +36,21 @@ export function defaults(stage: Stage, cast: string[], m: Manifest | null, scrip
   };
 }
 
+/** The statement reads back as itself (as `parseLine` understands it), so a half-typed value never turns the card
+ *  into a Ren'Py box or writes a broken line. */
 export function validStmt(x: Stmt) {
+  const word = (v?: string) => v === undefined || v === "" || /^\w+$/.test(v);
+  const num = (v?: string) => v === undefined || v === "" || /^[\d.]+$/.test(v);
   switch (x.kind) {
-    case "scene": return !!x.image.trim() && /^\w+( \w+)*$/.test(x.image.trim());
-    case "show": return /^\w+$/.test(x.tag) && x.attrs.every(a => /^\w+$/.test(a));
-    case "hide": return /^\w+$/.test(x.tag);
+    case "scene": return /^\w+( \w+)*$/.test(x.image.trim()) && word(x.with);
+    case "show": return /^\w+$/.test(x.tag) && x.attrs.every(a => /^\w+$/.test(a)) && word(x.with)
+      && (x.at === undefined || x.at === "" || /^\w+(\([^)]*\))?$/.test(x.at));
+    case "hide": return /^\w+$/.test(x.tag) && word(x.with);
+    case "with": return /^\w+$/.test(x.with);
     case "jump": case "call": return /^\w+$/.test(x.target);
-    case "play": return /^\w+$/.test(x.name);
+    case "play": return /^\w+$/.test(x.channel) && /^\w+$/.test(x.name) && num(x.fadein);
+    case "stop": return /^\w+$/.test(x.channel) && num(x.fadeout);
+    case "pause": return num(x.seconds);
     case "date": return /^\d{4}-\d{2}-\d{2}$/.test(x.date);
     case "time": return /^\d{1,2}:\d{2}$/.test(x.time);
     case "phone": return x.action !== "open" || /^\S/.test(x.thread ?? "");

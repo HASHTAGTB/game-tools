@@ -83,10 +83,10 @@ function stringEnd(s: string, at: number): number {
   return -1;
 }
 
-/** Text as it goes between quotes: `"` and `\` escaped. */
-export const escapeText = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+/** Text as it goes between quotes: `"` and `\` escaped, `[` doubled (Ren'Py reads `[x]` as a variable). */
+export const escapeText = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\[/g, "[[");
 /** The other way: what a string's text means. */
-export const unescapeText = (s: string) => s.replace(/\\(.)/g, "$1");
+export const unescapeText = (s: string) => s.replace(/\\(.)|\[\[/g, (_, c) => c ?? "[");
 
 // ---------------------------------------------------------------- lines
 
@@ -152,7 +152,7 @@ export function parseLine(text: string): Line {
 
   // `who "text" tail`, `"text" tail` or a choice `"text":`
   m = /^(?:([A-Za-z_]\w*)\s+)?"/.exec(t);
-  if (m && !["scene", "show", "hide", "play", "jump", "call", "with", "menu", "label", "if", "elif", "while", "python", "init", "define", "default"].includes(m[1] ?? "")) {
+  if (m && !["scene", "show", "hide", "play", "jump", "call", "with", "menu", "label", "if", "elif", "while", "python", "init", "define", "default", "voice"].includes(m[1] ?? "")) {
     const q = indent + m[0].length - 1;
     const end = stringEnd(text, q);
     if (end < 0) return { kind: "bad", indent, reason: "This line's text has no closing quote." };

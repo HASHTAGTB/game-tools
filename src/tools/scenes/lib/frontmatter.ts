@@ -48,7 +48,17 @@ function blocks(lines: string[], r: { from: number; to: number }): Block[] {
   return out;
 }
 
-const unquote = (s: string) => s.trim().replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
+const unquote = (s: string) => {
+  const t = s.trim();
+  if (/^"(.*)"$/.test(t)) return t.slice(1, -1).replace(/\\(.)/g, "$1");
+  if (/^'(.*)'$/.test(t)) return t.slice(1, -1).replace(/''/g, "'");
+  return t;
+};
+/** A plain value as YAML: in quotes when it would otherwise break or mean something else (`a: b`, `#x`, `[x]` …). */
+const yamlValue = (v: string) =>
+  /^[\s[\]{}"'&*!|>%@`,?:#-]|:(\s|$)|\s#|\s$/.test(v)
+    ? `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+    : v;
 const linkName = (s: string) => unquote(s).replace(/^\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]$/, "$1").trim();
 
 function valueOf(lines: string[], b: Block): string | string[] {
@@ -81,7 +91,7 @@ export function setInfo(text: string, key: keyof SceneInfo, value: string | stri
   const offset = (i: number) => lines.slice(0, i).reduce((n, l) => n + l.length + 1, 0);
   const written = Array.isArray(value)
     ? `${key}:${value.map(v => `\n  - "[[${v}]]"`).join("")}`
-    : `${key}:${value ? " " + value : ""}`;
+    : `${key}:${value ? " " + yamlValue(value) : ""}`;
   const r = range(lines);
   if (!r) {
     const fresh = ["---", "tags:", "  - scene", "status:", "renpy:", "owner:", "characters:", "---"]

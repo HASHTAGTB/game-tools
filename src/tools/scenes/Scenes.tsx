@@ -34,7 +34,7 @@ export default function Scenes() {
   useEffect(() => {
     if (!ready) return;
     useGame.getState().load();
-    useSceneIndex.getState().load();
+    useSceneIndex.getState().load().catch(() => {});   // tried again on the next change
   }, [ready, loc]);
 
   // the open scene's labels, as saved, for the other scenes' checks
