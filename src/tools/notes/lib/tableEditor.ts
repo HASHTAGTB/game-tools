@@ -6,7 +6,7 @@ import {
   AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BetweenHorizontalEnd, BetweenHorizontalStart,
   BetweenVerticalEnd, BetweenVerticalStart, Code, Trash2,
 } from "lucide-react";
-import { openTableMenu, type TableMenuItem } from "../components/TableMenu";
+import { openAnchoredMenu, type AnchoredMenuItem } from "@/shared/ui/anchored-menu";
 import { renderInline } from "./livePreview";
 import * as T from "./tableModel";
 
@@ -330,7 +330,7 @@ class TableView {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
         mark(false);
-        if (!dragging) return openTableMenu(el, this.menu(kind, index));
+        if (!dragging) return openAnchoredMenu(el, this.menu(kind, index));
         if (target === index) return;
         this.commit(kind === "row" ? T.moveRow(this.model, index, target) : T.moveCol(this.model, index, target));
       };
@@ -364,7 +364,7 @@ class TableView {
     }
   }
 
-  private menu(kind: "row" | "col" | "table", i: number): TableMenuItem[] {
+  private menu(kind: "row" | "col" | "table", i: number): AnchoredMenuItem[] {
     const m = this.model;
     const edit = (next: T.Table, focus?: typeof focusNext) => () => this.commit(next, focus);
     if (kind === "row") return [

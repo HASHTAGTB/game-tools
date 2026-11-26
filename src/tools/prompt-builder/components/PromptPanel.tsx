@@ -4,6 +4,7 @@ import type { Character } from "../lib/types";
 import { castLook } from "../lib/cast";
 import { promptSegments, segColor, type Segment } from "../lib/prompt";
 import { copyText } from "@/shared/lib/clipboard";
+import { useGame } from "@/shared/lib/game";
 import { Button } from "@/shared/ui/button";
 import { AnimatePresence, m, spring, useReducedMotion } from "@/shared/ui/motion";
 
@@ -14,7 +15,9 @@ export function PromptPanel({ ch, onNegative }: { ch: Character; onNegative: (v:
   const segs = promptSegments(ch);
   const prompt = segs.map(s => s.tag).join(", ");
   const [copied, setCopied] = useState<"p" | "n" | null>(null);
-  const look = castLook(ch.name);
+  const manifest = useGame(s => s.manifest);
+  useEffect(() => { if (!useGame.getState().loaded) useGame.getState().load(); }, []);
+  const look = castLook(ch.name, manifest);
   const [shown, skip] = useCrawl(ch.id, prompt.length);
 
   const copy = async (what: "p" | "n") => {

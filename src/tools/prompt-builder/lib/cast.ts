@@ -1,4 +1,7 @@
-/** Name colors and textbox patterns from HTAWAGE (game/core/characters.rpy, core/gui/say.rpy).
+import { boxLook, characterOf, type Manifest } from "@/shared/lib/game";
+
+/** Name colors and textbox patterns from HTAWAGE (game/core/characters.rpy, core/gui/say.rpy): from the game's
+ *  manifest (.game-tools/renpy.json) when the vault has one, else the copy below.
  *  A character whose name starts with a cast name gets that character's dialogue-box look. */
 export type CastLook = { color: string; pattern?: string };
 
@@ -21,5 +24,8 @@ const CAST: Record<string, CastLook> = {
 /** Characters outside the cast use the GUI accent color. */
 const DEFAULT: CastLook = { color: "#c4956a" };
 
-export const castLook = (name: string): CastLook =>
-  CAST[name.trim().split(/[\s_-]+/)[0]?.toLowerCase() ?? ""] ?? DEFAULT;
+export function castLook(name: string, manifest: Manifest | null = null): CastLook {
+  const id = name.trim().split(/[\s_-]+/)[0]?.toLowerCase() ?? "";
+  if (characterOf(manifest, id)?.box) return boxLook(manifest, id);
+  return CAST[id] ?? DEFAULT;
+}

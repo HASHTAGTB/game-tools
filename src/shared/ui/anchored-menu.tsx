@@ -4,20 +4,20 @@ import { create } from "zustand";
 import { cn } from "@/shared/lib/utils";
 import { popoverCls } from "@/shared/ui/popover";
 
-/** The menu behind a table's row, column and corner handles. The table is drawn by CodeMirror, outside React, so it
- *  opens this menu through `openTableMenu`; the Editor renders the one host. */
+/** A menu opened from outside React, next to any element: things CodeMirror draws (a table's handles, a scene's
+ *  pause marks) open it through `openAnchoredMenu`; the page renders the one host. */
 
-export type TableMenuItem =
+export type AnchoredMenuItem =
   | { icon: LucideIcon; label: string; run: () => void; danger?: boolean; checked?: boolean; disabled?: boolean }
   | "-";
 
-const useTableMenu = create<{ anchor: Element | null; items: TableMenuItem[] }>(() => ({ anchor: null, items: [] }));
+const useAnchoredMenu = create<{ anchor: Element | null; items: AnchoredMenuItem[] }>(() => ({ anchor: null, items: [] }));
 
-export const openTableMenu = (anchor: Element, items: TableMenuItem[]) => useTableMenu.setState({ anchor, items });
-const close = () => useTableMenu.setState({ anchor: null });
+export const openAnchoredMenu = (anchor: Element, items: AnchoredMenuItem[]) => useAnchoredMenu.setState({ anchor, items });
+const close = () => useAnchoredMenu.setState({ anchor: null });
 
-export function TableMenuHost() {
-  const { anchor, items } = useTableMenu();
+export function AnchoredMenuHost() {
+  const { anchor, items } = useAnchoredMenu();
   return (
     <Menu.Root open={!!anchor} onOpenChange={open => { if (!open) close(); }}>
       <Menu.Portal>

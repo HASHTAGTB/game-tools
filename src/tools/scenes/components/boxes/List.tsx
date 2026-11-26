@@ -1,0 +1,186 @@
+import { Braces, ChevronDown, ChevronUp, LayoutList, Plus, Trash2, Wrench } from "lucide-react";
+import { memo, type ReactNode } from "react";
+import { Button } from "@/shared/ui/button";
+import { IconButton } from "@/shared/ui/icon-button";
+import { placeAfter, type Box, type Place } from "../../lib/blocks";
+import type { Problem } from "../../lib/checks";
+import { removeBox, swapBoxes } from "../../lib/ops";
+import { focusLine, isRaw, markRaw, useSceneUi } from "../../lib/ui";
+import { applyFix } from "../Editor";
+import { ChatBox } from "./ChatBox";
+import { ChoiceBox } from "./ChoiceBox";
+import { problemsOf, stageBefore, useBox, type BoxCtx, type ListLayout } from "./context";
+import { NoteBox, RawBox } from "./NoteBox";
+import { SayBox } from "./SayBox";
+import { StageCard } from "./StageCard";
+
+/** A list of boxes with a slot before, between and after them. `start`: where a box at the very top goes;
+ *  `layout`: where one goes after a box. */
+export function List({ boxes, start, layout, empty }: { boxes: Box[]; start: Place; layout: ListLayout; empty?: string }) {
+  const c = useBox();
+  if (!boxes.length) return <FirstSlot place={start} label={empty ?? "Add the first line"} />;
+  const lay = JSON.stringify(layout);
+  return (
+    <>
+      <Slot place={start} />
+      {boxes.map((b, i) => {
+        const prev = boxes[i - 1] ?? null, next = boxes[i + 1] ?? null;
+        return (
+          <div key={`${b.kind}:${c.ids[b.from - 1] ?? b.from}`}>
+            <Item box={b} prev={prev} next={next} layout={layout} k={keyOf(c, b, prev, next, lay)} />
+            <Slot place={placeAfter(b, layout)} />
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+const near = (b: Box | null) => (b ? `${b.kind}:${b.from}-${b.to}:${b.kind === "say" ? b.who : ""}` : "");
+
+/** Everything a box shows, as a string: it draws again only when this changes. Choices and chats always draw again
+ *  (their own lists then skip what didn't change). */
+function keyOf(c: BoxCtx, b: Box, prev: Box | null, next: Box | null, layout: string) {
+  if (b.kind === "menu" || b.kind === "chat") return null;
+  const probs = problemsOf(c, b).map(p => p.severity + p.message + (p.fix?.label ?? "")).join("|");
+  const stage = b.kind === "say" ? stageBefore(c, b.from).pov : b.kind === "stmt" ? JSON.stringify(stageBefore(c, b.from)) : "";
+  return [JSON.stringify(b), near(prev), near(next), layout, probs, stage, c.epoch].join("\u0000");
+}
+
+const Item = memo(function Item(p: ItemProps & { k: string | null }) {
+  return <BoxItem {...p} />;
+}, (a, b) => a.k !== null && a.k === b.k);
+
+export type ItemProps = { box: Box; prev: Box | null; next: Box | null; layout: ListLayout };
+
+export function BoxItem(p: ItemProps) {
+  switch (p.box.kind) {
+    case "say": return <SayBox {...p} box={p.box} />;
+    case "stmt": return <StageCard {...p} box={p.box} />;
+    case "note": return <NoteBox {...p} box={p.box} />;
+    case "raw": return <RawBox {...p} box={p.box} />;
+    case "menu": return <ChoiceBox {...p} box={p.box} />;
+    case "chat": return <ChatBox {...p} box={p.box} />;
+  }
+}
+
+// ---------------------------------------------------------------- slots
+
+function openAdd(anchor: Element, place: Place, replace?: Box) {
+  useSceneUi.setState({ menu: { kind: "add", anchor, place, replace, level: place.level, chat: place.chat } });
+}
+
+const samePlace = (a: { place: Place }, b: { place: Place }) =>
+  a.place.after === b.place.after && a.place.indent === b.place.indent && a.place.tight === b.place.tight && a.place.level === b.place.level && a.place.chat === b.place.chat;
+
+export const Slot = memo(function Slot({ place }: { place: Place }) {
+  const open = useSceneUi(s => s.menu?.kind === "add" && !s.menu.replace && s.menu.place.after === place.after && s.menu.place.indent === place.indent);
+  return (
+    <button type="button" className="bx-slot" aria-label="Add here" title="Add here" data-open={open || undefined}
+      onClick={e => openAdd(e.currentTarget, place)}>
+      <span className="bx-slot-plus"><Plus className="h-3 w-3" strokeWidth={3} /></span>
+    </button>
+  );
+}, samePlace);
+
+function FirstSlot({ place, label }: { place: Place; label: string }) {
+  const open = useSceneUi(s => s.menu?.kind === "add" && s.menu.place.after === place.after && s.menu.place.indent === place.indent);
+  return (
+    <div className="py-1.5">
+      <button type="button" className="bx-first" data-open={open || undefined} onClick={e => openAdd(e.currentTarget, place)}>
+        <Plus className="h-4 w-4" strokeWidth={2.5} />{label}
+      </button>
+    </div>
+  );
+}
+
+/** The Add menu at the slot after `b`, or in place of an empty `b`. */
+export const addAfter = (anchor: Element, b: Box, layout: ListLayout) => openAdd(anchor, placeAfter(b, layout));
+export const addInstead = (anchor: Element, b: Box, layout: ListLayout) => openAdd(anchor, placeAfter(b, layout), b);
+
+// ---------------------------------------------------------------- moving, deleting
+
+/** Boxes that can swap places: neighbours in a list, neither a choice (a choice's routes hang on its place). */
+export const movable = (a: Box | null, b: Box | null): a is Box => !!a && !!b && a.kind !== "menu" && b.kind !== "menu";
+
+export function useMoves(box: Box, prev: Box | null, next: Box | null) {
+  const { view } = useBox();
+  /** swap `a` and `b` (a above b); boxes shown as Ren'Py stay so at their new place. Returns where `b` starts now
+   *  (`a` now starts at b's old place … shifted). */
+  const swap = (a: Box, b: Box) => {
+    const ra = isRaw(view, a.from), rb = isRaw(view, b.from);
+    markRaw(view, a.from, false); markRaw(view, b.from, false);
+    swapBoxes(view, a, b);
+    const aAt = a.from + (b.to - b.from + 1) + (b.from - a.to - 1);
+    if (rb) markRaw(view, a.from, true);
+    if (ra) markRaw(view, aAt, true);
+    return aAt;
+  };
+  const up = movable(prev, box) ? () => { swap(prev!, box); focusLine(prev!.from); } : null;
+  const down = movable(next, box) ? () => focusLine(swap(box, next!)) : null;
+  const remove = () => { markRaw(view, box.from, false); const n = removeBox(view, box); if (prev) focusLine(prev.from); else focusLine(n); };
+  return { up, down, remove };
+}
+
+const AS: Record<string, string> = { stmt: "a card", menu: "a choice", chat: "a chat", say: "a line", note: "a note" };
+
+/** Show a box as Ren'Py, or a box shown so as the editor draws it again (session only, the file doesn't change). */
+function RawToggle({ box }: { box: Box }) {
+  const { view } = useBox();
+  const back = box.kind === "raw" ? box.as : null;
+  if (box.kind === "raw" && !back) return null;
+  const flip = () => {
+    markRaw(view, box.from, !back);
+    useSceneUi.setState({ openCard: null });
+    focusLine(box.from, "end");
+  };
+  return back
+    ? <IconButton icon={LayoutList} size="sm" label={`Show as ${AS[back] ?? "a box"}`} onClick={flip} />
+    : <IconButton icon={Braces} size="sm" label="Edit as Ren'Py" onClick={flip} />;
+}
+
+/** The icons that show on hover: move up, move down, delete (and whatever a box adds in front). */
+export function Acts({ box, prev, next, children }: { box: Box; prev: Box | null; next: Box | null; children?: ReactNode }) {
+  const { up, down, remove } = useMoves(box, prev, next);
+  const keep = (e: React.MouseEvent) => e.preventDefault();
+  return (
+    <div className="bx-acts" onMouseDown={keep}>
+      {children}
+      <RawToggle box={box} />
+      <IconButton icon={ChevronUp} size="sm" label="Move up" kbd="Alt+↑" disabled={!up} onClick={() => up?.()} />
+      <IconButton icon={ChevronDown} size="sm" label="Move down" kbd="Alt+↓" disabled={!down} onClick={() => down?.()} />
+      <IconButton icon={Trash2} size="sm" tone="danger" label="Delete" onClick={remove} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- problems
+
+const DOT: Record<Problem["severity"], string> = { error: "bg-coral", warning: "bg-butter", info: "bg-taupe/60" };
+
+/** A box's problems under it (missing art only marks the card, it's not a problem to fix). */
+export function Problems({ list }: { list: Problem[] }) {
+  const { view } = useBox();
+  const real = list.filter(p => p.severity !== "info");
+  if (!real.length) return null;
+  return (
+    <div className="bx-probs">
+      {real.map((p, i) => (
+        <div key={i} className="bx-prob">
+          <i className={DOT[p.severity]} />
+          <span className="min-w-0 flex-1">{p.message}</span>
+          {p.fix && (
+            <Button size="sm" variant="quiet" className="h-6" onMouseDown={e => e.preventDefault()} onClick={() => applyFix(view, p)}>
+              <Wrench className="h-3 w-3" />{p.fix.label}
+            </Button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The worst problem of a list, for a card's outline. */
+export const worst = (list: Problem[]) =>
+  list.some(p => p.severity === "error") ? "error" : list.some(p => p.severity === "warning") ? "warning" : list.length ? "info" : null;
+

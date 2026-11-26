@@ -9,7 +9,8 @@ import { AnimatePresence, m, spring } from "@/shared/ui/motion";
 import { MenuMarker } from "@/shared/ui/menu";
 import { popoverCls } from "@/shared/ui/popover";
 import { Rule } from "@/shared/ui/heading";
-import { baseName, parentOf, useNotes, type Node } from "../state";
+import { useVault } from "./context";
+import { baseName, parentOf, type Node } from "./store";
 
 const hoverOnly = "opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 [@media(hover:none)]:opacity-100";
 const INDENT = 14;
@@ -26,13 +27,16 @@ function nodeAt(target: EventTarget | null): Node | null {
   const path = el.dataset.path!;
   return { path, name: path.split("/").pop()!, kind: el.dataset.kind as Node["kind"] };
 }
-/** Where something dropped on `n` goes: into the folder, or next to the note. */
-const dropDirOf = (n: Node | null) => (!n ? "" : n.kind === "directory" ? n.path : parentOf(n.path));
+/** Where something dropped on `n` goes: into the folder, or next to the note; `root` for the empty space. */
+const dropDirOf = (n: Node | null, root: string) => (!n ? root : n.kind === "directory" ? n.path : parentOf(n.path));
 
 /** The vault's folders and notes, like Obsidian's file explorer. Folders are listed when first opened.
  *  Right-click for every action, drag rows onto folders to move them. */
 export function FileTree() {
-  const { tree, ready, expanded, busy, create, createFolder, setRenaming, duplicate, move, toggle } = useNotes();
+  const useStore = useVault();
+  const { root: rootDir, noun } = useStore.config;
+  const Noun = useStore.Noun;
+  const { tree, ready, expanded, busy, create, createFolder, setRenaming, duplicate, move, toggle } = useStore();
   /** What the context menu is for; null is the vault. */
   const [menuFor, setMenuFor] = useState<Node | null>(null);
   const [deleting, setDeleting] = useState<Node | null>(null);
@@ -41,13 +45,13 @@ export function FileTree() {
   const hoverTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const hoverDir = useRef<string | null>(null);
 
-  const root = tree[""];
+  const root = tree[rootDir];
   if (!ready) return null;
 
   const canDrop = (dir: string) => !!dragging && dir !== parentOf(dragging) && !under(dir, dragging);
   const onDragOver = (e: DragEvent) => {
     const n = nodeAt(e.target);
-    const dir = dropDirOf(n);
+    const dir = dropDirOf(n, rootDir);
     if (!canDrop(dir)) { setDropDir(null); return; }
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
@@ -63,27 +67,28 @@ export function FileTree() {
   const endDrag = () => { setDragging(null); setDropDir(null); clearTimeout(hoverTimer.current); hoverDir.current = null; };
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
-    const dir = dropDirOf(nodeAt(e.target));
+    const dir = dropDirOf(nodeAt(e.target), rootDir);
     if (dragging && canDrop(dir)) move(dragging, dir);
     endDrag();
   };
 
   const dir = menuFor?.kind === "directory" ? menuFor : null;
   const note = menuFor?.kind === "file" ? menuFor : null;
-  const here = dir?.path ?? (note ? parentOf(note.path) : "");
+  const here = dir?.path ?? (note ? parentOf(note.path) : rootDir);
+  const inHere = here !== rootDir ? ` in ${here.split("/").pop()}` : "";
 
   return (
     <>
       <ContextMenu.Root>
         <ContextMenu.Trigger
           render={<div />}
-          className={cn("min-h-full pb-4 transition-colors", dropDir === "" && "bg-caramel/8")}
+          className={cn("min-h-full pb-4 transition-colors", dropDir === rootDir && "bg-caramel/8")}
           onContextMenu={(e: MouseEvent) => setMenuFor(nodeAt(e.target))}
           onDragOver={onDragOver} onDrop={onDrop} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as globalThis.Node)) setDropDir(null); }}>
           {!root ? <p className="px-6 font-talk text-sm text-taupe">Loading…</p>
-            : !root.length ? <p className="px-6 font-talk text-sm text-taupe">No notes here yet. Right-click for a new one.</p>
+            : !root.length ? <p className="px-6 font-talk text-sm text-taupe">No {noun}s here yet. Right-click for a new one.</p>
             : (
-              <ul role="tree" aria-label="Notes" className="relative">
+              <ul role="tree" aria-label={`${Noun}s`} className="relative">
                 {root.map(n => <Row key={n.path} node={n} depth={0} dropDir={dropDir} dragging={dragging}
                   onDragStart={p => setDragging(p)} onDragEnd={endDrag} onDelete={setDeleting} />)}
               </ul>
@@ -98,8 +103,8 @@ export function FileTree() {
                   {note && <Item icon={Copy} label="Duplicate" onClick={() => duplicate(note.path)} />}
                   {note && <Item icon={Trash2} label="Delete…" danger onClick={() => setDeleting(note)} />}
                   {note && <ContextMenu.Separator className="my-1 h-px bg-ink-line" />}
-                  <Item icon={FilePlus} label={here ? `New note in ${here.split("/").pop()}` : "New note"} onClick={() => create(here)} />
-                  <Item icon={FolderPlus} label={here ? `New folder in ${here.split("/").pop()}` : "New folder"} onClick={() => createFolder(here)} />
+                  <Item icon={FilePlus} label={`New ${noun}${inHere}`} onClick={() => create(here)} />
+                  <Item icon={FolderPlus} label={`New folder${inHere}`} onClick={() => createFolder(here)} />
                   {dir && <ContextMenu.Separator className="my-1 h-px bg-ink-line" />}
                   {dir && <Item icon={Pencil} label="Rename folder" onClick={() => setRenaming(dir.path)} />}
                   {dir && <Item icon={Trash2} label="Delete folder…" danger onClick={() => setDeleting(dir)} />}
@@ -131,7 +136,8 @@ type RowProps = {
 };
 
 function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete }: RowProps) {
-  const { tree, expanded, path: open, renaming, toggle, open: openNote, create, setRenaming } = useNotes();
+  const useStore = useVault();
+  const { tree, expanded, path: open, renaming, toggle, open: openNote, create, setRenaming } = useStore();
   const isDir = node.kind === "directory";
   const isOpen = expanded.has(node.path);
   const active = open === node.path;
@@ -145,7 +151,7 @@ function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete 
         className={cn("group/row relative flex h-7 items-center pr-2", dragging && under(node.path, dragging) && "opacity-40")}>
         {active && (
           // the signature moment: the marker slides along the menu rules to the note that was just opened
-          <MenuMarker layoutId="note-marker" className="z-10" style={{ left: ruleX(depth) - 1 }} />
+          <MenuMarker layoutId={`${useStore.config.noun}-marker`} className="z-10" style={{ left: ruleX(depth) - 1 }} />
         )}
         {target && <span aria-hidden className="absolute inset-y-0.5 left-2 right-2 rounded-md bg-caramel/20 ring-2 ring-caramel" />}
 
@@ -171,7 +177,7 @@ function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete 
         {renaming !== node.path && !dragging && (
           <span className="relative flex">
             {isDir ? (
-              <IconButton icon={FilePlus} size="sm" label="New note here" tooltipSide="right" className={hoverOnly} onClick={() => create(node.path)} />
+              <IconButton icon={FilePlus} size="sm" label={`New ${useStore.config.noun} here`} tooltipSide="right" className={hoverOnly} onClick={() => create(node.path)} />
             ) : (
               <>
                 <IconButton icon={Pencil} size="sm" label="Rename" tooltipSide="right" className={hoverOnly} onClick={() => setRenaming(node.path)} />
@@ -202,7 +208,7 @@ function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete 
 }
 
 function RenameInput({ node, pad }: { node: Node; pad: React.CSSProperties }) {
-  const { rename, setRenaming } = useNotes();
+  const { rename, setRenaming } = useVault()();
   const [name, setName] = useState(baseName(node.path));
   const ref = useRef<HTMLInputElement>(null);
   // after the context menu closes, so its focus return doesn't steal the input's focus
@@ -212,7 +218,7 @@ function RenameInput({ node, pad }: { node: Node; pad: React.CSSProperties }) {
   const isDir = node.kind === "directory";
   return (
     <div className="relative flex h-full min-w-0 flex-1 items-center" style={{ paddingLeft: (pad.paddingLeft as number) + (isDir ? 0 : 18) }}>
-      <input ref={ref} value={name} onChange={e => setName(e.target.value)} aria-label={isDir ? "Folder name" : "Note name"}
+      <input ref={ref} value={name} onChange={e => setName(e.target.value)} aria-label={isDir ? "Folder name" : "Name"}
         onKeyDown={e => {
           if (e.key === "Enter") commit();
           if (e.key === "Escape") { done.current = true; setRenaming(null); }
@@ -225,7 +231,7 @@ function RenameInput({ node, pad }: { node: Node; pad: React.CSSProperties }) {
 
 /** "Are you sure?" for notes and folders, as a dialog: it can be opened from the context menu, which has no anchor. */
 function DeleteDialog({ node, onClose }: { node: Node | null; onClose: () => void }) {
-  const { remove, removeFolder, loc } = useNotes();
+  const { remove, removeFolder, loc } = useVault()();
   const last = useRef(node);
   if (node) last.current = node;
   const n = last.current;

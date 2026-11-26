@@ -23,6 +23,11 @@ export const TOOLS = {
     name: "Notes",
     description: "The vault's Markdown notes, with a folder tree like Obsidian's.",
   },
+  scenes: {
+    path: "/scenes",
+    name: "Scenes",
+    description: "Write scenes like a screenplay; the tool writes the Ren'Py.",
+  },
 } satisfies Record<string, ToolInfo>;
 
 export const DEFAULT_TOOL = TOOLS.promptBuilder;

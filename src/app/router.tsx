@@ -28,12 +28,15 @@ function toolRoute<P extends ToolInfo["path"]>(tool: ToolInfo & { path: P }, loa
 // /notes/CANON/01_Characters/Rin opens that note. A child route, so the Notes page stays mounted while it changes.
 const notesRoute = toolRoute(TOOLS.notes, () => import("@/tools/notes/Notes"));
 const noteRoute = createRoute({ getParentRoute: () => notesRoute, path: "$" });
+const scenesRoute = toolRoute(TOOLS.scenes, () => import("@/tools/scenes/Scenes"));
+const sceneRoute = createRoute({ getParentRoute: () => scenesRoute, path: "$" });
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
   toolRoute(TOOLS.promptBuilder, () => import("@/tools/prompt-builder/PromptBuilder")),
   toolRoute(TOOLS.timeline, () => import("@/tools/timeline/Timeline")),
   notesRoute.addChildren([noteRoute]),
+  scenesRoute.addChildren([sceneRoute]),
 ]);
 
 export const router = createRouter({

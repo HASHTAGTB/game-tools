@@ -1,5 +1,4 @@
-import { useNavigate, useParams } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { BookOpen, Code, FilePlus, FolderPlus } from "lucide-react";
 import { TOOLS } from "@/app/tools";
 import { Button } from "@/shared/ui/button";
@@ -8,59 +7,20 @@ import { Toasts } from "@/shared/ui/toasts";
 import { ToolNav } from "@/shared/ui/tool-nav";
 import { WorkspaceLocation } from "@/shared/ui/workspace-location";
 import { Editor } from "./components/Editor";
-import { FileTree } from "./components/FileTree";
+import { VaultProvider } from "@/shared/vault/context";
+import { FileTree } from "@/shared/vault/FileTree";
+import { PathBar } from "@/shared/vault/PathBar";
+import { useVaultUrl } from "@/shared/vault/url";
 import { FormatBar } from "./components/FormatBar";
-import { PathBar } from "./components/PathBar";
 import { useNotes } from "./state";
 
 const words = (s: string) => (s.match(/\S+/g) ?? []).length;
-
-const toUrl = (path: string | null) => (path ? path.replace(/\.md$/i, "") : "");
-const fromUrl = (splat: string) => (splat ? splat + ".md" : null);
-
-/** Keeps the address in step with the open note (/notes/CANON/01_Characters/Rin), both ways: opening a note adds a
- *  history entry, back/forward and typed addresses open the note. Renames, deletes and the like replace the entry. */
-function useNoteUrl() {
-  const splat = (useParams({ strict: false }) as { _splat?: string })._splat ?? "";
-  const navigate = useNavigate();
-  const ready = useNotes(s => s.ready);
-  const path = useNotes(s => s.path);
-  const opened = useNotes(s => s.opened);
-  const seen = useRef(opened);
-  const first = useRef(splat);
-
-  const go = (p: string | null, replace: boolean) =>
-    p ? navigate({ to: "/notes/$", params: { _splat: toUrl(p) }, replace }) : navigate({ to: "/notes", replace });
-
-  useEffect(() => useNotes.getState().init(fromUrl(first.current)), []);
-
-  // note → address
-  useEffect(() => {
-    const push = opened !== seen.current;
-    seen.current = opened;
-    if (!ready || toUrl(path) === splat) return;
-    go(path, !push);
-  }, [path, opened, ready]);   // eslint-disable-line react-hooks/exhaustive-deps
-
-  // address → note
-  useEffect(() => {
-    if (!ready) return;
-    const s = useNotes.getState();
-    if (toUrl(s.path) === splat) return;
-    const want = fromUrl(splat);
-    if (!want) return void go(s.path, true);
-    s.open(want).then(() => {
-      const now = useNotes.getState().path;
-      if (toUrl(now) !== splat) go(now, true);   // it didn't open (gone?): show what's open instead
-    });
-  }, [splat, ready]);   // eslint-disable-line react-hooks/exhaustive-deps
-}
 
 export default function Notes() {
   const s = useNotes();
   const { loc, ready, path, text, saved, rev, saving, conflict, error, notice, mode } = s;
 
-  useNoteUrl();
+  useVaultUrl(useNotes, "/notes");
 
   // Ctrl+S saves right away (the GitHub footer handles it itself, as a commit)
   useEffect(() => {
@@ -88,6 +48,7 @@ export default function Notes() {
   const unsaved = !!saved && text !== saved.text;
 
   return (
+    <VaultProvider store={useNotes}>
     <div className="grid h-screen grid-cols-[240px_minmax(0,1fr)] bg-ink text-paper xl:grid-cols-[280px_minmax(0,1fr)]">
       <aside className="flex min-h-0 flex-col border-r border-ink-line/60">
         <ToolNav current={TOOLS.notes} />
@@ -148,5 +109,6 @@ export default function Notes() {
         )}
       </main>
     </div>
+    </VaultProvider>
   );
 }

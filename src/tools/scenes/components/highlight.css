@@ -1,0 +1,14 @@
+/* Ren'Py colours (lib/highlight.ts), shared by the raw boxes and the source view. Base text is bone; what the player
+   reads (strings) is brightest. */
+.rp-kw { color: var(--color-caramel); font-weight: 600; }
+.rp-kw2 { color: color-mix(in srgb, var(--color-caramel) 70%, var(--color-bone)); }
+.rp-name { color: var(--color-butter); }
+.rp-img { color: var(--color-periwinkle); }
+.rp-str { color: var(--color-paper); }
+.rp-tag { color: var(--color-coral); }
+.rp-var { color: var(--color-periwinkle); }
+.rp-esc { color: var(--color-coral); }
+.rp-num { color: var(--color-butter); }
+.rp-com { color: var(--color-taupe); font-style: italic; }
+.rp-op { color: var(--color-taupe); }
+.rp-who { font-weight: 700; }

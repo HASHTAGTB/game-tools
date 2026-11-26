@@ -4,6 +4,7 @@ import type { Character } from "../lib/types";
 import { exportCharacter, readImport } from "../lib/store";
 import type { Location } from "@/shared/lib/workspace";
 import { castLook } from "../lib/cast";
+import { useGame } from "@/shared/lib/game";
 import { WorkspaceLocation } from "@/shared/ui/workspace-location";
 import { ToolNav } from "@/shared/ui/tool-nav";
 import { TOOLS } from "@/app/tools";
@@ -21,6 +22,7 @@ type Props = {
 /** Laid out like the game's main menu: a thin vertical rule with text links beside it. */
 export function Sidebar({ chars, current, onSelect, onCreate, loc, onDirChanged, onReload, onFlush, onRevert, onImport, onError }: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
+  const manifest = useGame(s => s.manifest);
   const importFiles = async (files: FileList | null) => {
     if (!files?.length) return;
     try {
@@ -40,7 +42,7 @@ export function Sidebar({ chars, current, onSelect, onCreate, loc, onDirChanged,
           <MenuRule>
             {chars.map(c => (
               // One shared layoutId: the bar slides to the selected character and takes on their color.
-              <MenuItem key={c.id} label={c.name || c.id} active={c.id === current} color={castLook(c.name).color} layoutId="char-marker"
+              <MenuItem key={c.id} label={c.name || c.id} active={c.id === current} color={castLook(c.name, manifest).color} layoutId="char-marker"
                 onClick={() => onSelect(c.id)}
                 actions={<IconButton icon={Download} size="sm" tooltipSide="right" label={`Export as ${c.id}.json`} onClick={() => exportCharacter(c)} />} />
             ))}

@@ -4,16 +4,18 @@ import { cn } from "@/shared/lib/utils";
 import { MenuMarker, MenuRule } from "@/shared/ui/menu";
 import { Popover, popoverCls } from "@/shared/ui/popover";
 import { m, pop } from "@/shared/ui/motion";
-import { fuzzy, shownPath, type Hit } from "../lib/fuzzy";
-import { baseName, parentOf, useNotes, type Node } from "../state";
+import { useVault } from "./context";
+import { fuzzy, shownPath, type Hit } from "./fuzzy";
+import { baseName, parentOf, type Node } from "./store";
 
-/** The top of the Notes page: the open note's path, like an address bar. Each folder opens a menu of what's in it;
- *  clicking the name (or the empty space) turns the bar into a fuzzy search over every note in the vault. */
-export function PathBar({ children }: { children?: ReactNode }) {
+/** The top of the page: the open file's path, like an address bar. Each folder opens a menu of what's in it;
+ *  clicking the name (or the empty space) turns the bar into a fuzzy search over every file of the tool.
+ *  `rootLabel` names the tool's root folder (default: the vault's name). */
+export function PathBar({ rootLabel, children }: { rootLabel?: string; children?: ReactNode }) {
   const [searching, setSearching] = useState(false);
   return (
     <div className="relative z-30 flex h-12 shrink-0 items-center gap-3 border-b border-ink-line/60 px-6">
-      {searching ? <QuickSwitch onClose={() => setSearching(false)} /> : <Crumbs onSearch={() => setSearching(true)} />}
+      {searching ? <QuickSwitch onClose={() => setSearching(false)} /> : <Crumbs rootLabel={rootLabel} onSearch={() => setSearching(true)} />}
       {!searching && children}
     </div>
   );
@@ -21,17 +23,20 @@ export function PathBar({ children }: { children?: ReactNode }) {
 
 // ---------------------------------------------------------------- the path
 
-function Crumbs({ onSearch }: { onSearch: () => void }) {
-  const loc = useNotes(s => s.loc);
-  const ready = useNotes(s => s.ready);
-  const path = useNotes(s => s.path);
-  const parts = path ? path.split("/").slice(0, -1) : [];
-  const dirs = parts.map((_, i) => parts.slice(0, i + 1).join("/"));
+function Crumbs({ rootLabel, onSearch }: { rootLabel?: string; onSearch: () => void }) {
+  const useStore = useVault();
+  const { root, noun } = useStore.config;
+  const loc = useStore(s => s.loc);
+  const ready = useStore(s => s.ready);
+  const path = useStore(s => s.path);
+  const inner = path ? (root ? path.slice(root.length + 1) : path) : "";
+  const parts = inner ? inner.split("/").slice(0, -1) : [];
+  const dirs = parts.map((_, i) => [root, ...parts.slice(0, i + 1)].filter(Boolean).join("/"));
 
   return (
     <div className="flex h-full min-w-0 flex-1 items-center">
       <div className="flex min-w-0 shrink items-center overflow-hidden">
-        <FolderMenu dir="" label={loc?.name ?? "Vault"} disabled={!ready} />
+        <FolderMenu dir={root} label={rootLabel ?? loc?.name ?? "Vault"} disabled={!ready} />
         {dirs.map((d, i) => (
           <span key={d} className="flex min-w-0 items-center">
             <span aria-hidden className="px-1 font-talk text-sm text-taupe/60">/</span>
@@ -40,11 +45,11 @@ function Crumbs({ onSearch }: { onSearch: () => void }) {
         ))}
         {path && <span aria-hidden className="px-1 font-talk text-sm text-taupe/60">/</span>}
       </div>
-      <button onClick={onSearch} disabled={!ready} title="Search notes"
+      <button onClick={onSearch} disabled={!ready} title={`Search ${noun}s`}
         className="group/search flex h-full min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-default">
         {path
           ? <span className="truncate font-sans text-lg text-paper">{baseName(path)}</span>
-          : <span className="truncate pl-1 font-talk text-base text-taupe">Search notes…</span>}
+          : <span className="truncate pl-1 font-talk text-base text-taupe">Search {noun}s…</span>}
         <Search className={cn("ml-auto h-4 w-4 shrink-0 text-taupe transition-opacity", path && "opacity-0 group-hover/search:opacity-100 group-focus-visible/search:opacity-100")} />
       </button>
     </div>
@@ -56,13 +61,14 @@ function FolderMenu({ dir, label, disabled }: { dir: string; label: string; disa
   const [open, setOpen] = useState(false);
   const [at, setAt] = useState(dir);
   const [items, setItems] = useState<Node[] | null>(null);
-  const current = useNotes(s => s.path);
+  const useStore = useVault();
+  const current = useStore(s => s.path);
 
   useEffect(() => {
     if (!open) return;
     let live = true;
-    setItems(useNotes.getState().tree[at] ?? null);
-    useNotes.getState().listFolder(at).then(n => live && setItems(n), () => live && setItems([]));
+    setItems(useStore.getState().tree[at] ?? null);
+    useStore.getState().listFolder(at).then(n => live && setItems(n), () => live && setItems([]));
     return () => { live = false; };
   }, [open, at]);
 
@@ -94,7 +100,7 @@ function FolderMenu({ dir, label, disabled }: { dir: string; label: string; disa
               onClick={() => {
                 if (n.kind === "directory") return setAt(n.path);
                 setOpen(false);
-                useNotes.getState().open(n.path);
+                useStore.getState().open(n.path);
               }}
               className={cn("flex h-8 w-full items-center gap-2 rounded-md px-2 text-left transition-colors hover:bg-paper/8",
                 n.path === current ? "text-paper" : n.kind === "directory" ? "text-bone" : "text-bone/75 hover:text-paper")}>
@@ -116,14 +122,16 @@ function FolderMenu({ dir, label, disabled }: { dir: string; label: string; disa
 // ---------------------------------------------------------------- the search
 
 function QuickSwitch({ onClose }: { onClose: () => void }) {
-  const index = useNotes(s => s.index);
-  const recent = useNotes(s => s.recent);
-  const current = useNotes(s => s.path);
+  const useStore = useVault();
+  const { root, noun } = useStore.config;
+  const index = useStore(s => s.index);
+  const recent = useStore(s => s.recent);
+  const current = useStore(s => s.path);
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
 
-  useEffect(() => { useNotes.getState().loadIndex(); }, []);
+  useEffect(() => { useStore.getState().loadIndex(); }, [useStore]);
 
   const hits: Hit[] = useMemo(() => {
     if (q.trim()) return fuzzy(index ?? [], q);
@@ -139,18 +147,18 @@ function QuickSwitch({ onClose }: { onClose: () => void }) {
   const pick = (h: Hit | undefined) => {
     if (!h) return;
     onClose();
-    useNotes.getState().open(h.path);
+    useStore.getState().open(h.path);
   };
 
   const empty = q.trim()
-    ? index === null ? "Listing the vault…" : "No notes match."
-    : "No recent notes. Type to search.";
+    ? index === null ? "Listing the vault…" : `No ${noun}s match.`
+    : `No recent ${noun}s. Type to search.`;
 
   return (
     <>
       <Search className="h-4 w-4 shrink-0 text-caramel" />
       <input autoFocus value={q} onChange={e => setQ(e.target.value)} onBlur={onClose}
-        placeholder="Find a note…" aria-label="Find a note" role="combobox" aria-expanded aria-controls="note-hits"
+        placeholder={`Find a ${noun}…`} aria-label={`Find a ${noun}`} role="combobox" aria-expanded aria-controls="note-hits"
         aria-activedescendant={hits[sel] ? `note-hit-${sel}` : undefined}
         onKeyDown={e => {
           if (e.key === "ArrowDown") { e.preventDefault(); setSel(i => Math.min(i + 1, hits.length - 1)); }
@@ -172,7 +180,7 @@ function QuickSwitch({ onClose }: { onClose: () => void }) {
                 onMouseMove={() => setSel(i)}
                 className="relative flex cursor-pointer items-baseline gap-3 py-1 pl-3">
                 {i === sel && <MenuMarker layoutId="note-hit-marker" />}
-                <HitText hit={h} />
+                <HitText hit={h} root={root} />
               </li>
             ))}
           </MenuRule>
@@ -182,10 +190,12 @@ function QuickSwitch({ onClose }: { onClose: () => void }) {
 }
 
 /** The note's name, then its folder, with the matched letters lit. */
-function HitText({ hit }: { hit: Hit }) {
+function HitText({ hit, root }: { hit: Hit; root: string }) {
   const s = shownPath(hit.path);
   const nameAt = s.lastIndexOf("/") + 1;
   const marks = new Set(hit.marks);
+  // the folder part is shown from inside the tool's root
+  const from = root && s.startsWith(root + "/") ? Math.min(root.length + 1, nameAt) : 0;
   const lit = (from: number, to: number) => {
     const out: ReactNode[] = [];
     let run = "", on = false;
@@ -200,7 +210,7 @@ function HitText({ hit }: { hit: Hit }) {
   return (
     <>
       <span className="shrink-0 truncate font-sans text-base text-paper">{lit(nameAt, s.length)}</span>
-      {nameAt > 0 && <span className="min-w-0 truncate font-talk text-xs text-taupe">{lit(0, nameAt - 1)}</span>}
+      {nameAt - 1 > from && <span className="min-w-0 truncate font-talk text-xs text-taupe">{lit(from, nameAt - 1)}</span>}
     </>
   );
 }
