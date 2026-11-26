@@ -1,5 +1,5 @@
 import type { EditorView } from "@codemirror/view";
-import { lineIds } from "./scriptView";
+import { lineIds } from "./editorState";
 import { create } from "zustand";
 import type { Box, Place } from "./blocks";
 import type { Problem } from "./checks";
@@ -20,9 +20,8 @@ export type BoxMenu =
 type SceneUi = {
   view: EditorView | null;
   script: Script | null;
-  /** 1-based line in focus (the box you're in, or the cursor's line in the source view), and its position */
+  /** 1-based line in focus (the box you're in, or the cursor's line in the source view) */
   line: number;
-  head: number;
   /** counts moves to another line (the preview restarts its text crawl on a change) */
   moved: number;
   /** the open scene's problems, from the last check */
@@ -47,7 +46,7 @@ type SceneUi = {
 };
 
 export const useSceneUi = create<SceneUi>(() => ({
-  view: null, script: null, line: 1, head: 0, moved: 0, problems: [],
+  view: null, script: null, line: 1, moved: 0, problems: [],
   focus: null, openCard: null, tabs: {}, reveal: null, menu: null, rawIds: new Set(),
   typing: null, speedOpen: false,
 }));

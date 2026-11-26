@@ -1,10 +1,12 @@
 import { create } from "zustand";
 import { STATIC } from "@/shared/lib/env";
-import { uniqueId } from "@/shared/lib/utils";
+import { createFileSync, type FileConflict } from "@/shared/lib/fileSync";
+import { debounce, noticeSetter, whenHidden } from "@/shared/lib/toolState";
+import { errorMessage, uniqueId } from "@/shared/lib/utils";
 import type { DragTag } from "./lib/dnd";
 import { listFor, sameKey, tagKey } from "./lib/prompt";
 import { getLocation, NeedsPermission, type Location } from "@/shared/lib/workspace";
-import { deleteCharacter, listCharacters, newCharacter, saveCharacter } from "./lib/store";
+import { charPath, listCharacterFiles, migrateLegacy, newCharacter, parseCharacter, toJson } from "./lib/store";
 import { loadTagDb, type TagDb } from "./lib/tags";
 import type { Character, ListKey } from "./lib/types";
 
@@ -17,6 +19,8 @@ type State = {
   activeKey: ListKey;
   db: TagDb | null;
   loc: Location | null;
+  /** Character files changed elsewhere while this tab had unsaved edits to them. */
+  conflicts: FileConflict[];
   error: string | null;
   notice: string | null;
   /** The tag being dragged, if any. */
@@ -24,8 +28,8 @@ type State = {
 };
 
 type Actions = {
-  /** Load characters and tag data. Called once when the tool opens. */
-  init: () => void;
+  /** Load characters and tag data, and watch for changes made elsewhere. Called when the tool opens; returns the stop function. */
+  init: () => () => void;
   load: () => Promise<void>;
   /** Save every character that changed since its last save. */
   flush: () => Promise<void>;
@@ -38,7 +42,8 @@ type Actions = {
   select: (id: string) => void;
   create: (name: string, from?: Character) => void;
   importChars: (incoming: Character[]) => void;
-  remove: (id: string) => Promise<void>;
+  remove: (id: string) => void;
+  resolveConflict: (path: string, keep: "mine" | "theirs") => void;
   setActiveKey: (k: ListKey) => void;
   /** Add the tag to the target list, or remove it if it's already there. */
   toggleInTarget: (text: string) => void;
@@ -50,17 +55,62 @@ type Actions = {
   drop: (to: ListKey, index: number, copy: boolean) => void;
 };
 
-/** JSON of each character as last saved, to skip saves that would change nothing. */
-let savedJson = new Map<string, string>();
-let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 const byName = (a: Character, b: Character) => a.name.localeCompare(b.name);
 
-export const usePromptBuilder = create<State & Actions>()((set, get) => ({
+/** Saving: a moment after the last edit (and when the tab is hidden, below). */
+const autosave = debounce(() => usePromptBuilder.getState().flush(), 400);
+
+export const usePromptBuilder = create<State & Actions>()((set, get) => {
+  /** The characters, with the current one still there (else the first). */
+  const setChars = (chars: Character[]) =>
+    set(s => ({ chars: chars.sort(byName), curId: chars.some(c => c.id === s.curId) ? s.curId : chars[0]?.id ?? null }));
+
+  /** One file per character (shared/lib/fileSync). */
+  const sync = createFileSync({
+    files: () => new Map(get().chars.map(c => [charPath(c.id), toJson(c)])),
+    list: listCharacterFiles,
+    load: files => {
+      const chars: Character[] = [];
+      const used: string[] = [];
+      for (const [path, text] of files) {
+        try {
+          const c = parseCharacter(path, text);
+          if (c) { chars.push(c); used.push(path); }
+        } catch (e) { console.warn(`[prompt-builder] skipping ${path}: ${e}`); }
+      }
+      setChars(chars);
+      return used;
+    },
+    apply: files => {
+      const byId = new Map(get().chars.map(c => [charPath(c.id), c]));
+      const used: string[] = [];
+      for (const [path, text] of files) {
+        try {
+          const c = text === null ? null : parseCharacter(path, text);
+          if (text !== null && !c) continue;
+          if (c) byId.set(path, c); else byId.delete(path);
+          used.push(path);
+        } catch { /* half-written: next time */ }
+      }
+      setChars([...byId.values()]);
+      return used;
+    },
+    label: path => `"${get().chars.find(c => charPath(c.id) === path)?.name ?? path.split("/").pop()}"`,
+    conflicts: () => get().conflicts,
+    setConflicts: conflicts => set({ conflicts }),
+    onError: e => set({ error: "Saving failed: " + errorMessage(e) }),
+    onReloaded: labels => get().setNotice(labels.length === 1
+      ? `${labels[0]} changed on disk and was reloaded.`
+      : `${labels.length} characters changed on disk and were reloaded.`),
+  });
+
+  return {
   chars: [],
   curId: null,
   activeKey: BASE,
   db: null,
   loc: null,
+  conflicts: [],
   error: null,
   notice: null,
   drag: null,
@@ -68,31 +118,25 @@ export const usePromptBuilder = create<State & Actions>()((set, get) => ({
   init: () => {
     get().load();
     loadTagDb().then(db => set({ db }), e => set({ error: "tag data: " + e }));
+    return sync.watch(() => !!get().loc?.ready);
   },
 
   load: async () => {
     try {
       const loc = await getLocation();
       set({ loc });
-      if (!loc.ready) { savedJson = new Map(); set({ chars: [] }); return; }   // folder waits for "Allow folder access"
-      const cs = await listCharacters();
-      savedJson = new Map(cs.map(c => [c.id, JSON.stringify(c)]));
-      set(s => ({ chars: cs, curId: cs.some(c => c.id === s.curId) ? s.curId : cs[0]?.id ?? null, error: null }));
+      if (!loc.ready) { sync.reset(); set({ chars: [] }); return; }   // folder waits for "Allow folder access"
+      await migrateLegacy();
+      const broken = await sync.load();
+      set({ error: broken.length ? `These files don't look like characters and are left alone: ${broken.join(", ")}` : null });
     } catch (e) {
       if (e instanceof NeedsPermission) return set(s => ({ loc: s.loc && { ...s.loc, ready: false } }));
       const hint = STATIC ? "" : ' (is this running through "pnpm dev"?)';
-      set({ error: `Could not load characters${hint}: ${e instanceof Error ? e.message : e}` });
+      set({ error: `Could not load characters${hint}: ${errorMessage(e)}` });
     }
   },
 
-  flush: async () => {
-    for (const c of get().chars) {
-      const json = JSON.stringify(c);
-      if (savedJson.get(c.id) === json) continue;
-      savedJson.set(c.id, json);
-      await saveCharacter(c).catch(e => set({ error: "save failed: " + e.message }));
-    }
-  },
+  flush: () => { autosave.cancel(); return sync.flush(); },
 
   reload: async msg => {
     await get().flush();
@@ -101,11 +145,12 @@ export const usePromptBuilder = create<State & Actions>()((set, get) => ({
   },
 
   revert: async drop => {
-    clearTimeout(saveTimer);
-    await drop();
-    await get().load();
+    autosave.cancel();
+    await sync.run(async () => { await drop(); await get().load(); });
     get().setNotice("Discarded");
   },
+
+  resolveConflict: (path, keep) => sync.resolve(path, keep),
 
   update: fn => set(s => ({
     chars: s.chars.map(c => {
@@ -135,9 +180,7 @@ export const usePromptBuilder = create<State & Actions>()((set, get) => ({
     get().setNotice(`Imported ${incoming.length} character${incoming.length === 1 ? "" : "s"}${replaced ? ` (${replaced} replaced)` : ""}`);
   },
 
-  remove: async id => {
-    await deleteCharacter(id).catch(e => set({ error: e.message }));
-    savedJson.delete(id);
+  remove: id => {
     const rest = get().chars.filter(c => c.id !== id);
     set({ chars: rest, curId: rest[0]?.id ?? null });
   },
@@ -156,11 +199,7 @@ export const usePromptBuilder = create<State & Actions>()((set, get) => ({
 
   setError: error => set({ error }),
 
-  setNotice: notice => {
-    clearTimeout(noticeTimer);
-    set({ notice });
-    if (notice) noticeTimer = setTimeout(() => set({ notice: null }), 5000);
-  },
+  setNotice: noticeSetter(set),
 
   dragStart: drag => set({ drag }),
   dragEnd: () => set({ drag: null }),
@@ -183,7 +222,8 @@ export const usePromptBuilder = create<State & Actions>()((set, get) => ({
       if (src && !copy && src[d.index] === d.tag) src.splice(d.index, 1);
     });
   },
-}));
+  };
+});
 
 // ---------------------------------------------------------------- derived values
 
@@ -197,20 +237,5 @@ export function targetKey(s: State): ListKey {
 
 // ---------------------------------------------------------------- autosave
 
-let saveTimer: ReturnType<typeof setTimeout> | undefined;
-
-// 400ms after the last edit
-usePromptBuilder.subscribe((s, prev) => {
-  if (s.chars === prev.chars) return;
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => usePromptBuilder.getState().flush(), 400);
-});
-
-// right away when the tab is hidden or closed, so the last edit isn't lost
-if (typeof document !== "undefined") {
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "hidden") return;
-    clearTimeout(saveTimer);
-    usePromptBuilder.getState().flush();
-  });
-}
+usePromptBuilder.subscribe((s, prev) => { if (s.chars !== prev.chars) autosave.schedule(); });
+whenHidden(() => usePromptBuilder.getState().flush());

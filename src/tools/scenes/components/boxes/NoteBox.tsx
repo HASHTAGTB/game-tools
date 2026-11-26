@@ -2,24 +2,17 @@ import { StickyNote } from "lucide-react";
 import { defaultKeymap } from "@codemirror/commands";
 import { Annotation, EditorState, Prec } from "@codemirror/state";
 import { drawSelection, EditorView, keymap, placeholder } from "@codemirror/view";
-import { useEffect, useRef, type KeyboardEvent } from "react";
+import { useEffect, useRef } from "react";
 import { cn } from "@/shared/lib/utils";
 import type { Box } from "../../lib/blocks";
-import { newline, rawColours, rawIndent, rawTheme, recolour, tabKeys } from "../../lib/codeEditor";
-import { rawText, redoBox, removeBox, setNote, setRaw, undoBox } from "../../lib/ops";
+import { fileHistoryKey, fileHistoryKeys, newline, rawColours, rawIndent, rawTheme, recolour, tabKeys } from "../../lib/codeEditor";
+import { rawText, removeBox, setNote, setRaw } from "../../lib/ops";
 import { focusLine, isRaw, markRaw } from "../../lib/ui";
 import { stepToText } from "../../lib/richtext";
 import { follow, problemsOf, useAutosize, useBox, type ListLayout } from "./context";
 import { Acts, addAfter, Problems, useMoves } from "./List";
 
 type Props<K extends Box["kind"]> = { box: Extract<Box, { kind: K }>; prev: Box | null; next: Box | null; layout: ListLayout };
-
-/** Undo and redo go to the file's history, not the field's. */
-function history(e: KeyboardEvent, view: Parameters<typeof undoBox>[0]) {
-  const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
-  if (mod && (k === "z" || k === "y")) { e.preventDefault(); (k === "y" || e.shiftKey ? redoBox : undoBox)(view); return true; }
-  return false;
-}
 
 /** A note for the team (`# …`): the game ignores it. */
 export function NoteBox({ box: b, prev, next, layout }: Props<"note">) {
@@ -36,7 +29,7 @@ export function NoteBox({ box: b, prev, next, layout }: Props<"note">) {
         onFocus={() => follow(view, b.from)}
         onChange={e => setNote(view, b.from, e.target.value)}
         onKeyDown={e => {
-          if (history(e, view)) return;
+          if (fileHistoryKey(e, view)) return;
           const el = e.currentTarget;
           if (e.key === "Enter") { e.preventDefault(); if (e.ctrlKey || e.metaKey) addAfter(el, b, layout); return; }
           if (e.key === "Backspace" && !el.value) { e.preventDefault(); const n = removeBox(view, b); focusLine(prev ? prev.from : n); return; }
@@ -80,8 +73,7 @@ export function RawBox({ box: b, prev, next }: Props<"raw">) {
       markRaw(c.view, s.from, true);
     };
     const keys = keymap.of([
-      { key: "Mod-z", run: () => (undoBox(live.current.c.view), true), shift: () => (redoBox(live.current.c.view), true) },
-      { key: "Mod-y", run: () => (redoBox(live.current.c.view), true) },
+      ...fileHistoryKeys(() => live.current.c.view),
       { key: "Enter", run: newline },
       ...tabKeys,
       {

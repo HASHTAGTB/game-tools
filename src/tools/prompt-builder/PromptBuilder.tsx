@@ -16,7 +16,7 @@ import { Confirm } from "@/shared/ui/confirm";
 import { IconButton } from "@/shared/ui/icon-button";
 import { Popover, PopoverTitle } from "@/shared/ui/popover";
 import { HoverActions, Section } from "@/shared/ui/section";
-import { Toasts } from "@/shared/ui/toasts";
+import { ConflictBar, StatusToasts } from "@/shared/ui/status";
 import { m, spring } from "@/shared/ui/motion";
 
 export default function PromptBuilder() {
@@ -25,7 +25,7 @@ export default function PromptBuilder() {
   const cur = currentChar(s);
   const target = targetKey(s);
 
-  useEffect(() => { usePromptBuilder.getState().init(); }, []);
+  useEffect(() => usePromptBuilder.getState().init(), []);
 
   // the dragged chip may be unmounted by a move, so its dragend never fires: clear on any drop/dragend
   useEffect(() => {
@@ -49,10 +49,8 @@ export default function PromptBuilder() {
         />
 
         <main className="relative flex min-h-0 flex-col">
-          <Toasts className="top-4" items={[
-            ...(error ? [{ id: "error", kind: "error" as const, text: error, onDismiss: () => setError(null) }] : []),
-            ...(notice ? [{ id: "notice", kind: "notice" as const, text: notice, onDismiss: () => setNotice(null) }] : []),
-          ]} />
+          <StatusToasts className="top-4" error={error} notice={notice} setError={setError} setNotice={setNotice} />
+          <ConflictBar items={s.conflicts.map(c => ({ key: c.path, label: `Character ${c.label}`, deleted: c.theirs === null }))} onResolve={s.resolveConflict} />
           {!cur ? (
             <div className="grid flex-1 place-items-center font-sans text-xl font-light text-bone">Name a character on the left to start.</div>
           ) : (

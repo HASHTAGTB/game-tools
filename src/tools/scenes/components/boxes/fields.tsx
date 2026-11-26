@@ -2,10 +2,11 @@ import { useMemo, useState, type ReactNode } from "react";
 import { characterOf, type Manifest } from "@/shared/lib/game";
 import { cn } from "@/shared/lib/utils";
 import { fieldCls } from "@/shared/ui/field";
-import type { Script, Stmt } from "../../lib/script";
-import { who } from "../../lib/scriptView";
+import { look } from "../../lib/look";
+import type { Script } from "../../lib/script";
 import type { Stage } from "../../lib/stage";
-import { useSceneIndex } from "../../state";
+import type { Stmt } from "../../lib/statements";
+import { useKnownLabels } from "../../state";
 
 /** The fields a stage card shows when it's open: chips for the game's backgrounds, sprites, music and transitions
  *  (dashed: no file for it yet), "other…" for anything else. And the first values a new card gets. */
@@ -36,33 +37,11 @@ export function defaults(stage: Stage, cast: string[], m: Manifest | null, scrip
   };
 }
 
-/** The statement reads back as itself (as `parseLine` understands it), so a half-typed value never turns the card
- *  into a Ren'Py box or writes a broken line. */
-export function validStmt(x: Stmt) {
-  const word = (v?: string) => v === undefined || v === "" || /^\w+$/.test(v);
-  const num = (v?: string) => v === undefined || v === "" || /^[\d.]+$/.test(v);
-  switch (x.kind) {
-    case "scene": return /^\w+( \w+)*$/.test(x.image.trim()) && word(x.with);
-    case "show": return /^\w+$/.test(x.tag) && x.attrs.every(a => /^\w+$/.test(a)) && word(x.with)
-      && (x.at === undefined || x.at === "" || /^\w+(\([^)]*\))?$/.test(x.at));
-    case "hide": return /^\w+$/.test(x.tag) && word(x.with);
-    case "with": return /^\w+$/.test(x.with);
-    case "jump": case "call": return /^\w+$/.test(x.target);
-    case "play": return /^\w+$/.test(x.channel) && /^\w+$/.test(x.name) && num(x.fadein);
-    case "stop": return /^\w+$/.test(x.channel) && num(x.fadeout);
-    case "pause": return num(x.seconds);
-    case "date": return /^\d{4}-\d{2}-\d{2}$/.test(x.date);
-    case "time": return /^\d{1,2}:\d{2}$/.test(x.time);
-    case "phone": return x.action !== "open" || /^\S/.test(x.thread ?? "");
-    default: return true;
-  }
-}
-
 export function Fields({ x, set, cast, m, stage, script, line }: {
   x: Stmt; set: (p: Partial<Stmt>) => void; cast: string[]; m: Manifest | null; stage: Stage; script: Script; line: number;
 }) {
   const used = useMemo(() => usedInScript(script), [script]);
-  const labels = useSceneIndex(s => s.files);
+  const labels = useKnownLabels();
   switch (x.kind) {
     case "scene":
       return <>
@@ -82,7 +61,7 @@ export function Fields({ x, set, cast, m, stage, script, line }: {
       return <>
         <Row label="Who">
           <Chips value={x.tag} onChange={tag => set({ tag, attrs: x.attrs })} other
-            options={people.map(id => ({ value: id, label: who(m, id).name, color: who(m, id).color }))} />
+            options={people.map(id => ({ value: id, label: look(m, id).name, color: look(m, id).color }))} />
         </Row>
         <Row label="Outfit">
           <Chips value={outfit} onChange={o => set({ attrs: [o, ...x.attrs.slice(1)] })} other
@@ -106,7 +85,7 @@ export function Fields({ x, set, cast, m, stage, script, line }: {
       return <>
         <Row label="Who">
           <Chips value={x.tag} onChange={tag => set({ tag })} other
-            options={uniq([...stage.sprites.map(s => s.tag), x.tag]).map(id => ({ value: id, label: who(m, id).name, color: who(m, id).color }))} />
+            options={uniq([...stage.sprites.map(s => s.tag), x.tag]).map(id => ({ value: id, label: look(m, id).name, color: look(m, id).color }))} />
         </Row>
         <TransitionRow value={x.with} onChange={w => set({ with: w })} m={m} />
       </>;
@@ -131,7 +110,7 @@ export function Fields({ x, set, cast, m, stage, script, line }: {
       return (
         <Row label="Whose thoughts">
           <Chips value={x.who} onChange={w => set({ who: w })}
-            options={(m?.characters.filter(c => c.pov) ?? cast.map(id => ({ id }))).map(c => ({ value: c.id, label: who(m, c.id).name, color: who(m, c.id).color }))} />
+            options={(m?.characters.filter(c => c.pov) ?? cast.map(id => ({ id }))).map(c => ({ value: c.id, label: look(m, c.id).name, color: look(m, c.id).color }))} />
         </Row>
       );
     case "date":
@@ -149,7 +128,7 @@ export function Fields({ x, set, cast, m, stage, script, line }: {
         </Row>
       );
     case "jump": case "call": {
-      const all = uniq([...Object.values(labels ?? {}).flatMap(f => f.labels), ...(m?.labels ?? [])]).sort();
+      const all = [...(labels ?? m?.labels ?? [])].sort();
       return (
         <Row label="Label of the scene">
           <input autoFocus list="scene-labels" value={x.target} onChange={e => set({ target: e.target.value.trim() })} placeholder="sc_2025_04_07_mon" className={fieldCls} />

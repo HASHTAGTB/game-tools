@@ -1,5 +1,6 @@
 import { folderSupported, STATIC } from "./env";
 import { connect, getConfig, github, refresh as refreshGitHub, REPO } from "./github";
+import { openDb, req } from "./idb";
 
 /** The one folder every tool works in, normally the story vault. Paths are relative to it and use "/".
  *  Tool data lives under `.game-tools/<tool>/` (Obsidian ignores dot-folders; git still syncs it). Other paths, like the
@@ -89,22 +90,11 @@ const server: Store = {
 
 const DB_NAME = "game-tools";
 let dbp: Promise<IDBDatabase> | null = null;
-function openDb(name: string, upgrade?: (db: IDBDatabase) => void) {
-  return new Promise<IDBDatabase>((resolve, reject) => {
-    const req = indexedDB.open(name, 1);
-    req.onupgradeneeded = () => upgrade?.(req.result);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
 const idb = () => dbp ??= openDb(DB_NAME, db => {
   db.createObjectStore("files");
   db.createObjectStore("settings");
 }).then(async db => { await migrateOldDb(db); return db; });
 
-function req<T>(r: IDBRequest<T>) {
-  return new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
-}
 async function tx<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>, db?: IDBDatabase): Promise<T> {
   return req(fn((db ?? await idb()).transaction(store, mode).objectStore(store)));
 }
@@ -161,7 +151,7 @@ async function migrateOldDb(db: IDBDatabase) {
       for (const c of chars) {
         if (!c?.id) continue;
         const key = `${toolDir("prompt-builder")}/${c.id}.json`;
-        await tx("files", "readwrite", s => s.put({ text: JSON.stringify(c, null, 2) + "\n", mtime: Date.now() } satisfies Stored, key), db);
+        await tx("files", "readwrite", s => s.put({ text: jsonText(c), mtime: Date.now() } satisfies Stored, key), db);
       }
     }
     // The old remembered folder was the character folder, not the vault, so folder users pick the vault once.
@@ -191,9 +181,12 @@ type DirHandle = {
   requestPermission(o: { mode: "readwrite" }): Promise<Perm>;
 };
 
+type DirPicker = (o: { id: string; mode: "readwrite" }) => Promise<DirHandle>;
+const errName = (e: unknown) => (e instanceof DOMException || e instanceof Error ? e.name : undefined);
+
 let rootDir: DirHandle | null = null;
 const permitted = async (d: DirHandle) => (await d.queryPermission({ mode: "readwrite" })) === "granted";
-const notFound = (e: any) => e?.name === "NotFoundError" || e?.name === "TypeMismatchError";
+const notFound = (e: unknown) => errName(e) === "NotFoundError" || errName(e) === "TypeMismatchError";
 
 async function dirAt(parts: string[], create: boolean): Promise<DirHandle | null> {
   if (!rootDir) throw new NeedsPermission();
@@ -325,7 +318,9 @@ export async function readJson<T>(path: string): Promise<T | null> {
 }
 /** Writes (creating folders as needed) and returns the file's new change time. */
 export const writeText = async (path: string, text: string) => (await store()).write(path, text);
-export const writeJson = (path: string, data: unknown) => writeText(path, JSON.stringify(data, null, 2) + "\n");
+/** How every tool writes JSON: two-space indent, a newline at the end (small git diffs). */
+export const jsonText = (data: unknown) => JSON.stringify(data, null, 2) + "\n";
+export const writeJson = (path: string, data: unknown) => writeText(path, jsonText(data));
 export const removeFile = async (path: string) => (await store()).remove(path);
 /** Entries of a folder; empty if it doesn't exist. */
 export const listDir = async (dir: string) => (await store()).list(dir);
@@ -408,9 +403,9 @@ export async function switchTo(target: "browser" | "folder"): Promise<{ label: s
   let picked: DirHandle | null = null;
   if (target === "folder") {
     try {
-      picked = await (window as any).showDirectoryPicker({ id: "game-tools-root", mode: "readwrite" });
-    } catch (e: any) {
-      if (e?.name === "AbortError") return null;   // picker closed
+      picked = await (window as unknown as { showDirectoryPicker: DirPicker }).showDirectoryPicker({ id: "game-tools-root", mode: "readwrite" });
+    } catch (e) {
+      if (errName(e) === "AbortError") return null;   // picker closed
       throw e;
     }
   }

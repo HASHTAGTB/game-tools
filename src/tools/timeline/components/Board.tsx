@@ -1,13 +1,17 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
-import { ChevronsLeftRight, ChevronsRightLeft, Plus, StickyNote, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
+import { ChevronsLeftRight, ChevronsRightLeft, Plus, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { IconButton } from "@/shared/ui/icon-button";
 import { visible } from "../lib/colors";
 import { BASE_COL_W, CARD_H, columnAt, LANE_PAD, laneDefs, layout, ROW_H, UNSORTED, type Card, type Lane, type Layout } from "../lib/layout";
+import { arrowsOf, drawOrder, stubsOf } from "../lib/arrows";
 import { allEvents, castOf, findEvent, insertColumn, moveEvent, randomId, removeColumn, swapIn, threadsOf } from "../lib/model";
 import type { StoryEvent } from "../lib/types";
-import { nav, reveal } from "../lib/nav";
-import { useTimeline } from "../state";
+import { nav } from "../lib/nav";
+import { useTimeline, useTimelinePick } from "../state";
+import { BoardArrows } from "./BoardArrows";
+import { BoardCard } from "./BoardCard";
+import { useLanding, useZoomAnchor } from "./boardMotion";
 
 export const LABEL_W = 132;
 const TITLE_H = 46;
@@ -29,7 +33,7 @@ type Drag =
   | { kind: "connect"; id: string };
 
 export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | "info"> }) {
-  const { doc, filter, zoom, folded, selection, select, edit, toggleFolded } = useTimeline();
+  const { doc, filter, zoom, folded, selection, select, edit, toggleFolded } = useTimelinePick("doc", "filter", "zoom", "folded", "selection", "select", "edit", "toggleFolded");
   const scroller = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -39,9 +43,6 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
   const [hoverLink, setHoverLink] = useState<string | null>(null);
   /** Empty spot under the pointer, where a double-click would add an event. */
   const [slot, setSlot] = useState<{ key: string; x: number; y: number; w: number; h: number } | null>(null);
-  /** A card just let go of: it settles from where it was dropped, not from where it started. */
-  const landing = useRef<{ id: string; x: number; y: number } | null>(null);
-  const [dropTick, setDropTick] = useState(0);
 
   const cast = useMemo(() => castOf(doc.roster, doc.chapters), [doc.roster, doc.chapters]);
   const threads = useMemo(() => threadsOf(doc.threads, doc.chapters), [doc.threads, doc.chapters]);
@@ -52,31 +53,8 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
   const colW = Math.round(BASE_COL_W * zoom);
   const lay: Layout = useMemo(() => layout(doc.chapters, lanes, filter, colW, folded), [doc.chapters, lanes, filter, colW, folded]);
 
-  // ---------------------------------------------------------------- zoom (ctrl + wheel) keeps the spot under the pointer
-  const lastZoom = useRef(zoom);
-  const animate = lastZoom.current === zoom;   // no sliding cards while zooming
-  const anchor = useRef<{ x: number; px: number; colW: number } | null>(null);
-  useEffect(() => {
-    const el = scroller.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey && !e.metaKey) return;
-      e.preventDefault();
-      const st = useTimeline.getState();
-      const px = e.clientX - el.getBoundingClientRect().left - LABEL_W;
-      anchor.current = { x: el.scrollLeft + px, px, colW: Math.round(BASE_COL_W * st.zoom) };
-      st.setZoom(st.zoom * Math.exp(-e.deltaY * 0.0015));
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []);
-  useLayoutEffect(() => {
-    lastZoom.current = zoom;
-    const a = anchor.current, el = scroller.current;
-    if (!a || !el) return;
-    anchor.current = null;
-    el.scrollLeft = (a.x * colW) / a.colW - a.px;
-  }, [zoom, colW]);
+  const animate = useZoomAnchor(scroller, zoom, colW, LABEL_W);
+  const land = useLanding(track, lay);
 
   useEffect(() => {
     Object.assign(nav, {
@@ -93,28 +71,6 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
       },
     });
   }, [lay]);
-
-  // the dropped card flies from the pointer into its new place
-  useLayoutEffect(() => {
-    const l = landing.current, root = track.current;
-    landing.current = null;
-    if (!l || !root || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    let el: HTMLElement | null = null, best = Infinity;
-    for (const c of root.querySelectorAll<HTMLElement>(`[data-event="${CSS.escape(l.id)}"]`)) {
-      const d = Math.hypot(c.offsetLeft - l.x, c.offsetTop - l.y);
-      if (d < best) { best = d; el = c; }
-    }
-    if (!el) return;
-    // jump to the new place without the usual slide, then play the flight from the drop point
-    el.style.transition = "none";
-    void el.offsetWidth;
-    el.style.transition = "";
-    el.animate(
-      [{ translate: `${l.x - el.offsetLeft}px ${l.y - el.offsetTop}px`, rotate: "-1.5deg", boxShadow: "0 10px 30px rgba(0,0,0,.5)" },
-       { translate: "0 0", rotate: "0deg", boxShadow: "0 0 0 rgba(0,0,0,0)" }],
-      { duration: 280, easing: "cubic-bezier(.22,.8,.24,1)" },
-    );
-  }, [lay, dropTick]);
 
   // ---------------------------------------------------------------- pointer handling
 
@@ -181,8 +137,7 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
     if (d.kind === "resize") return;
     if (!d.started) { select({ kind: "event", id: d.id }); return; }
     const p = trackPos(e);
-    landing.current = { id: d.id, x: p.x - d.offX, y: p.y - d.offY };
-    setDropTick(n => n + 1);
+    land(d.id, p.x - d.offX, p.y - d.offY);
     const t = dropTarget(d, p);
     if (!t) return;
     edit(doc => {
@@ -246,66 +201,9 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
     return (t && threadColor.get(t)) || (ch && charColor.get(ch)) || "var(--color-bone)";
   };
 
-  const links = useMemo(() => lay.cards.filter(c => lay.primary.get(c.event.id) === c).flatMap(f => (f.event.links ?? []).flatMap(l => {
-    const t = lay.primary.get(l.to);
-    return t ? [{ key: `${f.event.id}>${l.to}`, from: f, to: t, label: l.label }] : [];
-  })), [lay]);
-
-  /** Arrows with one end off the board (folded chapter, hidden by the focus): a short stub that says where it goes. */
-  const stubs = useMemo(() => {
-    const chapterIndex = new Map(doc.chapters.map((c, i) => [c.id, i]));
-    const at = (e: string) => { const f = findEvent(doc.chapters, e); return f && { chapter: f.chapter, p: chapterIndex.get(f.chapter.id)! * 10000 + f.event.col }; };
-    const out: { key: string; card: Card; other: string; out: boolean; later: boolean; chapter: string; label?: string }[] = [];
-    for (const { event } of allEvents(doc.chapters)) for (const l of event.links ?? []) {
-      const from = lay.primary.get(event.id), to = lay.primary.get(l.to);
-      if (!from === !to) continue;
-      const a = at(event.id), b = at(l.to);
-      if (!a || !b) continue;
-      if (from) out.push({ key: `${event.id}>${l.to}`, card: from, other: l.to, out: true, later: b.p >= a.p, chapter: b.chapter.name, label: l.label });
-      else out.push({ key: `${event.id}>${l.to}`, card: to!, other: event.id, out: false, later: a.p > b.p, chapter: a.chapter.name, label: l.label });
-    }
-    return out;
-  }, [lay, doc.chapters]);
-  const STUB = 30;
-  /** The stub leaves (or enters) the side facing the hidden end. */
-  const stubPath = (s: (typeof stubs)[number]) => {
-    const b = s.card.box, y = b.y + b.h / 2;
-    const edge = s.later ? b.x + b.w : b.x, far = edge + (s.later ? STUB : -STUB);
-    // the head points the way the arrow goes: out of the card, or into it
-    const tip = s.out ? far : edge, dir = (s.out ? far - edge : edge - far) > 0 ? 1 : -1;
-    return { d: `M${edge},${y} L${far},${y}`, head: `M${tip},${y} l${-7 * dir},-4 v8 z`, far, y };
-  };
-  /** Forward arrows leave from the right edge into the left one; arrows back in time (a reminder of something
-   *  earlier) go from the left edge into the right one, so they don't loop around the card. */
-  const linkPath = (f: Card, t: Card) => {
-    const back = t.box.x + t.box.w <= f.box.x;
-    const x1 = back ? f.box.x : f.box.x + f.box.w, y1 = f.box.y + f.box.h / 2;
-    const x2 = back ? t.box.x + t.box.w : t.box.x, y2 = t.box.y + t.box.h / 2;
-    const dx = (back ? -1 : 1) * Math.max(36, Math.abs(x2 - x1) / 2);
-    const head = back ? `M${x2},${y2} l7,-4 v8 z` : `M${x2},${y2} l-7,-4 v8 z`;
-    return { d: `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`, head, mx: (x1 + x2) / 2, my: (y1 + y2) / 2 };
-  };
-
-  // the same event on several lanes: a line through its copies while it's in focus
-  const siblings = useMemo(() => {
-    if (!focus) return [];
-    const copies = lay.cards.filter(c => c.event.id === focus).sort((a, b) => a.box.y - b.box.y);
-    return copies.slice(1).map((c, i) => ({ x: c.box.x + 12, y0: copies[i].box.y + copies[i].box.h, y1: c.box.y }));
-  }, [focus, lay]);
-
-  /** The selected event's arrows, in the order they draw, and when each other end gets its pulse. */
-  const { drawAt, arriveAt } = useMemo(() => {
-    const drawAt = new Map<string, number>(), arriveAt = new Map<string, number>();
-    if (!selected) return { drawAt, arriveAt };
-    for (const l of links) {
-      if (l.from.event.id !== selected && l.to.event.id !== selected) continue;
-      const d = drawAt.size * 90;
-      drawAt.set(l.key, d);
-      const other = l.from.event.id === selected ? l.to.event.id : l.from.event.id;
-      if (!arriveAt.has(other)) arriveAt.set(other, d);
-    }
-    return { drawAt, arriveAt };
-  }, [selected, links]);
+  const arrows = useMemo(() => arrowsOf(lay), [lay]);
+  const stubs = useMemo(() => stubsOf(lay, doc.chapters), [lay, doc.chapters]);
+  const { arriveAt, drawAt } = useMemo(() => drawOrder(arrows, selected), [arrows, selected]);
 
   /** Cards keep their identity when they change lane (regrouping, dragging), so they slide there instead of
    *  popping: an event's n-th copy is always the same element. */
@@ -401,126 +299,24 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
             )}
             {targetBox && <div className="pointer-events-none absolute rounded-md border-2 border-dashed border-paper/60 bg-paper/5" style={{ left: targetBox.x + 1, top: targetBox.y + 2, width: targetBox.w - 2, height: targetBox.h - 4 }} />}
 
-            {/* arrows */}
-            <svg className="pointer-events-none absolute inset-0 overflow-visible" width={lay.width} height={lay.height}>
-              {siblings.map((s, i) => <line key={i} x1={s.x} x2={s.x} y1={s.y0} y2={s.y1} stroke="var(--color-paper)" strokeOpacity={0.5} strokeWidth={2} strokeDasharray="2 4" />)}
-              {links.map(({ key, from, to }) => {
-                const p = linkPath(from, to);
-                const on = focus === from.event.id || focus === to.event.id || hoverLink === key;
-                const color = colorOf(from);
-                const dim = from.dim && to.dim;
-                const draw = drawAt.get(key);
-                const delay = { "--d": `${draw ?? 0}ms` } as React.CSSProperties;
-                return (
-                  // keyed by the selection too, so picking another event replays the drawing
-                  <g key={draw === undefined ? key : `${key}@${selected}`} opacity={on ? 1 : dim ? 0.12 : 0.5} className="transition-opacity duration-150">
-                    <path d={p.d} fill="none" stroke={color} strokeWidth={on ? 2.5 : 1.5}
-                      pathLength={draw === undefined ? undefined : 1} className={draw === undefined ? undefined : "link-draw"} style={delay} />
-                    <path d={p.head} fill={color} className={draw === undefined ? undefined : "link-head"} style={delay} />
-                    <path d={p.d} fill="none" stroke="transparent" strokeWidth={12} className="pointer-events-auto cursor-pointer"
-                      onPointerEnter={() => setHoverLink(key)} onPointerLeave={() => setHoverLink(null)}
-                      onClick={() => select({ kind: "event", id: from.event.id })} />
-                  </g>
-                );
-              })}
-              {stubs.map(st => {
-                const p = stubPath(st);
-                const on = focus === st.card.event.id || hoverLink === st.key;
-                const color = colorOf(st.card);
-                return (
-                  <g key={`s${st.key}`} opacity={on ? 1 : st.card.dim ? 0.12 : 0.5}>
-                    <path d={p.d} fill="none" stroke={color} strokeWidth={on ? 2.5 : 1.5} strokeDasharray="3 3" />
-                    <path d={p.head} fill={color} />
-                    <path d={p.d} fill="none" stroke="transparent" strokeWidth={12} className="pointer-events-auto cursor-pointer"
-                      onPointerEnter={() => setHoverLink(st.key)} onPointerLeave={() => setHoverLink(null)} onClick={() => reveal(st.other)} />
-                  </g>
-                );
-              })}
-              {drag?.kind === "connect" && pointer && (() => {
-                const f = lay.primary.get(drag.id);
-                return f && <path d={`M${f.box.x + f.box.w},${f.box.y + f.box.h / 2} L${pointer.x},${pointer.y}`} stroke="var(--color-paper)" strokeDasharray="4 4" strokeWidth={1.5} fill="none" />;
-              })()}
-            </svg>
-            {links.map(({ key, from, to, label }) => {
-              const on = focus === from.event.id || focus === to.event.id || hoverLink === key;
-              if (!on || !label) return null;
-              const p = linkPath(from, to);
-              return (
-                <div key={`l${key}`} className="pointer-events-none absolute z-10 max-w-56 -translate-x-1/2 -translate-y-1/2 rounded-md bg-ink-2 px-1.5 py-0.5 text-center font-talk text-xs leading-tight text-paper shadow-lift"
-                  style={{ left: p.mx, top: p.my }}>{label}</div>
-              );
-            })}
+            <BoardArrows lay={lay} arrows={arrows} stubs={stubs} focus={focus} selected={selected} hoverLink={hoverLink} setHoverLink={setHoverLink}
+              drawAt={drawAt} colorOf={colorOf} onSelect={id => select({ kind: "event", id })}
+              connecting={drag?.kind === "connect" && pointer ? { from: drag.id, to: pointer } : null} />
 
-            {stubs.map(st => {
-              const p = stubPath(st);
-              const on = focus === st.card.event.id || hoverLink === st.key;
-              if (st.card.dim && !on) return null;
-              return (
-                <div key={`sl${st.key}`} title={`${st.out ? "Leads to" : "Comes from"} an event in "${st.chapter}" that isn't shown. Click the arrow to go there.`}
-                  className={cn("pointer-events-none absolute z-10 max-w-40 -translate-y-1/2 truncate rounded-md px-1 font-talk text-xs leading-tight",
-                    st.later ? "" : "-translate-x-full", on ? "bg-ink-2 text-paper" : "text-taupe")}
-                  style={{ left: p.far + (st.later ? 2 : -2), top: p.y }}>
-                  {st.chapter}{on && st.label && <span className="text-taupe"> · {st.label}</span>}
-                </div>
-              );
-            })}
-
-            {/* cards */}
-            {lay.cards.map((c, ci) => {
-              const { event, box } = c;
-              const color = colorOf(c);
-              const on = selected === event.id;
-              const lifted = moving?.id === event.id;
-              const problem = flagged.get(event.id);
-              const primary = lay.primary.get(event.id) === c;
-              const arrive = primary ? arriveAt.get(event.id) : undefined;
-              // what the lane doesn't already say
-              const others = filter.groupBy === "chars" ? event.chars.filter(x => x !== c.lane.id) : event.chars;
-              const dots = filter.groupBy === "threads" ? event.threads.filter(x => x !== c.lane.id) : event.threads;
-              // squashed cards (crowded lane) drop the chips first, then title lines
-              const chips = (others.length > 0 || dots.length > 0) && box.h >= 44;
-              const lines = Math.max(1, Math.floor((box.h - 6 - (chips ? 14 : 0)) / 15));
-              return (
-                <div key={copyKeys[ci]} data-event={event.id} data-primary={primary || undefined}
-                  onPointerDown={e => {
-                    const r = trackPos(e);
-                    begin({ kind: "move", id: event.id, lane: lay.lanes.find(l => l.key === c.lane.key)!, startX: e.clientX, startY: e.clientY, offX: r.x - box.x, offY: r.y - box.y, w: box.w, h: box.h, started: false }, e);
-                  }}
-                  onPointerMove={onMove} onPointerUp={onUp}
-                  onPointerEnter={() => setHover(event.id)} onPointerLeave={() => setHover(h => (h === event.id ? null : h))}
-                  title={[event.title || "(untitled)", event.note].filter(Boolean).join("\n\n")}
-                  className={cn("board-move board-enter group/card absolute cursor-grab overflow-hidden rounded-md border-[1.5px] text-left active:cursor-grabbing",
-                    "border-[color-mix(in_srgb,var(--c)_50%,transparent)]",
-                    on ? "z-10 bg-[color-mix(in_srgb,var(--c)_34%,var(--color-ink-2))] shadow-lift ring-2 ring-paper"
-                      : cn("bg-[color-mix(in_srgb,var(--c)_20%,var(--color-ink-2))] hover:z-10 hover:border-[color-mix(in_srgb,var(--c)_70%,transparent)] hover:bg-[color-mix(in_srgb,var(--c)_27%,var(--color-ink-2))]",
-                        focus === event.id && "z-10 ring-1 ring-paper/60"),
-                    c.dim && !on && "opacity-25", lifted && "opacity-30", arrive !== undefined && "link-arrive")}
-                  style={{
-                    left: box.x, top: box.y, width: box.w, height: box.h,
-                    "--c": color, "--d": `${arrive ?? 0}ms`,
-                  } as React.CSSProperties}>
-                  <p className={cn("overflow-hidden px-1.5 font-talk text-xs leading-[15px] text-paper", box.h < 30 ? "pt-0.5" : "pt-1", event.note && "pr-5")}
-                    style={{ display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: lines }}>
-                    {event.title || <span className="italic text-taupe">untitled</span>}
-                  </p>
-                  {chips && (
-                    <div className="absolute inset-x-1.5 bottom-1 flex items-center gap-1 overflow-hidden whitespace-nowrap">
-                      {dots.map(t => <span key={t} className="h-1.5 w-3 shrink-0 rounded-full" style={{ background: threadColor.get(t) }} />)}
-                      {others.map(x => <span key={x} className="font-sans text-xs leading-none" style={{ color: charColor.get(x) }}>{nameOf.get(x) ?? x}</span>)}
-                    </div>
-                  )}
-                  {event.note && <StickyNote className={cn("absolute right-1 h-3 w-3 text-taupe", box.h < 30 ? "top-0.5" : "top-1")} />}
-                  {problem && <span className={cn("absolute bottom-1 right-1 h-2 w-2 rotate-45", problem === "error" ? "bg-coral" : "bg-butter")} title="See Checks" />}
-                  <div className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize"
-                    onPointerDown={e => begin({ kind: "resize", id: event.id, chapter: c.chapter.id, col: event.col }, e)}
-                    onPointerMove={onMove} onPointerUp={onUp} />
-                  <div title="Drag onto another event to draw an arrow"
-                    className="absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 cursor-crosshair rounded-full border-2 border-paper bg-ink opacity-0 transition-opacity group-hover/card:opacity-100"
-                    onPointerDown={e => begin({ kind: "connect", id: event.id }, e)}
-                    onPointerMove={onMove} onPointerUp={onUp} />
-                </div>
-              );
-            })}
+            {lay.cards.map((c, ci) => (
+              <BoardCard key={copyKeys[ci]} card={c} color={colorOf(c)} groupBy={filter.groupBy} primary={lay.primary.get(c.event.id) === c}
+                selected={selected === c.event.id} focused={focus === c.event.id} lifted={moving?.id === c.event.id} problem={flagged.get(c.event.id)}
+                arrive={lay.primary.get(c.event.id) === c ? arriveAt.get(c.event.id) : undefined}
+                threadColor={threadColor} charColor={charColor} charName={nameOf}
+                onDown={(part, e) => {
+                  if (part === "resize") return begin({ kind: "resize", id: c.event.id, chapter: c.chapter.id, col: c.event.col }, e);
+                  if (part === "connect") return begin({ kind: "connect", id: c.event.id }, e);
+                  const r = trackPos(e);
+                  begin({ kind: "move", id: c.event.id, lane: lay.lanes.find(l => l.key === c.lane.key)!, startX: e.clientX, startY: e.clientY, offX: r.x - c.box.x, offY: r.y - c.box.y, w: c.box.w, h: c.box.h, started: false }, e);
+                }}
+                onMove={onMove} onUp={onUp}
+                onHover={on => setHover(h => (on ? c.event.id : h === c.event.id ? null : h))} />
+            ))}
 
             {/* the card being dragged */}
             {moving && pointer && (() => {

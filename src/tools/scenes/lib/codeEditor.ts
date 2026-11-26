@@ -1,17 +1,20 @@
-import { indentLess, indentMore, insertNewlineAndIndent } from "@codemirror/commands";
+import { indentLess, indentMore, insertNewlineAndIndent, redo, undo } from "@codemirror/commands";
 import { indentService, indentUnit } from "@codemirror/language";
 import { StateEffect, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import type { Manifest } from "@/shared/lib/game";
-import { MONO } from "@/shared/vault/editorTheme";
-import { highlight } from "./highlight";
-import { whoColor } from "./scriptView";
+import { baseTheme, MONO } from "@/shared/vault/editorTheme";
+import { highlight, type Span } from "./highlight";
+import { whoColor } from "./look";
+import { indentOf } from "./script";
 
 /** What a Ren'Py box's own small CodeMirror editor needs: colours, Enter keeps the indent, Tab. It looks like the
  *  source view (same font, caret and selection). */
 
 const UNIT = 4;
-const leading = (t: string) => t.length - t.trimStart().length;
+
+/** A coloured span (lib/highlight.ts) as a CodeMirror mark: the source view and the Ren'Py boxes look the same. */
+export const spanMark = (x: Span) => Decoration.mark({ class: "rp-" + x.tok, attributes: x.color ? { style: `color:${x.color}` } : undefined });
 
 // ---------------------------------------------------------------- a Ren'Py box's editor
 
@@ -33,7 +36,7 @@ export function rawColours(manifest: () => Manifest | null): Extension {
       const out: Range<Decoration>[] = [];
       spans.forEach((row, i) => {
         const at = doc.line(i + 1).from;
-        for (const x of row) out.push(Decoration.mark({ class: "rp-" + x.tok, attributes: x.color ? { style: `color:${x.color}` } : undefined }).range(at + x.from, at + x.to));
+        for (const x of row) out.push(spanMark(x).range(at + x.from, at + x.to));
       });
       return Decoration.set(out, true);
     }
@@ -46,7 +49,7 @@ export const rawIndent: Extension = [
   indentService.of((cx, pos) => {
     const L = cx.state.doc.lineAt(pos);
     const before = L.text.slice(0, pos - L.from);
-    return leading(L.text) + (/:\s*(#.*)?$/.test(before) ? UNIT : 0);
+    return indentOf(L.text) + (/:\s*(#.*)?$/.test(before) ? UNIT : 0);
   }),
 ];
 
@@ -65,14 +68,24 @@ export const tabKeys = [
 
 export const newline = insertNewlineAndIndent;
 
-/** Long lines wrap (the box never scrolls sideways). */
-export const rawTheme = [EditorView.lineWrapping, EditorView.theme({
-  "&": { color: "var(--color-bone)", backgroundColor: "transparent", fontSize: "13px" },
-  "&.cm-focused": { outline: "none" },
+/** Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y in a box's own field: the file's history (the hidden view's), not the field's. */
+export const fileHistoryKeys = (view: () => EditorView) => [
+  { key: "Mod-z", run: () => (undo(view()), true), shift: () => (redo(view()), true) },
+  { key: "Mod-y", run: () => (redo(view()), true) },
+];
+
+/** The same for a plain field's keydown. True if it was one of them. */
+export function fileHistoryKey(e: { key: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; preventDefault(): void }, view: EditorView) {
+  const k = e.key.toLowerCase();
+  if (!(e.ctrlKey || e.metaKey) || (k !== "z" && k !== "y")) return false;
+  e.preventDefault();
+  if (k === "y" || e.shiftKey) redo(view); else undo(view);
+  return true;
+}
+
+/** The source view's look (caret, selection) at the box's size. Long lines wrap (the box never scrolls sideways). */
+export const rawTheme = [EditorView.lineWrapping, baseTheme, EditorView.theme({
+  "&": { fontSize: "13px" },
   ".cm-scroller": { fontFamily: MONO, lineHeight: "1.65", overflowX: "hidden" },
-  ".cm-content": { padding: "0", caretColor: "var(--color-caramel)" },
-  ".cm-line": { padding: "0" },
-  ".cm-cursor": { borderLeftColor: "var(--color-caramel)", borderLeftWidth: "2px" },
-  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "color-mix(in srgb, var(--color-caramel) 30%, transparent) !important" },
-  ".cm-placeholder": { color: "var(--color-taupe)", fontStyle: "italic" },
+  ".cm-content": { padding: "0" },
 }, { dark: true })];

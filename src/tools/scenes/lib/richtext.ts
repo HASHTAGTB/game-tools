@@ -1,4 +1,4 @@
-import { BASE_CPS, tokenize } from "./textTags";
+import { escapeText, factorOf, tokenize } from "./renpyText";
 
 /** A box's text, between Ren'Py (what's between the quotes: text tags, `\"`, `\n`, `{{`) and the editable element:
  *  `{i}`/`{b}`/`{u}`/`{s}` become real italic/bold/…, `{cps=*x}` a slower or faster span, pauses and line breaks
@@ -9,8 +9,10 @@ const STYLE: Record<string, string> = { i: "em", b: "strong", u: "u", s: "s" };
 const TAG_OF: Record<string, string> = { EM: "i", I: "i", STRONG: "b", B: "b", U: "u", S: "s", STRIKE: "s" };
 
 /** The marks' icons (the same icons as the top bar's buttons; the pause is filled, outlined bars blur at this size), drawn at one size next to their number. */
+/** The filled pause's bars (also the top bar's pause icon, TextTools.tsx). */
+export const PAUSE_BARS = [{ x: 14, y: 4, width: 4.5, height: 16, rx: 1.25 }, { x: 5.5, y: 4, width: 4.5, height: 16, rx: 1.25 }];
 const ICON: Record<string, string> = {
-  pause: '<g fill="currentColor" stroke="none"><rect x="14" y="4" width="4.5" height="16" rx="1.25"/><rect x="5.5" y="4" width="4.5" height="16" rx="1.25"/></g>',
+  pause: `<g fill="currentColor" stroke="none">${PAUSE_BARS.map(r => `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" rx="${r.rx}"/>`).join("")}</g>`,
   click: '<path d="M14 4.1 12 6"/><path d="m5.1 8-2.9-.8"/><path d="m6 12-1.9 2"/><path d="M7.2 2.2 8 5.1"/><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/>',
   para: '<path d="M13 4v16"/><path d="M17 4v16"/><path d="M19 4H9.5a4.5 4.5 0 0 0 0 9H13"/>',
   on: '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/>',
@@ -73,13 +75,6 @@ export function stepBy(v: number, dir: 1 | -1, min: number, max: number, skip?: 
 
 /** The speeds the speed popup offers; 1 is normal speed (no tag). */
 export const SPEEDS = [0.25, 0.5, 1, 1.5, 2, 3];
-
-/** How much faster a `{cps=…}` writes: `*0.5` → 0.5, `20` (characters per second) → 20 / 40. */
-export function factorOf(value: string | null) {
-  const v = value ?? "";
-  const f = v.startsWith("*") ? +v.slice(1) : +v / BASE_CPS;
-  return f > 0 ? f : 1;
-}
 
 /** Set a speed span's factor (`open`: keep the tag as it's written, e.g. `{cps=20}`). At 1 it writes no tag. */
 export function setSpeed(span: HTMLElement, f: number, open?: string) {
@@ -236,8 +231,8 @@ export function zwAtCaret(dir: "backward" | "forward") {
   return (dir === "backward" ? t[r.startOffset - 1] : t[r.startOffset]) === ZW;
 }
 
-/** Typed text as Ren'Py: quotes and backslashes escaped, `{` and `[` doubled (Ren'Py reads `[x]` as a variable). */
-const esc = (s: string) => s.replace(/​/g, "").replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\{/g, "{{").replace(/\[/g, "[[").replace(/\n/g, "\\n");
+/** Typed text as Ren'Py (the invisible characters behind marks dropped). */
+const esc = (s: string) => escapeText(s.replaceAll(ZW, ""));
 
 export function fromDOM(node: Node): string {
   let s = "";

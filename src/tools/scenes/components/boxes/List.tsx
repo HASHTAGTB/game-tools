@@ -1,12 +1,11 @@
-import { Braces, ChevronDown, ChevronUp, LayoutList, Plus, Trash2, Wrench } from "lucide-react";
+import { Braces, ChevronDown, ChevronUp, LayoutList, Plus, Trash2 } from "lucide-react";
 import { memo, type ReactNode } from "react";
-import { Button } from "@/shared/ui/button";
 import { IconButton } from "@/shared/ui/icon-button";
 import { placeAfter, type Box, type Place } from "../../lib/blocks";
 import type { Problem } from "../../lib/checks";
 import { removeBox, swapBoxes } from "../../lib/ops";
 import { focusLine, isRaw, markRaw, useSceneUi } from "../../lib/ui";
-import { applyFix } from "../Editor";
+import { BoxProblems } from "../problems";
 import { ChatBox } from "./ChatBox";
 import { ChoiceBox } from "./ChoiceBox";
 import { problemsOf, stageBefore, useBox, type BoxCtx, type ListLayout } from "./context";
@@ -156,31 +155,7 @@ export function Acts({ box, prev, next, children }: { box: Box; prev: Box | null
 
 // ---------------------------------------------------------------- problems
 
-const DOT: Record<Problem["severity"], string> = { error: "bg-coral", warning: "bg-butter", info: "bg-taupe/60" };
-
-/** A box's problems under it (missing art only marks the card, it's not a problem to fix). */
+/** A box's problems under it. */
 export function Problems({ list }: { list: Problem[] }) {
-  const { view } = useBox();
-  const real = list.filter(p => p.severity !== "info");
-  if (!real.length) return null;
-  return (
-    <div className="bx-probs">
-      {real.map((p, i) => (
-        <div key={i} className="bx-prob">
-          <i className={DOT[p.severity]} />
-          <span className="min-w-0 flex-1">{p.message}</span>
-          {p.fix && (
-            <Button size="sm" variant="quiet" className="h-6" onMouseDown={e => e.preventDefault()} onClick={() => applyFix(view, p)}>
-              <Wrench className="h-3 w-3" />{p.fix.label}
-            </Button>
-          )}
-        </div>
-      ))}
-    </div>
-  );
+  return <BoxProblems list={list} view={useBox().view} />;
 }
-
-/** The worst problem of a list, for a card's outline. */
-export const worst = (list: Problem[]) =>
-  list.some(p => p.severity === "error") ? "error" : list.some(p => p.severity === "warning") ? "warning" : list.length ? "info" : null;
-

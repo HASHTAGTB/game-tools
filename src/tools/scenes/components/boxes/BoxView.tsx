@@ -1,17 +1,15 @@
 import { EditorView } from "@codemirror/view";
-import { Wrench } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useGame } from "@/shared/lib/game";
-import { Button } from "@/shared/ui/button";
-import { allBoxes, buildTree, labelsIn, type Box, type Tree } from "../../lib/blocks";
-import { castOf } from "../../lib/cast";
+import { allBoxes, buildTree, type Box, type Tree } from "../../lib/blocks";
+import { sceneCast } from "../../lib/cast";
 import type { Problem } from "../../lib/checks";
-import { labelOf } from "../../lib/script";
-import { playScript } from "../../lib/stage";
+import { lineIds } from "../../lib/editorState";
+import { labelOf, labelsIn } from "../../lib/labels";
 import { setCaret } from "../../lib/richtext";
-import { lineIds } from "../../lib/scriptView";
+import { playScript } from "../../lib/stage";
 import { idAt, useSceneUi } from "../../lib/ui";
-import { applyFix } from "../Editor";
+import { FixButton } from "../problems";
 import { BoxMenus } from "./BoxMenus";
 import { BoxContext, type BoxCtx } from "./context";
 import { BoxItem, List } from "./List";
@@ -44,7 +42,7 @@ export function BoxView({ view }: { view: EditorView }) {
     const byLine = new Map<number, Problem[]>();
     for (const p of problems) byLine.set(p.line, [...(byLine.get(p.line) ?? []), p]);
     const label = labelOf(script) ?? "scene";
-    const cast = castOf(view.state);
+    const cast = sceneCast(view.state);
     const prev = shared.current;
     const key = cast.join() + (manifest ? "+m" + (manifest.characters.length) : "");
     const epoch = (prev?.epoch ?? 0) + (key !== epochKey.current || prev?.manifest !== manifest ? 1 : 0);
@@ -99,9 +97,7 @@ export function BoxView({ view }: { view: EditorView }) {
   }, [reveal, tree, tabs]);
 
   if (!script || !tree || !ctx) return null;
-  const fix = (p: Problem | undefined) => p?.fix && (
-    <Button variant="primary" size="sm" className="mt-4" onClick={() => applyFix(view, p)}><Wrench className="h-3.5 w-3.5" />{p.fix.label}</Button>
-  );
+  const fix = (p: Problem | undefined) => p && <FixButton view={view} problem={p} variant="primary" className="mt-4" />;
   const after = script.layout.code?.close ? script.lines.slice(script.layout.code.close).filter(l => l.trim()).length : 0;
 
   return (

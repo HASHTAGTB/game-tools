@@ -1,8 +1,9 @@
 import type { EditorState } from "@codemirror/state";
-import { characterOf, noteCharacterId, type Manifest } from "@/shared/lib/game";
+import { characterIdIn, characterOf, type Manifest } from "@/shared/lib/game";
+import { manifestField, scriptField } from "./editorState";
 import { readInfo } from "./frontmatter";
-import { escapeText, parseLine, sayLine } from "./script";
-import { manifestField, scriptField } from "./scriptView";
+import { escapeText } from "./renpyText";
+import { pad, parseLine, sayText } from "./script";
 
 /** Who's in a scene, names someone typed, and pasted text turned into script lines. */
 
@@ -10,13 +11,13 @@ import { manifestField, scriptField } from "./scriptView";
 
 /** Who can speak in this scene, for Tab and the speaker menu: the scene's characters (from its info) and everyone
  *  who already speaks in it, in order of first appearance. */
-export function castOf(state: EditorState): string[] {
+export function sceneCast(state: EditorState): string[] {
   const s = state.field(scriptField);
   const m = state.field(manifestField);
   const out: string[] = [];
   const add = (id: string) => { if (!out.includes(id)) out.push(id); };
   for (const note of readInfo(state.doc.toString())?.characters ?? []) {
-    const id = noteCharacterId(note);
+    const id = characterIdIn(note);
     if (!m || characterOf(m, id)) add(id);
   }
   for (const p of s.parsed) if (p?.kind === "say" && p.who && p.who !== "extend") add(p.who);
@@ -50,6 +51,6 @@ export function pastedLines(text: string, indent: number, m: Manifest | null, ca
     if (!line) return "";
     const said = /^([\p{L}][\p{L}\d_ .'-]{0,30}?)\s*:\s*(.+)$/u.exec(line);
     const id = said && resolveName(said[1], m, cast);
-    return id ? sayLine(indent, id, escapeText(unquote(said![2]))) : sayLine(indent, null, escapeText(line));
+    return pad(indent) + sayText(id, escapeText(id ? unquote(said![2]) : line));
   });
 }

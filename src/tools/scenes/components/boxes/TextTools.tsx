@@ -8,7 +8,7 @@ import { IconButton } from "@/shared/ui/icon-button";
 import { AnimatePresence, m, pop } from "@/shared/ui/motion";
 import { popoverCls, surfaceCls } from "@/shared/ui/popover";
 import {
-  caretAfter, chip, insertAtCaret, pauseOf, pauseRaw, PAUSES, selRange, setChip, setSpeed, speedAround, SPEEDS, speedAtCaret, stepBy,
+  caretAfter, chip, insertAtCaret, PAUSE_BARS, pauseOf, pauseRaw, PAUSES, selRange, setChip, setSpeed, speedAround, SPEEDS, speedAtCaret, stepBy,
   unwrap, wrapSpeed, type Marks,
 } from "../../lib/richtext";
 import { useSceneUi } from "../../lib/ui";
@@ -34,10 +34,36 @@ function toggleSpeed(el: HTMLElement) {
 const Pause = forwardRef<SVGSVGElement, LucideProps>(({ size = 24, className, ...rest }, ref) => (
   <svg ref={ref} xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor"
     aria-hidden="true" className={cn("lucide", className)} {...rest} stroke="none">
-    <rect x="14" y="4" width="4.5" height="16" rx="1.25" /><rect x="5.5" y="4" width="4.5" height="16" rx="1.25" />
+    {PAUSE_BARS.map(r => <rect key={r.x} {...r} />)}
   </svg>
 )) as LucideIcon;
 Pause.displayName = "PauseFilled";
+
+// ---------------------------------------------------------------- what the text tools do
+
+/** One thing the text tools can do: in the top bar (`bar`: its tooltip), in the `{` menu (`hint`: the tag it
+ *  writes), or both. */
+export type TextAction = {
+  label: string; icon: LucideIcon; run: (el: HTMLElement) => void;
+  hint?: string; bar?: string; kbd?: string;
+  /** the top bar shows it pressed while the caret is in it */
+  on?: (m: Marks) => boolean;
+};
+
+const mark = (raw: string) => (el: HTMLElement) => insertAtCaret(el, chip(raw));
+
+const italic: TextAction = { label: "Italic", icon: Italic, hint: "{i}", bar: "Italic", kbd: "Ctrl+I", on: m => m.i, run: () => document.execCommand("italic") };
+const bold: TextAction = { label: "Bold", icon: Bold, hint: "{b}", bar: "Bold", kbd: "Ctrl+B", on: m => m.b, run: () => document.execCommand("bold") };
+const speed: TextAction = { label: "Speed", icon: Gauge, bar: "Slower (click its number in the text to change it)", kbd: "{", on: m => m.speed !== null, run: toggleSpeed };
+const pause: TextAction = { label: "Pause", icon: Pause, hint: "{w=0.5}", bar: "Pause (click it in the text to change it)", kbd: "{", run: mark("{w=0.5}") };
+const click: TextAction = { label: "Wait for a click", icon: MousePointerClick, hint: "{w}", bar: "Wait for a click", kbd: "{", run: mark("{w}") };
+const para: TextAction = { label: "Wait for a click, then a new line", icon: Pilcrow, hint: "{p}", bar: "Wait for a click, then a new line", kbd: "{", run: mark("{p}") };
+const noWait: TextAction = { label: "Go on without a click", icon: Redo2, hint: "{nw}", run: mark("{nw}") };
+const slower: TextAction = { label: "Slower from here", icon: Snail, hint: "{cps=*0.5}", run: el => speedAtCaret(el, 0.5) };
+const faster: TextAction = { label: "Faster from here", icon: Rabbit, hint: "{cps=*2}", run: el => speedAtCaret(el, 2) };
+
+/** The top bar: styles | speed and the waits. */
+const BAR = [[italic, bold], [speed, pause, click, para]];
 
 // ---------------------------------------------------------------- the top bar
 
@@ -48,44 +74,36 @@ const on = "bg-caramel/20 text-paper";
 export function TextBar() {
   const t = useSceneUi(s => s.typing);
   const marks = t?.marks ?? NO_MARKS;
-  const tool = (run: (el: HTMLElement) => void) => () => {
+  const use = (a: TextAction) => () => {
     if (!t) return;
     t.el.focus({ preventScroll: true });
-    run(t.el);
+    a.run(t.el);
     t.commit();
   };
-  const btn = (icon: LucideIcon, label: string, run: (el: HTMLElement) => void, pressed?: boolean, kbd?: string) => (
-    <IconButton icon={icon} size="sm" label={label} kbd={kbd} tooltipSide="bottom" disabled={!t}
-      aria-pressed={pressed} className={cn(pressed && on)} onClick={tool(run)} />
-  );
-  const sped = marks.speed !== null;
   return (
     <div role="toolbar" aria-label="Text effects" className="flex shrink-0 items-center gap-0.5" onMouseDown={e => e.preventDefault()}>
-      {btn(Italic, "Italic", () => document.execCommand("italic"), marks.i, "Ctrl+I")}
-      {btn(Bold, "Bold", () => document.execCommand("bold"), marks.b, "Ctrl+B")}
-      <span aria-hidden className="mx-1.5 h-4 w-px bg-ink-line" />
-      {btn(Gauge, sped ? "Normal speed again" : "Slower (click its number in the text to change it)", toggleSpeed, sped, "{")}
-      {btn(Pause, "Pause (click it in the text to change it)", el => insertAtCaret(el, chip("{w=0.5}")), undefined, "{")}
-      {btn(MousePointerClick, "Wait for a click", el => insertAtCaret(el, chip("{w}")), undefined, "{")}
-      {btn(Pilcrow, "Wait for a click, then a new line", el => insertAtCaret(el, chip("{p}")), undefined, "{")}
+      {BAR.map((group, g) => (
+        <span key={g} className="contents">
+          {g > 0 && <span aria-hidden className="mx-1.5 h-4 w-px bg-ink-line" />}
+          {group.map(a => {
+            const pressed = a.on?.(marks);
+            return (
+              <IconButton key={a.label} icon={a.icon} size="sm" label={a === speed && pressed ? "Normal speed again" : a.bar!} kbd={a.kbd}
+                tooltipSide="bottom" disabled={!t} aria-pressed={pressed} className={cn(pressed && on)} onClick={use(a)} />
+            );
+          })}
+        </span>
+      ))}
     </div>
   );
 }
 
 // ---------------------------------------------------------------- the `{` menu
 
-export type BraceItem = { label: string; hint: string; icon: LucideIcon; run: (el: HTMLElement) => void };
+export type BraceItem = TextAction & { hint: string };
 
-export const BRACE_ITEMS: BraceItem[] = [
-  { label: "Pause", hint: "{w=0.5}", icon: Pause, run: el => insertAtCaret(el, chip("{w=0.5}")) },
-  { label: "Wait for a click", hint: "{w}", icon: MousePointerClick, run: el => insertAtCaret(el, chip("{w}")) },
-  { label: "Wait for a click, then a new line", hint: "{p}", icon: Pilcrow, run: el => insertAtCaret(el, chip("{p}")) },
-  { label: "Go on without a click", hint: "{nw}", icon: Redo2, run: el => insertAtCaret(el, chip("{nw}")) },
-  { label: "Slower from here", hint: "{cps=*0.5}", icon: Snail, run: el => speedAtCaret(el, 0.5) },
-  { label: "Faster from here", hint: "{cps=*2}", icon: Rabbit, run: el => speedAtCaret(el, 2) },
-  { label: "Italic", hint: "{i}", icon: Italic, run: () => document.execCommand("italic") },
-  { label: "Bold", hint: "{b}", icon: Bold, run: () => document.execCommand("bold") },
-];
+/** The `{` menu: the waits and speeds, then the styles. */
+export const BRACE_ITEMS = [pause, click, para, noWait, slower, faster, italic, bold] as BraceItem[];
 
 /** Where the `{` was typed, what's typed after it, and the highlighted row. */
 export type Brace = { node: Text; at: number; q: string; i: number; x: number; y: number };

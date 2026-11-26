@@ -1,15 +1,15 @@
 import { CornerRightDown, Plus, Split, Trash2 } from "lucide-react";
 import { Button } from "@/shared/ui/button";
-import { useEffect, useState } from "react";
 import { Confirm } from "@/shared/ui/confirm";
 import { fieldCls } from "@/shared/ui/field";
 import { IconButton } from "@/shared/ui/icon-button";
 import { cn } from "@/shared/lib/utils";
 import type { Box } from "../../lib/blocks";
 import { addOption, removeOption, routeOption, setOptionText } from "../../lib/ops";
-import { unescapeText } from "../../lib/script";
+import { labelName } from "../../lib/labels";
+import { unescapeText } from "../../lib/renpyText";
 import { idAt, useSceneUi } from "../../lib/ui";
-import { follow, problemsOf, useBox, type ListLayout } from "./context";
+import { follow, problemsOf, useBox, useDraft, type ListLayout } from "./context";
 import { Acts, BoxItem, List, Problems } from "./List";
 
 type Menu = Extract<Box, { kind: "menu" }>;
@@ -57,12 +57,11 @@ function Option({ menu, index, onRemoved }: { menu: Menu; index: number; onRemov
   const c = useBox();
   const o = menu.options[index];
   const text = unescapeText(o.raw);
-  // typed here, written to the file as you go (the field keeps its own value so the caret doesn't jump)
-  const [v, setV] = useState(text);
-  useEffect(() => { if (document.activeElement?.id !== `opt-${o.line}`) setV(text); }, [text, o.line]);
+  // typed here, written to the file as you go
+  const draft = useDraft(text);
   // jumps right to where the routes meet
   const only = o.boxes.length === 1 ? o.boxes[0] : null;
-  const contName = menu.cont ? c.view.state.doc.line(menu.cont).text.match(/label\s+(\w+)/)?.[1] : null;
+  const contName = menu.cont ? labelName(c.view.state.doc.line(menu.cont).text) : null;
   const straight = !o.route && only?.kind === "stmt" && only.stmt.kind === "jump" && only.stmt.target === contName;
   const filled = o.boxes.length > 0 && !straight;
   const remove = () => { removeOption(c.view, menu, index); onRemoved(); };
@@ -70,9 +69,9 @@ function Option({ menu, index, onRemoved }: { menu: Menu; index: number; onRemov
     <>
       <div className="mb-2 flex items-center gap-2.5">
         <label htmlFor={`opt-${o.line}`} className="shrink-0 font-sans text-sm text-taupe">Button text</label>
-        <input id={`opt-${o.line}`} value={v} className={cn(fieldCls, "h-8 text-butter")}
-          onChange={e => { setV(e.target.value); setOptionText(c.view, o.line, e.target.value); }}
-          onFocus={() => follow(c.view, o.line)} />
+        <input id={`opt-${o.line}`} value={draft.value} className={cn(fieldCls, "h-8 text-butter")}
+          onChange={e => { draft.onChange(e.target.value); setOptionText(c.view, o.line, e.target.value); }}
+          onFocus={() => { draft.onFocus(); follow(c.view, o.line); }} onBlur={draft.onBlur} />
         {o.cond && <span className="bx-cond shrink-0" title="Only shown when this is true (edit it in the source view)">{o.cond}</span>}
         {menu.options.length > 1 && (filled
           ? <Confirm message={`Remove "${text}" and everything in it?`} label="Remove" onConfirm={remove}>

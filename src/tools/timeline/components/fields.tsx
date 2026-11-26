@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { cn } from "@/shared/lib/utils";
 import { fieldCls as inputCls, textareaCls } from "@/shared/ui/field";
 import { visible } from "../lib/colors";
+import { DEFAULT_COLOR } from "@/shared/lib/colors";
 
 /** The shared field styles, under the names this tool already uses. */
 export { inputCls, textareaCls };
@@ -74,7 +75,7 @@ export function ChipPicker({ options, value, onChange, empty }: { options: ChipO
 export function ColorInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <div className="flex items-center gap-2">
-      <input type="color" value={/^#[0-9a-f]{6}$/i.test(value) ? value : "#c4956a"} onChange={e => onChange(e.target.value)}
+      <input type="color" value={/^#[0-9a-f]{6}$/i.test(value) ? value : DEFAULT_COLOR} onChange={e => onChange(e.target.value)}
         className="h-9 w-11 cursor-pointer rounded-md border border-ink-line bg-ink p-1" />
       <span className="font-talk text-sm text-taupe">{value}</span>
     </div>

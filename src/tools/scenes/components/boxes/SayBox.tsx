@@ -4,12 +4,14 @@ import { cn } from "@/shared/lib/utils";
 import { openAnchoredMenu } from "@/shared/ui/anchored-menu";
 import type { Box } from "../../lib/blocks";
 import { pastedLines } from "../../lib/cast";
-import { insertAt, joinSays, redoBox, removeBox, setRaw, setSayRaw, setSpeaker, splitSay, undoBox } from "../../lib/ops";
+import { fileHistoryKey } from "../../lib/codeEditor";
+import { insertAt, joinSays, removeBox, setRaw, setSayRaw, setSpeaker, splitSay } from "../../lib/ops";
 import { atEdge, caretCount, chip, fromDOM, insertAtCaret, isEmpty, markBeforeCaret, marksAt, onSpeedLabel, padMarks, pauseOf, plainCount, setCaret, splitAtCaret, stepOutOfWrap, stepToText, toDOM, zwAtCaret } from "../../lib/richtext";
 import { focusLine, useSceneUi } from "../../lib/ui";
-import { follow, problemsOf, speaker, stageBefore, useBox, useHot, type ListLayout } from "./context";
+import { follow, problemsOf, stageBefore, useBox, useHot, type ListLayout } from "./context";
 import { Acts, addAfter, addInstead, Problems, useMoves } from "./List";
 import { BraceMenu, braceAtCaret, braceMatches, bracePick, braceUpdate, nudgeMark, openMark, sameMarks, type Brace, type BraceItem } from "./TextTools";
+import { look } from "../../lib/look";
 
 type Say = Extract<Box, { kind: "say" }>;
 
@@ -45,12 +47,12 @@ export const SayBox = memo(function SayBox({ box: b, prev, next, layout }: { box
   }, [hot]);
   const stage = stageBefore(c, b.from);
   const chat = layout.chat;
-  const w = b.who ? speaker(c, b.who) : null;
-  const pov = stage.pov ? speaker(c, stage.pov) : null;
+  const w = b.who ? look(c.manifest, b.who) : null;
+  const pov = stage.pov ? look(c.manifest, stage.pov) : null;
   const cont = prev?.kind === "say" && prev.who === b.who;
   const mine = chat && !!b.who && b.who === stage.pov;
-  const look = w ?? (chat ? null : pov);
-  const style = { "--who": w?.color ?? "transparent", "--whoL": look?.legible } as CSSProperties;
+  const tint = w ?? (chat ? null : pov);
+  const style = { "--who": w?.color ?? "transparent", "--whoL": tint?.legible } as CSSProperties;
 
   // Ctrl+scroll on a pause's or a speed's number: 0.05 steps (up: longer / faster). Not React's onWheel: that one is
   // passive, and Ctrl+scroll would zoom the page too.
@@ -96,8 +98,7 @@ export const SayBox = memo(function SayBox({ box: b, prev, next, layout }: { box
       if (k === "Enter" || k === "Tab") { e.preventDefault(); pick(items[brace.i]); return; }
       if (k === "Escape") { e.preventDefault(); setBrace(null); return; }
     }
-    if (mod && k.toLowerCase() === "z") { e.preventDefault(); (e.shiftKey ? redoBox : undoBox)(view); return; }
-    if (mod && k.toLowerCase() === "y") { e.preventDefault(); redoBox(view); return; }
+    if (fileHistoryKey(e, view)) return;
     if (k === "Enter" && mod) { e.preventDefault(); addAfter(el, b, layout); return; }
     if (k === "Enter" && e.shiftKey) { e.preventDefault(); insertAtCaret(el, chip("\\n")); commit(); return; }
     if ((k === "Enter" || k === "/") && isEmpty(el)) { e.preventDefault(); addInstead(el, b, layout); return; }
@@ -132,7 +133,7 @@ export const SayBox = memo(function SayBox({ box: b, prev, next, layout }: { box
         focusLine(prev?.kind === "say" || prev?.kind === "note" ? prev.from : n, "end");
       } else if (prev?.kind === "say") {
         const gap = joinSays(view, prev, b);
-        // another speaker, or Ren'Py after the text: no join, just step into the line above
+        // another or Ren'Py after the text: no join, just step into the line above
         focusLine(prev.from, gap === null ? "end" : plainCount(prev.raw) + (gap ? 1 : 0));
       }
       return;

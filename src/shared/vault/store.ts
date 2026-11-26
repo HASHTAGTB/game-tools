@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { browserPrefs, debounce, noticeSetter, serialQueue, whenHidden, whileVisible } from "@/shared/lib/toolState";
+import { errorMessage, freeName, isUnder, plural, strings } from "@/shared/lib/utils";
 import {
   getLocation, joinPath, listDir, makeDir, movePath, NeedsPermission, readFile, removeDir, removeFile, statFile, writeText,
   type Entry, type Location,
@@ -95,21 +97,10 @@ type Actions = {
 
 // ---------------------------------------------------------------- per-viewer settings (this browser only)
 
-const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
-function readPrefs(PREFS: string): { expanded: string[]; path: string | null; recent: string[]; mode: Mode } {
-  try {
-    const p = JSON.parse(localStorage.getItem(PREFS) ?? "{}");
-    return {
-      expanded: strings(p.expanded), path: typeof p.path === "string" ? p.path : null, recent: strings(p.recent),
-      mode: p.mode === "source" ? "source" : "live",
-    };
-  } catch { return { expanded: [], path: null, recent: [], mode: "live" }; }
-}
-function writePrefs(PREFS: string, s: Pick<State, "expanded" | "path" | "recent" | "mode">) {
-  try {
-    localStorage.setItem(PREFS, JSON.stringify({ expanded: [...s.expanded], path: s.path, recent: s.recent, mode: s.mode }));
-  } catch { /* private window */ }
-}
+const vaultPrefs = (key: string) => browserPrefs(key, p => ({
+  expanded: strings(p.expanded), path: typeof p.path === "string" ? p.path : null, recent: strings(p.recent),
+  mode: (p.mode === "source" ? "source" : "live") as Mode,
+}));
 const RECENT = 12;
 
 // ---------------------------------------------------------------- helpers
@@ -117,11 +108,9 @@ const RECENT = 12;
 export const parentOf = (path: string) => path.split("/").slice(0, -1).join("/");
 export const baseName = (path: string) => path.split("/").pop()!.replace(/\.md$/i, "");
 const lastPart = (path: string) => path.split("/").pop()!;
-const under = (path: string, dir: string) => path === dir || path.startsWith(dir + "/");
 /** `path` with the folder `from` (or the file itself) replaced by `to`. */
-const rebase = (path: string, from: string, to: string) => (under(path, from) ? to + path.slice(from.length) : path);
+const rebase = (path: string, from: string, to: string) => (isUnder(path, from) ? to + path.slice(from.length) : path);
 const BAD_NAME = /[\\/:*?"<>|#^[\]]/;
-const msgOf = (e: unknown) => String(e instanceof Error ? e.message : e);
 const shown = (e: Entry) => !e.name.startsWith(".") && (e.kind === "directory" || /\.md$/i.test(e.name));
 const isNote = (p: string) => /\.md$/i.test(p);
 const byKindThenName = (a: Node, b: Node) =>
@@ -137,11 +126,9 @@ async function listNodes(dir: string, virtual: Set<string>, hide: (path: string)
 }
 
 /** A name that isn't taken in `dir`: "Untitled.md", "Untitled 2.md", … (`ext` "" for folders) */
-async function freeName(dir: string, base: string, ext = ".md", virtual: Set<string> = new Set()) {
+async function freeFileName(dir: string, base: string, ext = ".md", virtual: Set<string> = new Set()) {
   const taken = new Set([...(await listDir(dir)).map(e => e.name), ...[...virtual].filter(v => parentOf(v) === dir).map(lastPart)].map(n => n.toLowerCase()));
-  let name = base + ext;
-  for (let i = 2; taken.has(name.toLowerCase()); i++) name = `${base} ${i}${ext}`;
-  return name;
+  return freeName(base + ext, n => taken.has(n.toLowerCase()), i => `${base} ${i}${ext}`);
 }
 
 /** Every file in the vault (any type), skipping dot-folders like .obsidian and .git. */
@@ -156,26 +143,24 @@ async function allFiles(dir = ""): Promise<string[]> {
   return out;
 }
 
-const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
-
 export function createVaultStore(cfg: VaultConfig) {
   const { root, noun } = cfg;
   const hide = cfg.hide ?? (() => false);
   const Noun = noun[0].toUpperCase() + noun.slice(1);
-  let queue: Promise<void> = Promise.resolve();
-  const serial = (fn: () => Promise<void>) => (queue = queue.then(fn, fn));
-  let saveTimer: ReturnType<typeof setTimeout> | undefined;
-  let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+  const serial = serialQueue();
+  /** Saving: a moment after the last keystroke (and when the tab is hidden, below). */
+  const autosave = debounce(() => store.getState().flush(), 600);
   let indexing: Promise<void> | null = null;
   let startWith: string | null = null;
   /** Every note in the vault, also the hidden ones, for following links */
   let everyNote: string[] | null = null;
-  const prefs = readPrefs(cfg.prefsKey);
+  const prefsStore = vaultPrefs(cfg.prefsKey);
+  const prefs = prefsStore.read();
   /** A file this tool shows */
-  const mine = (p: string | null): p is string => !!p && (!root || under(p, root)) && !hide(p);
+  const mine = (p: string | null): p is string => !!p && (!root || isUnder(p, root)) && !hide(p);
 
   const store = create<State & Actions>()((set, get) => {
-  const savePrefs = () => writePrefs(cfg.prefsKey, get());
+  const savePrefs = () => { const s = get(); prefsStore.write({ expanded: [...s.expanded], path: s.path, recent: s.recent, mode: s.mode }); };
   const refreshDir = async (dir: string) => {
     const nodes = await listNodes(dir, get().virtual, hide);
     set(s => ({ tree: { ...s.tree, [dir]: nodes } }));
@@ -190,17 +175,17 @@ export function createVaultStore(cfg: VaultConfig) {
     set({ tree, expanded });
     savePrefs();
   };
-  const fail = (what: string) => (e: unknown) => set({ error: `${what}: ${msgOf(e)}`, busy: null });
+  const fail = (what: string) => (e: unknown) => set({ error: `${what}: ${errorMessage(e)}`, busy: null });
 
   /** Move or rename `from` (a note or a folder) to the path `to`, then point every [[link]] to what moved at its new
    *  place. Runs in the save queue, after the open note is saved, so nothing writes in between. */
   const relocate = (from: string, to: string) => {
-    clearTimeout(saveTimer);
+    autosave.cancel();
     return serial(async () => {
       await saveNow();
       if (to === from) return;
       if (!from || !to) throw new Error("The vault itself can't be moved.");
-      if (under(to.toLowerCase(), from.toLowerCase()) && to.toLowerCase() !== from.toLowerCase()) throw new Error("A folder can't go inside itself.");
+      if (isUnder(to.toLowerCase(), from.toLowerCase()) && to.toLowerCase() !== from.toLowerCase()) throw new Error("A folder can't go inside itself.");
       // Only the case changes (rin.md → Rin.md): fine unless the new name is listed as a file of its own, which a
       // case-sensitive disk allows. Otherwise any name that differs only in case counts as taken.
       const caseOnly = to.toLowerCase() === from.toLowerCase();
@@ -210,7 +195,7 @@ export function createVaultStore(cfg: VaultConfig) {
 
       set({ busy: `Moving ${lastPart(from)}…` });
       const before = await allFiles();
-      const moving = before.filter(f => under(f, from));
+      const moving = before.filter(f => isUnder(f, from));
       if (moving.length) await movePath(from, to);
       else await movePath(from, to).catch(() => {});   // an empty folder: real on disk, or only shown here
       const moves = new Map(moving.map(f => [f, rebase(f, from, to)]));
@@ -260,7 +245,7 @@ export function createVaultStore(cfg: VaultConfig) {
                 ? { conflict: { theirs: disk, mtime: disk === null ? null : mtime } }
                 : { saved: { text: disk ?? "", mtime } }),
             });
-            if (!s.conflict) { clearTimeout(saveTimer); saveTimer = setTimeout(() => get().flush(), 600); }
+            if (!s.conflict) autosave.schedule();
           }
         }
       }
@@ -295,7 +280,7 @@ export function createVaultStore(cfg: VaultConfig) {
       // only the text that was written counts as saved; typing during the write stays unsaved
       if (get().path === path) set({ saved: { text, mtime } });
     } catch (e) {
-      set({ error: "Saving failed: " + msgOf(e) });
+      set({ error: "Saving failed: " + errorMessage(e) });
     } finally {
       set({ saving: false });
     }
@@ -329,10 +314,7 @@ export function createVaultStore(cfg: VaultConfig) {
     init: want => {
       startWith = want ?? null;
       get().load();
-      const timer = setInterval(() => {
-        if (document.visibilityState === "visible" && get().ready) serial(poll);
-      }, 4000);
-      return () => clearInterval(timer);
+      return whileVisible(() => { if (get().ready) serial(poll); });
     },
 
     load: async () => {
@@ -351,7 +333,7 @@ export function createVaultStore(cfg: VaultConfig) {
         savePrefs();
       } catch (e) {
         if (e instanceof NeedsPermission) return set(s => ({ ready: false, loc: s.loc && { ...s.loc, ready: false } }));
-        set({ error: `Could not load the ${noun}s: ` + msgOf(e) });
+        set({ error: `Could not load the ${noun}s: ` + errorMessage(e) });
       }
     },
 
@@ -361,10 +343,10 @@ export function createVaultStore(cfg: VaultConfig) {
       get().setNotice(msg);
     },
 
-    flush: () => { clearTimeout(saveTimer); return serial(saveNow); },
+    flush: () => { autosave.cancel(); return serial(saveNow); },
 
     revert: async drop => {
-      clearTimeout(saveTimer);
+      autosave.cancel();
       await serial(async () => {
         await drop();
         startWith = get().path;
@@ -378,7 +360,7 @@ export function createVaultStore(cfg: VaultConfig) {
       if (!get().expanded.has(dir)) {
         // list first, then open: the folder grows to its full height in one movement instead of jumping at the end
         if (!get().tree[dir]) {
-          try { await refreshDir(dir); } catch (e) { return set({ error: msgOf(e) }); }
+          try { await refreshDir(dir); } catch (e) { return set({ error: errorMessage(e) }); }
         }
         set(s => ({ expanded: new Set([...s.expanded, dir]) }));
       } else {
@@ -400,7 +382,7 @@ export function createVaultStore(cfg: VaultConfig) {
           everyNote = files.filter(isNote);
           set({ index: everyNote.filter(mine).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })) });
         })
-        .catch(e => set({ error: `Couldn't list the ${noun}s: ` + msgOf(e) }))
+        .catch(e => set({ error: `Couldn't list the ${noun}s: ` + errorMessage(e) }))
         .finally(() => { indexing = null; }));
     },
 
@@ -419,19 +401,18 @@ export function createVaultStore(cfg: VaultConfig) {
         set(s => ({ opened: s.opened + 1, recent: [path, ...s.recent.filter(p => p !== path)].slice(0, RECENT) }));
         savePrefs();
       } catch (e) {
-        set({ error: `Could not open ${baseName(path)}: ${msgOf(e)}` });
+        set({ error: `Could not open ${baseName(path)}: ${errorMessage(e)}` });
       }
     },
 
     type: text => {
       set({ text });
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(() => get().flush(), 600);
+      autosave.schedule();
     },
 
     create: async dir => {
       try {
-        const name = await freeName(dir, "Untitled");
+        const name = await freeFileName(dir, "Untitled");
         const path = joinPath(dir, name);
         await writeText(path, cfg.template?.(name.replace(/\.md$/i, "")) ?? "");
         set(s => ({ index: s.index && [...s.index, path] }));
@@ -440,13 +421,13 @@ export function createVaultStore(cfg: VaultConfig) {
         await get().open(path);
         set({ renaming: path });
       } catch (e) {
-        set({ error: `Could not create the ${noun}: ` + msgOf(e) });
+        set({ error: `Could not create the ${noun}: ` + errorMessage(e) });
       }
     },
 
     createFolder: async parent => {
       try {
-        const path = joinPath(parent, await freeName(parent, "New folder", "", get().virtual));
+        const path = joinPath(parent, await freeFileName(parent, "New folder", "", get().virtual));
         await makeDir(path);
         set(s => ({ virtual: new Set([...s.virtual, path]), expanded: parent ? new Set([...s.expanded, parent]) : s.expanded }));
         await refreshDir(parent);
@@ -472,7 +453,7 @@ export function createVaultStore(cfg: VaultConfig) {
       try {
         await get().flush();
         const dir = parentOf(path);
-        const copy = joinPath(dir, await freeName(dir, baseName(path)));
+        const copy = joinPath(dir, await freeFileName(dir, baseName(path)));
         await writeText(copy, get().path === path ? get().text : (await readFile(path))?.text ?? "");
         set(s => ({ index: s.index && [...s.index, copy] }));
         await refreshDir(dir);
@@ -483,7 +464,7 @@ export function createVaultStore(cfg: VaultConfig) {
     remove: async path => {
       try {
         // in the queue, after a move that may still be rewriting links in this note
-        if (get().path === path) clearTimeout(saveTimer);
+        if (get().path === path) autosave.cancel();
         await serial(async () => {
           if (get().path === path) { show(null, null); savePrefs(); }
           await removeFile(path);
@@ -497,17 +478,17 @@ export function createVaultStore(cfg: VaultConfig) {
 
     removeFolder: async path => {
       try {
-        const inside = () => { const open = get().path; return !!open && under(open, path); };
-        if (inside()) clearTimeout(saveTimer);
+        const inside = () => { const open = get().path; return !!open && isUnder(open, path); };
+        if (inside()) autosave.cancel();
         await serial(async () => {
           if (inside()) show(null, null);
           await removeDir(path);
         });
         set(s => ({
-          virtual: new Set([...s.virtual].filter(v => !under(v, path))),
-          expanded: new Set([...s.expanded].filter(v => !under(v, path))),
-          recent: s.recent.filter(v => !under(v, path)),
-          index: s.index && s.index.filter(v => !under(v, path)),
+          virtual: new Set([...s.virtual].filter(v => !isUnder(v, path))),
+          expanded: new Set([...s.expanded].filter(v => !isUnder(v, path))),
+          recent: s.recent.filter(v => !isUnder(v, path)),
+          index: s.index && s.index.filter(v => !isUnder(v, path)),
         }));
         savePrefs();
         await refreshAll();
@@ -544,19 +525,11 @@ export function createVaultStore(cfg: VaultConfig) {
     setMode: mode => { set({ mode }); savePrefs(); },
 
     setError: error => set({ error }),
-    setNotice: notice => {
-      clearTimeout(noticeTimer);
-      set({ notice });
-      if (notice) noticeTimer = setTimeout(() => set({ notice: null }), 5000);
-    },
+    setNotice: noticeSetter(set),
   };
   });
 
-  if (typeof document !== "undefined") {
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden") store.getState().flush();
-    });
-  }
+  whenHidden(() => store.getState().flush());
   return Object.assign(store, { config: { ...cfg, hide }, Noun });
 }
 

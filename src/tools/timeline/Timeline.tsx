@@ -7,23 +7,25 @@ import { AnimatePresence, m, pop, spring } from "@/shared/ui/motion";
 import { Popover, PopoverTitle } from "@/shared/ui/popover";
 import { fieldCls } from "@/shared/ui/field";
 import { Switch } from "@/shared/ui/switch";
-import { Toasts } from "@/shared/ui/toasts";
+import { ConflictBar, StatusToasts } from "@/shared/ui/status";
 import { visible } from "./lib/colors";
 import { runChecks, type Check } from "./lib/checks";
 import { allEvents, castOf, deleteEvent, findEvent, isFiltered, orderBetween, threadsOf } from "./lib/model";
 import { nav, reveal } from "./lib/nav";
 import type { GroupBy } from "./lib/types";
-import { chapterIdFor, useTimeline } from "./state";
+import { chapterIdFor, useTimeline, useTimelinePick } from "./state";
 import { Board } from "./components/Board";
 import { ChecksButton } from "./components/Checks";
 import { FindButton } from "./components/Find";
 import { Inspector } from "./components/Inspector";
 import { Sidebar } from "./components/Sidebar";
+import { UNKNOWN_COLOR } from "@/shared/lib/colors";
 
 const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
 
 export default function Timeline() {
-  const s = useTimeline();
+  const s = useTimelinePick("loc", "loaded", "doc", "error", "notice", "conflicts", "zoom", "canUndo", "canRedo", "filter", "folded", "selection",
+    "edit", "select", "undo", "redo", "setZoom", "setFilter", "toggleFolded", "resolveConflict", "setError", "setNotice");
   const { loc, loaded, doc, error, notice, conflicts, zoom, canUndo, canRedo } = s;
 
   useEffect(() => useTimeline.getState().init(), []);
@@ -84,10 +86,7 @@ export default function Timeline() {
       <Sidebar />
 
       <main className="relative flex min-h-0 flex-col">
-        <Toasts className="bottom-6" items={[
-          ...(error ? [{ id: "error", kind: "error" as const, text: error, onDismiss: () => s.setError(null) }] : []),
-          ...(notice ? [{ id: "notice", kind: "notice" as const, text: notice, onDismiss: () => s.setNotice(null) }] : []),
-        ]} />
+        <StatusToasts className="bottom-6" error={error} notice={notice} setError={s.setError} setNotice={s.setNotice} />
 
         <div className="flex h-12 shrink-0 items-center gap-1 border-b border-ink-line/60 px-4">
           <IconButton icon={Undo2} label="Undo" kbd="Ctrl+Z" onClick={s.undo} disabled={!canUndo} />
@@ -113,19 +112,7 @@ export default function Timeline() {
           )}
         </AnimatePresence>
 
-        {conflicts.length > 0 && (
-          <div className="shrink-0 space-y-2 border-b-2 border-coral bg-coral/10 px-4 py-2.5">
-            {conflicts.map(c => (
-              <div key={c.path} className="flex flex-wrap items-center gap-x-4 gap-y-1 font-talk text-base">
-                <span className="min-w-0 flex-1 text-paper">
-                  {c.label} was {c.theirs === null ? "deleted" : "changed"} by someone else (git pull?) while you had unsaved changes in it.
-                </span>
-                <Button size="sm" onClick={() => s.resolveConflict(c.path, "theirs")}>Load theirs</Button>
-                <Button size="sm" variant="danger" onClick={() => s.resolveConflict(c.path, "mine")}>Keep mine (overwrite)</Button>
-              </div>
-            ))}
-          </div>
-        )}
+        <ConflictBar items={conflicts.map(c => ({ key: c.path, label: c.label, deleted: c.theirs === null }))} onResolve={s.resolveConflict} />
 
         {loaded ? (
           doc.chapters.length ? <Board flagged={flagged} /> : (
@@ -156,7 +143,7 @@ const GROUPS: { id: GroupBy; label: string }[] = [
 
 /** Lanes by character, by thread, or a single one. */
 function GroupSwitch() {
-  const { filter, setFilter } = useTimeline();
+  const { filter, setFilter } = useTimelinePick("filter", "setFilter");
   return (
     <div role="radiogroup" aria-label="Lanes" className="flex items-center gap-0.5 rounded-md bg-ink-2 p-0.5">
       <span className="px-1.5 font-sans text-sm text-taupe">Lanes</span>
@@ -176,7 +163,7 @@ function GroupSwitch() {
 
 /** Shown while focusing: what's picked, dim or hide the rest, save as a view. */
 function FocusBar() {
-  const { doc, filter, viewId, setFilter, edit } = useTimeline();
+  const { doc, filter, viewId, setFilter, edit } = useTimelinePick("doc", "filter", "viewId", "setFilter", "edit");
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   // while the bar closes, keep showing what was focused instead of an empty bar
@@ -185,8 +172,8 @@ function FocusBar() {
   const shown = last.current;
   const cast = castOf(doc.roster, doc.chapters), threads = threadsOf(doc.threads, doc.chapters);
   const chips = [
-    ...shown.chars.map(id => ({ key: "chars" as const, id, name: cast.find(c => c.id === id)?.name ?? id, color: cast.find(c => c.id === id)?.color ?? "#9a8f86" })),
-    ...shown.threads.map(id => ({ key: "threads" as const, id, name: threads.find(t => t.id === id)?.name ?? id, color: threads.find(t => t.id === id)?.color ?? "#9a8f86" })),
+    ...shown.chars.map(id => ({ key: "chars" as const, id, name: cast.find(c => c.id === id)?.name ?? id, color: cast.find(c => c.id === id)?.color ?? UNKNOWN_COLOR })),
+    ...shown.threads.map(id => ({ key: "threads" as const, id, name: threads.find(t => t.id === id)?.name ?? id, color: threads.find(t => t.id === id)?.color ?? UNKNOWN_COLOR })),
   ];
   const view = doc.views.find(v => v.id === viewId);
   const save = () => {

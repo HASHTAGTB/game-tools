@@ -1,28 +1,10 @@
+import { parseStmt, type Stmt } from "./statements";
+
 /** Reading and writing the Ren'Py in a scene file, one line at a time. Pure: no editor, no React.
  *
  *  A scene file is Markdown: YAML frontmatter, then one ```python block that holds the script (a `label`, then its
  *  lines indented under it). Text outside the block (notes, to-dos) is left alone. Only the statements the team uses
  *  are understood; anything else is `code` and stays editable as it is. */
-
-export type Stmt =
-  | { kind: "scene"; image: string; with?: string }
-  | { kind: "show"; tag: string; attrs: string[]; at?: string; with?: string }
-  | { kind: "hide"; tag: string; with?: string }
-  | { kind: "with"; with: string }
-  | { kind: "play"; channel: string; name: string; fadein?: string }
-  | { kind: "stop"; channel: string; fadeout?: string }
-  | { kind: "pov"; who: string }
-  | { kind: "date"; date: string; time?: string }
-  | { kind: "time"; time: string }
-  | { kind: "jump"; target: string }
-  | { kind: "call"; target: string }
-  | { kind: "pause"; seconds?: string }
-  /** the game's phone: `phone on` (with a chat: shown on it), `phone off`, `phone open sakari` */
-  | { kind: "phone"; action: "on" | "off" | "open"; thread?: string }
-  | { kind: "return" }
-  | { kind: "menu" };
-
-export type StmtKind = Stmt["kind"];
 
 export type Line =
   | { kind: "blank" }
@@ -83,64 +65,18 @@ function stringEnd(s: string, at: number): number {
   return -1;
 }
 
-/** Text as it goes between quotes: `"` and `\` escaped, `[` doubled (Ren'Py reads `[x]` as a variable). */
-export const escapeText = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\[/g, "[[");
-/** The other way: what a string's text means. */
-export const unescapeText = (s: string) => s.replace(/\\(.)|\[\[/g, (_, c) => c ?? "[");
-
 // ---------------------------------------------------------------- lines
 
-const WORD = /^[A-Za-z_]\w*$/;
-const indentOf = (s: string) => s.length - s.trimStart().length;
+export const indentOf = (s: string) => s.length - s.trimStart().length;
+export const pad = (n: number) => " ".repeat(n);
 
-/** Split `with x` off the end of a statement's words. */
-function takeWith(words: string[]): string | undefined {
-  const i = words.lastIndexOf("with");
-  if (i < 0 || i !== words.length - 2) return undefined;
-  const w = words[i + 1];
-  words.splice(i);
-  return w;
+/** A chat on the phone: `chat sakari:` (written live) or `chat log sakari:` (already there when the phone opens). */
+const CHAT_HEAD = /^\s*chat\s+(log\s+)?(.+?)\s*:\s*$/;
+export function chatHead(line: string): { thread: string; log: boolean } | null {
+  const m = CHAT_HEAD.exec(line);
+  return m && { thread: m[2], log: !!m[1] };
 }
-
-/** Split `at x` off (x may be `sprite(xalign=0.3, zoom=0.4)`, with spaces). */
-function takeAt(rest: string): { rest: string; at?: string } {
-  const m = /\s+at\s+(\w+(?:\([^)]*\))?)\s*(?=$|\s+with\s)/.exec(rest);
-  if (!m) return { rest };
-  return { rest: rest.slice(0, m.index) + rest.slice(m.index + m[0].length), at: m[1] };
-}
-
-function parseStmt(body: string): Stmt | null {
-  let m: RegExpExecArray | null;
-  if ((m = /^\$\s*narrator\s*=\s*(\w+)_n\s*$/.exec(body))) return { kind: "pov", who: m[1] };
-  if ((m = /^\$\s*set_date\(\s*"([^"]*)"\s*(?:,\s*"([^"]*)"\s*)?\)\s*$/.exec(body))) return { kind: "date", date: m[1], time: m[2] };
-  if ((m = /^time\s+(\d{1,2}:\d{2})\s*$/.exec(body))) return { kind: "time", time: m[1] };
-  if ((m = /^(jump|call)(?:\s+(\w+))?\s*$/.exec(body))) return { kind: m[1] as "jump" | "call", target: m[2] ?? "" };
-  if (/^menu\s*:\s*$/.test(body)) return { kind: "menu" };
-  if ((m = /^phone\s+(on|off)(?:\s+(\S.*?))?\s*$/.exec(body))) return { kind: "phone", action: m[1] as "on" | "off", thread: m[2] };
-  if (/^return\s*$/.test(body)) return { kind: "return" };
-  if ((m = /^phone\s+open\s+(\S.*?)\s*$/.exec(body))) return { kind: "phone", action: "open", thread: m[1] };
-  if ((m = /^pause(?:\s+([\d.]+))?\s*$/.exec(body))) return { kind: "pause", seconds: m[1] };
-  if ((m = /^with\s+(\w+)\s*$/.exec(body))) return { kind: "with", with: m[1] };
-  if ((m = /^play\s+(\w+)\s+(\w+)(?:\s+fadein\s+([\d.]+))?\s*$/.exec(body))) return { kind: "play", channel: m[1], name: m[2], fadein: m[3] };
-  if ((m = /^stop\s+(\w+)(?:\s+fadeout\s+([\d.]+))?\s*$/.exec(body))) return { kind: "stop", channel: m[1], fadeout: m[2] };
-
-  const [head, ...restWords] = body.split(/\s+/);
-  if (head === "scene") {
-    const words = [...restWords];
-    const w = takeWith(words);
-    if (!words.length || !words.every(x => WORD.test(x))) return null;
-    return { kind: "scene", image: words.join(" "), with: w };
-  }
-  if (head === "show" || head === "hide") {
-    const { rest, at } = takeAt(" " + restWords.join(" "));
-    const words = rest.trim().split(/\s+/).filter(Boolean);
-    const w = takeWith(words);
-    if (!words.length || !words.every(x => WORD.test(x)) || words[0] === "screen") return null;
-    if (head === "hide") return words.length === 1 && !at ? { kind: "hide", tag: words[0], with: w } : null;
-    return { kind: "show", tag: words[0], attrs: words.slice(1), at, with: w };
-  }
-  return null;
-}
+export const formatChatHead = (thread: string, log: boolean) => `chat ${log ? "log " : ""}${thread}:`;
 
 export function parseLine(text: string): Line {
   const t = text.trim();
@@ -173,43 +109,8 @@ export function parseLine(text: string): Line {
 
 // ---------------------------------------------------------------- writing
 
-const pad = (n: number) => " ".repeat(n);
-
-export function formatStmt(s: Stmt): string {
-  const w = (x?: string) => (x ? ` with ${x}` : "");
-  switch (s.kind) {
-    case "scene": return `scene ${s.image}${w(s.with)}`;
-    case "show": return `show ${[s.tag, ...s.attrs].join(" ")}${s.at ? ` at ${s.at}` : ""}${w(s.with)}`;
-    case "hide": return `hide ${s.tag}${w(s.with)}`;
-    case "with": return `with ${s.with}`;
-    case "play": return `play ${s.channel} ${s.name}${s.fadein ? ` fadein ${s.fadein}` : ""}`;
-    case "stop": return `stop ${s.channel}${s.fadeout ? ` fadeout ${s.fadeout}` : ""}`;
-    case "pov": return `$ narrator = ${s.who}_n`;
-    case "date": return `$ set_date("${s.date}"${s.time ? `, "${s.time}"` : ""})`;
-    case "time": return `time ${s.time}`;
-    case "jump": case "call": return `${s.kind} ${s.target}`.trimEnd();
-    case "pause": return s.seconds ? `pause ${s.seconds}` : "pause";
-    case "phone": return `phone ${s.action}${s.thread ? " " + s.thread : ""}`;
-    case "return": return "return";
-    case "menu": return "menu:";
-  }
-}
-
-export const sayLine = (indent: number, who: string | null, text = "", tail = "") =>
-  `${pad(indent)}${who ? who + " " : ""}"${text}"${tail ? " " + tail : ""}`;
-
-/** The indent of a script line written below line `n` (index into `lines`): like the line above, one step deeper
- *  after a line that opens a block (`menu:`, `chat x:`, a choice). */
-export function indentAfter(lines: string[], n: number, layout: Layout): number {
-  for (let i = n; i >= 0; i--) {
-    if (!inScript(layout, i + 1)) break;
-    const s = lines[i];
-    if (!s.trim()) continue;
-    const ind = indentOf(s);
-    return s.trimEnd().endsWith(":") && !s.trim().startsWith("#") ? ind + 4 : ind;
-  }
-  return 4;
-}
+/** `who "raw" tail`, without the indent (`raw`: the text as it goes between the quotes). */
+export const sayText = (who: string | null, raw = "", tail = "") => `${who ? who + " " : ""}"${raw}"${tail ? " " + tail : ""}`;
 
 // ---------------------------------------------------------------- the whole script
 
@@ -221,12 +122,6 @@ export function parseScript(text: string) {
   return { lines, layout, parsed };
 }
 export type Script = ReturnType<typeof parseScript>;
-
-/** The label the scene starts with. */
-export const labelOf = (s: Script) => {
-  for (const p of s.parsed) if (p?.kind === "label") return p.name;
-  return null;
-};
 
 /** The ```python block's lines, as a .rpy file. */
 export function exportRpy(text: string): string {

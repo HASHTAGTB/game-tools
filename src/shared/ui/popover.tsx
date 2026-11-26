@@ -3,6 +3,7 @@ import type { ReactElement, ReactNode } from "react";
 import { cn } from "@/shared/lib/utils";
 import { Rule } from "./heading";
 import { AnimatePresence, m, pop } from "./motion";
+import { DEFAULT_COLOR } from "@/shared/lib/colors";
 
 /** The raised surface every popup uses (popovers, menus, dialogs, suggestion lists, toasts): one step lighter than the
  *  page, a thin line and a soft shadow. Rows inside highlight with `bg-paper/8`, since ink-3 is the surface itself. */
@@ -10,7 +11,7 @@ export const surfaceCls = "rounded-lg border border-ink-line bg-ink-3 font-talk 
 export const popoverCls = cn(surfaceCls, "p-4 outline-hidden origin-(--transform-origin)");
 
 /** Popup heading: the title over the short colored rule, like a Section. */
-export function PopoverTitle({ children, color = "#c4956a", className }: { children: ReactNode; color?: string; className?: string }) {
+export function PopoverTitle({ children, color = DEFAULT_COLOR, className }: { children: ReactNode; color?: string; className?: string }) {
   return (
     <div className={cn("mb-3", className)}>
       <p className="font-sans text-lg text-paper">{children}</p>

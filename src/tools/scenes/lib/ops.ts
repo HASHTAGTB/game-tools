@@ -1,19 +1,18 @@
-import { undo, redo } from "@codemirror/commands";
 import type { ChangeSpec } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import type { Box, Place } from "./blocks";
-import { escapeText, formatStmt, parseLine, type Stmt } from "./script";
+import { scriptField } from "./editorState";
+import { freeLabel, jumpsTo, labelLines, labelName } from "./labels";
+import { escapeText } from "./renpyText";
+import { indentOf, pad, parseLine, sayText } from "./script";
+import { formatStmt, type Stmt } from "./statements";
 
 /** What the box view does to the file. Each edit rewrites only the lines of the boxes involved, through the (hidden)
  *  CodeMirror view that holds the document, so Ctrl+Z, the checks and the source view all keep working. Functions
  *  that change where lines are return the line the cursor should go to. */
 
-const pad = (n: number) => " ".repeat(n);
 const ev = (view: EditorView, changes: ChangeSpec, userEvent: string) => view.dispatch({ changes, userEvent });
 const isBlank = (view: EditorView, n: number) => n >= 1 && n <= view.state.doc.lines && !view.state.doc.line(n).text.trim();
-
-/** `who "raw" tail` without the indent. */
-export const sayText = (who: string | null, raw: string, tail = "") => `${who ? who + " " : ""}"${raw}"${tail ? " " + tail : ""}`;
 
 /** Put `lines` (without the place's indent; nested lines carry their own extra indent) at `place`. Returns the line
  *  number of the first one. */
@@ -44,17 +43,6 @@ export function removeBox(view: EditorView, b: Box): number {
   return Math.max(1, b.from - 1);
 }
 
-/** The lines of label `name` (its label line up to the next label or the end of the block), or null. */
-function labelLines(view: EditorView, name: string): [number, number] | null {
-  const { doc } = view.state;
-  const head = new RegExp(`^label\\s+${name}\\b`);
-  let n = 1;
-  while (n <= doc.lines && !head.test(doc.line(n).text)) n++;
-  if (n > doc.lines) return null;
-  let e = n + 1;
-  while (e <= doc.lines && !/^label\s/.test(doc.line(e).text) && !/^```/.test(doc.line(e).text)) e++;
-  return [n, e - 1];
-}
 /** Lines `a`–`b` as a change that takes their line breaks too. */
 const wholeLines = (view: EditorView, a: number, b: number) => {
   const { doc } = view.state;
@@ -69,15 +57,15 @@ function removeMenu(view: EditorView, b: Extract<Box, { kind: "menu" }>) {
   gone.push([a, b.to]);
   const routes = (m: Extract<Box, { kind: "menu" }>) => {
     for (const o of m.options) {
-      if (o.route) { const r = labelLines(view, o.route); if (r) gone.push(r); }
+      if (o.route) { const r = labelLines(doc, o.route); if (r) gone.push(r); }
       for (const x of o.boxes) if (x.kind === "menu") routes(x);
     }
   };
   routes(b);
   // where the routes met: unwrapped, unless something else still jumps there
   if (b.cont) {
-    const name = /label\s+(\w+)/.exec(doc.line(b.cont).text)?.[1];
-    const to = name && new RegExp(`^[^#]*\\b(jump|call)\\s+${name}\\b`);
+    const name = labelName(doc.line(b.cont).text);
+    const to = name && jumpsTo(name);
     let used = false;
     if (to) for (let n = 1; n <= doc.lines && !used; n++) used = to.test(doc.line(n).text) && !gone.some(([x, y]) => n >= x && n <= y);
     if (!used) gone.push([b.cont, b.cont]);
@@ -140,15 +128,13 @@ export function joinSays(view: EditorView, prev: Extract<Box, { kind: "say" }>, 
 
 export function setStmt(view: EditorView, line: number, stmt: Stmt) {
   const L = view.state.doc.line(line);
-  const ind = L.text.length - L.text.trimStart().length;
-  const text = pad(ind) + formatStmt(stmt);
+  const text = pad(indentOf(L.text)) + formatStmt(stmt);
   if (text !== L.text) ev(view, { from: L.from, to: L.to, insert: text }, "input.stmt");
 }
 
 export function setNote(view: EditorView, line: number, text: string) {
   const L = view.state.doc.line(line);
-  const ind = L.text.length - L.text.trimStart().length;
-  const next = pad(ind) + "# " + text.replace(/\n/g, " ");
+  const next = pad(indentOf(L.text)) + "# " + text.replace(/\n/g, " ");
   if (next !== L.text) ev(view, { from: L.from, to: L.to, insert: next }, "input.type");
 }
 
@@ -169,7 +155,7 @@ export function setRaw(view: EditorView, from: number, to: number, indent: numbe
 /** The lines `from`–`to` as a raw box edits them: without their shared indent. */
 export function rawText(view: EditorView, from: number, to: number, indent: number) {
   const out: string[] = [];
-  for (let n = from; n <= to; n++) { const t = view.state.doc.line(n).text; out.push(t.slice(Math.min(indent, t.length - t.trimStart().length))); }
+  for (let n = from; n <= to; n++) { const t = view.state.doc.line(n).text; out.push(t.slice(Math.min(indent, indentOf(t)))); }
   return out.join("\n");
 }
 
@@ -191,8 +177,7 @@ export const optionLine = (text: string, cond = "") => `"${escapeText(text)}"${c
 /** A new choice at scene level, with two routes as labels of this file that meet again under a third. The rest of
  *  the section continues under that third label, so nothing after the choice changes. */
 export function insertChoice(view: EditorView, place: Place, base: string, taken: Set<string>): number {
-  const name = (kind: string) => { let k = 1; while (taken.has(`${kind}_${base}_${k}`)) k++; const n = `${kind}_${base}_${k}`; taken.add(n); return n; };
-  const o1 = name("opt"), o2 = name("opt"), con = name("con");
+  const o1 = freeLabel("opt", base, taken), o2 = freeLabel("opt", base, taken), con = freeLabel("con", base, taken);
   const L = view.state.doc.line(place.after);
   const lines = [
     pad(place.indent) + "menu:",
@@ -222,9 +207,8 @@ export function addOption(view: EditorView, menu: Extract<Box, { kind: "menu" }>
   const end = doc.line(menu.to);
   const routed = menu.options.find(o => o.route && o.hiddenJump);
   if (routed && menu.cont) {
-    let k = 1; while (taken.has(`opt_${base}_${k}`)) k++;
-    const label = `opt_${base}_${k}`;
-    const conName = /label\s+(\w+)/.exec(doc.line(menu.cont).text)?.[1] ?? "";
+    const label = freeLabel("opt", base, taken);
+    const conName = labelName(doc.line(menu.cont).text) ?? "";
     const C = doc.line(menu.cont);
     view.dispatch({
       changes: [
@@ -244,11 +228,10 @@ export function routeOption(view: EditorView, menu: Extract<Box, { kind: "menu" 
   const o = menu.options[index];
   if (!menu.cont || !o.boxes[0]) return;
   const { doc } = view.state;
-  let k = 1; while (taken.has(`opt_${base}_${k}`)) k++;
-  const label = `opt_${base}_${k}`;
+  const label = freeLabel("opt", base, taken);
   const J = doc.line(o.boxes[0].from), C = doc.line(menu.cont);
-  const conName = /label\s+(\w+)/.exec(C.text)?.[1] ?? "";
-  const ind = J.text.length - J.text.trimStart().length;
+  const conName = labelName(C.text) ?? "";
+  const ind = indentOf(J.text);
   view.dispatch({
     changes: [
       { from: J.from, to: J.to, insert: `${pad(ind)}jump ${label}` },
@@ -271,13 +254,19 @@ export function removeOption(view: EditorView, menu: Extract<Box, { kind: "menu"
   changes.push({ from: doc.line(o.line - 1).to, to: doc.line(optEnd).to });
   if (o.route) {
     // the route label's lines, up to the next label
-    const r = labelLines(view, o.route);
+    const r = labelLines(doc, o.route);
     if (r) changes.push(wholeLines(view, ...r));
   }
   view.dispatch({ changes, userEvent: "delete.box" });
 }
 
-// ---------------------------------------------------------------- history
+// ---------------------------------------------------------------- the scene's label
 
-export const undoBox = (view: EditorView) => undo(view);
-export const redoBox = (view: EditorView) => redo(view);
+/** Rename the scene's label (the first one). */
+export function setLabel(view: EditorView, name: string) {
+  const at = view.state.field(scriptField).parsed.findIndex(p => p?.kind === "label");
+  if (at < 0 || !/^\w+$/.test(name)) return;
+  const L = view.state.doc.line(at + 1);
+  const m = /^(\s*label\s+)(\w+)/.exec(L.text)!;
+  if (m[2] !== name) ev(view, { from: L.from + m[1].length, to: L.from + m[0].length, insert: name }, "input.info");
+}

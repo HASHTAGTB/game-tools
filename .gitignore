@@ -5,3 +5,4 @@ dist/
 characters/
 config.json
 scripts/wiki_cache/
+tsconfig.tsbuildinfo

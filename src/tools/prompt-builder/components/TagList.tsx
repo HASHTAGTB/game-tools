@@ -9,6 +9,7 @@ import { cn, fmtCount } from "@/shared/lib/utils";
 import { MenuMarker, MenuRule } from "@/shared/ui/menu";
 import { AnimatePresence, fade, m, pop, spring } from "@/shared/ui/motion";
 import { surfaceCls } from "@/shared/ui/popover";
+import { DEFAULT_COLOR } from "@/shared/lib/colors";
 
 type Props = {
   listKey: ListKey;
@@ -26,7 +27,7 @@ type Props = {
  *  type + Enter/comma to add (Danbooru autocomplete) · paste comma lists · drag chips within/between lists
  *  (hold Ctrl to copy instead of move) · click = turn off/on · Ctrl+scroll = weight · double-click = edit text
  *  · Backspace in the empty input removes the last chip. */
-export function TagList({ listKey, tags, onChange, db, active, onActivate, placeholder = "Add tags…", accent = "#c4956a" }: Props) {
+export function TagList({ listKey, tags, onChange, db, active, onActivate, placeholder = "Add tags…", accent = DEFAULT_COLOR }: Props) {
   const [text, setText] = useState("");
   const [hi, setHi] = useState(0);
   const [focused, setFocused] = useState(false);

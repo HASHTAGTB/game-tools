@@ -4,6 +4,8 @@ Browser app (React + Base UI + Motion + Tailwind, served by Vite) with tools for
 
 * **Prompt Builder**: build Danbooru-tag character prompts. Pick a variation per category, switch extras on or off, and copy the finished prompt into any UI.
 * **Timeline**: the story's chronology. Chapters of ordered columns, events on character or thread lanes, storylines (threads), saved views and arrows between events.
+* **Notes**: the vault's Markdown notes (all but the scenes) in a CodeMirror editor with Obsidian-style Live Preview.
+* **Scenes**: the vault's scene files as a screenplay (boxes for lines, stage cards, choices, chats), saved as the Ren'Py the game runs.
 
 ```
 pnpm install
@@ -24,7 +26,12 @@ server/         local file API, only in `pnpm dev`
 
 To add a tool, add it to `TOOLS` in `src/app/tools.ts` and give it a `toolRoute(...)` in `src/app/router.tsx`. Each tool's code is loaded only when it's opened. Mark a tool `needsServer` if it can't work on GitHub Pages; it then shows a notice there instead.
 
-Storage: tools read and write through `src/shared/lib/workspace.ts` (`readJson`, `writeJson`, `listFiles`, …) with paths relative to the data folder, and keep their own files under `toolDir("<tool>")` (`.game-tools/<tool>/`). Other paths (the vault's scene files) are only read. The data folder panel is `WorkspaceLocation` in `src/shared/ui/`.
+Storage: tools read and write through `src/shared/lib/workspace.ts` (`readJson`, `writeJson`, `listFiles`, …) with paths relative to the data folder, and keep their own files under `toolDir("<tool>")` (`.game-tools/<tool>/`). The data folder panel is `WorkspaceLocation` in `src/shared/ui/`.
+
+Keeping a tool's data and its files in step:
+* `src/shared/lib/fileSync.ts` (`createFileSync`): for data that is a set of JSON files (Timeline, Prompt Builder). The tool says what its data is as files; it writes what changed, deletes what went, picks up files changed elsewhere every few seconds and turns changes on both sides into conflicts (`ConflictBar` in `src/shared/ui/status.tsx`).
+* `src/shared/vault/store.ts` (`createVaultStore`): one open Markdown file at a time plus the folder tree (Notes, Scenes); `useDocEditor` there is the CodeMirror editor both use.
+* `src/shared/lib/toolState.ts`: the plumbing every store shares (one write at a time, notices that go away, settings for this browser, saving when the tab is hidden).
 
 UI kit (`src/shared/ui/`): `Section` (title over a colored rule, actions that appear on hover), `IconButton` (icon only, so it always takes a `label` for its tooltip), `Tooltip`, `Popover`, `Confirm`, `Switch`, `CollapsiblePanel`, `SearchField` and `Toasts`.
 

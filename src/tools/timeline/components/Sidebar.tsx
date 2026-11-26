@@ -9,13 +9,14 @@ import { WorkspaceLocation } from "@/shared/ui/workspace-location";
 import { visible } from "../lib/colors";
 import { castOf, isFiltered, threadsOf } from "../lib/model";
 import { nav } from "../lib/nav";
-import { useTimeline } from "../state";
+import { useTimelinePick } from "../state";
+import { DEFAULT_COLOR } from "@/shared/lib/colors";
 
 const PALETTE = ["#e86a92", "#7fae5a", "#e0b44a", "#6c8fd9", "#d9603b", "#4fb39b", "#c98bd6", "#c4956a"];
 
 /** Like the game's menu: a vertical rule with text links. Characters and threads are focus toggles; the pencil edits. */
 export function Sidebar() {
-  const { doc, loc, filter, viewId, selection, select, edit, reload, flush, revert, setFilter } = useTimeline();
+  const { doc, loc, filter, viewId, selection, select, edit, reload, flush, revert, setFilter } = useTimelinePick("doc", "loc", "filter", "viewId", "selection", "select", "edit", "reload", "flush", "revert", "setFilter");
   const cast = castOf(doc.roster, doc.chapters);
   const threads = threadsOf(doc.threads, doc.chapters);
   const toggle = (key: "chars" | "threads", id: string) =>
@@ -47,7 +48,7 @@ export function Sidebar() {
           </MenuRule>
           <AddField className="ml-4 mt-2" placeholder="New character" onAdd={n => {
             const id = uniqueId(n, cast.map(c => c.id));
-            edit(d => { d.roster.push({ id, name: n, color: "#c4956a" }); });
+            edit(d => { d.roster.push({ id, name: n, color: DEFAULT_COLOR }); });
             select({ kind: "char", id });
           }} />
         </MenuGroup>

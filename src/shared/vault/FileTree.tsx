@@ -2,7 +2,7 @@ import { AlertDialog } from "@base-ui/react/alert-dialog";
 import { ContextMenu } from "@base-ui/react/context-menu";
 import { ChevronRight, Copy, FilePlus, FolderPlus, Pencil, Trash2, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
-import { cn } from "@/shared/lib/utils";
+import { cn, isUnder } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { IconButton } from "@/shared/ui/icon-button";
 import { AnimatePresence, m, spring } from "@/shared/ui/motion";
@@ -18,7 +18,6 @@ const INDENT = 14;
 const BASE = 12;
 /** Where the menu rule of rows at `depth` runs (each folder level has its own, under its folder's chevron). */
 const ruleX = (depth: number) => BASE - INDENT + 6 + depth * INDENT;
-const under = (path: string, dir: string) => path === dir || path.startsWith(dir + "/");
 
 /** The row (or the empty space: the vault itself) an event happened on. */
 function nodeAt(target: EventTarget | null): Node | null {
@@ -48,7 +47,7 @@ export function FileTree() {
   const root = tree[rootDir];
   if (!ready) return null;
 
-  const canDrop = (dir: string) => !!dragging && dir !== parentOf(dragging) && !under(dir, dragging);
+  const canDrop = (dir: string) => !!dragging && dir !== parentOf(dragging) && !isUnder(dir, dragging);
   const onDragOver = (e: DragEvent) => {
     const n = nodeAt(e.target);
     const dir = dropDirOf(n, rootDir);
@@ -148,7 +147,7 @@ function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete 
   return (
     <li role="treeitem" aria-expanded={isDir ? isOpen : undefined} aria-selected={active}>
       <div data-path={node.path} data-kind={node.kind}
-        className={cn("group/row relative flex h-7 items-center pr-2", dragging && under(node.path, dragging) && "opacity-40")}>
+        className={cn("group/row relative flex h-7 items-center pr-2", dragging && isUnder(node.path, dragging) && "opacity-40")}>
         {active && (
           // the signature moment: the marker slides along the menu rules to the note that was just opened
           <MenuMarker layoutId={`${useStore.config.noun}-marker`} className="z-10" style={{ left: ruleX(depth) - 1 }} />

@@ -1,5 +1,6 @@
 import type { Character, ListKey } from "./types";
 import { isOff, stripOff } from "./tag";
+import { DEFAULT_COLOR } from "@/shared/lib/colors";
 
 /** Comparison key for a prompt tag: "(Cute_Face:1.2)" -> "cute face", "hat \(symbol\)" -> "hat (symbol)". */
 export function tagKey(raw: string) {
@@ -62,4 +63,4 @@ export const sameKey = (a: ListKey, b: ListKey) => JSON.stringify(a) === JSON.st
 
 /** Hex color per segment color index (-1 = toggle, 0 = general, 1.. = categories), from the game's cast palette. */
 const PALETTE = ["#7ec8e3", "#e3d07e", "#8ce3a0", "#e38c7e", "#7e9be3", "#e37eb8", "#7ec8b0"];
-export const segColor = (i: number) => (i < 0 ? "#c4956a" : i === 0 ? "#d9d0c7" : PALETTE[(i - 1) % PALETTE.length]);
+export const segColor = (i: number) => (i < 0 ? DEFAULT_COLOR : i === 0 ? "#d9d0c7" : PALETTE[(i - 1) % PALETTE.length]);

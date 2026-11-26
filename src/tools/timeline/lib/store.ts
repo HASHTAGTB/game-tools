@@ -1,20 +1,16 @@
-import { ROSTER_PATH, type Roster } from "@/shared/lib/roster";
-import { joinPath, listFiles, readFile, removeFile, statFile, toolDir, writeText } from "@/shared/lib/workspace";
+import { DEFAULT_COLOR } from "@/shared/lib/colors";
+import { normalizeRoster, ROSTER_PATH } from "@/shared/lib/roster";
+import { strings } from "@/shared/lib/utils";
+import { joinPath, jsonText, listFiles, toolDir } from "@/shared/lib/workspace";
+import type { Doc } from "./model";
 import type { Chapter, Filter, GroupBy, StoryEvent, Thread, View } from "./types";
 
 export const CHAPTERS_DIR = joinPath(toolDir("timeline"), "chapters");
 export const THREADS_PATH = joinPath(toolDir("timeline"), "threads.json");
 export const VIEWS_PATH = joinPath(toolDir("timeline"), "views.json");
 export const chapterPath = (id: string) => joinPath(CHAPTERS_DIR, `${id}.json`);
-export { ROSTER_PATH };
-
-/** A file as last read or written: its text (to skip saves that change nothing) and change time (to notice when
- *  someone else changed it, e.g. a git pull). */
-export type Known = { text: string; mtime: number };
-
-export const toText = (data: unknown) => JSON.stringify(data, null, 2) + "\n";
-
-const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+/** The chapter id a file name stands for. */
+export const chapterIdOf = (path: string) => path.split("/").pop()!.replace(/\.json$/, "");
 
 function normalizeEvent(e: Partial<StoryEvent>): StoryEvent {
   return {
@@ -48,7 +44,7 @@ export function normalizeChapter(raw: Partial<Chapter>, fallbackId: string): Cha
 }
 
 export function normalizeThreads(raw: { threads?: Partial<Thread>[] } | null): Thread[] {
-  return (raw?.threads ?? []).filter(t => t?.id).map(t => ({ id: t.id!, name: t.name || t.id!, color: t.color || "#c4956a", ...(t.notes ? { notes: t.notes } : {}) }));
+  return (raw?.threads ?? []).filter(t => t?.id).map(t => ({ id: t.id!, name: t.name || t.id!, color: t.color || DEFAULT_COLOR, ...(t.notes ? { notes: t.notes } : {}) }));
 }
 
 const GROUPS: GroupBy[] = ["chars", "threads", "none"];
@@ -65,36 +61,42 @@ export function normalizeViews(raw: { views?: Partial<View>[] } | null): View[] 
   return (raw?.views ?? []).filter(v => v?.id).map(v => ({ id: v.id!, name: v.name || v.id!, ...normalizeFilter(v) }));
 }
 
-export function normalizeRoster(raw: Partial<Roster> | null): Roster {
-  return { version: 1, characters: (raw?.characters ?? []).filter(c => c?.id).map(c => ({ ...c, name: c.name || c.id, color: c.color || "#9a8f86" })) };
-}
-
-/** Reads every chapter file. Files that don't parse are reported, not dropped silently. */
-export async function loadChapters() {
-  const chapters: Chapter[] = [];
-  const known = new Map<string, Known>();
-  const broken: string[] = [];
-  for (const path of await listFiles(CHAPTERS_DIR, ".json")) {
-    const f = await readFile(path);
-    if (!f) continue;
-    try {
-      chapters.push(normalizeChapter(JSON.parse(f.text), path.split("/").pop()!.replace(/\.json$/, "")));
-      known.set(path, f);
-    } catch {
-      broken.push(path);
-    }
-  }
-  return { chapters: sortChapters(chapters), known, broken };
-}
-
 export const sortChapters = (cs: Chapter[]) => [...cs].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
 
-/** A shared JSON file that may not exist yet. */
-export async function loadShared<T>(path: string, normalize: (raw: never) => T) {
-  const f = await readFile(path);
-  let data = normalize(null as never);
-  if (f) try { data = normalize(JSON.parse(f.text) as never); } catch { /* left alone */ }
-  return { data, known: f };
+// ---------------------------------------------------------------- the doc as files
+
+export const EMPTY_DOC: Doc = { chapters: [], roster: [], threads: [], views: [] };
+
+/** Every file the doc is made of, as path → text. */
+export function docFiles(d: Doc): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const c of d.chapters) out.set(chapterPath(c.id), jsonText(c));
+  out.set(ROSTER_PATH, jsonText({ version: 1, characters: d.roster }));
+  out.set(THREADS_PATH, jsonText({ version: 1, threads: d.threads }));
+  out.set(VIEWS_PATH, jsonText({ version: 1, views: d.views }));
+  return out;
 }
 
-export { readFile, removeFile, statFile, writeText, listFiles };
+const SHARED_BLANK = docFiles(EMPTY_DOC);
+/** The shared lists are written once they hold something (or their file exists). */
+export const blankFile = (path: string) => SHARED_BLANK.get(path);
+
+/** Files of the doc in the data folder (the shared ones may not exist yet). */
+export const docPaths = async () => [...await listFiles(CHAPTERS_DIR, ".json"), ...SHARED_BLANK.keys()];
+
+/** The doc with one file's contents put in (null: the file was deleted; a shared list then stays as it is, and is
+ *  written again with the next edit). Throws if it doesn't parse. */
+export function applyFile(d: Doc, path: string, text: string | null): Doc {
+  const data = text === null ? null : JSON.parse(text);
+  if (path === ROSTER_PATH) return data ? { ...d, roster: normalizeRoster(data).characters } : d;
+  if (path === THREADS_PATH) return data ? { ...d, threads: normalizeThreads(data) } : d;
+  if (path === VIEWS_PATH) return data ? { ...d, views: normalizeViews(data) } : d;
+  const rest = d.chapters.filter(c => chapterPath(c.id) !== path);
+  if (!data) return { ...d, chapters: rest };
+  return { ...d, chapters: sortChapters([...rest, normalizeChapter(data, chapterIdOf(path))]) };
+}
+
+/** What a file is called in messages. */
+export const fileLabel = (d: Doc, path: string) =>
+  path === ROSTER_PATH ? "The character list" : path === THREADS_PATH ? "The thread list" : path === VIEWS_PATH ? "The saved views"
+    : `Chapter "${d.chapters.find(c => chapterPath(c.id) === path)?.name ?? chapterIdOf(path)}"`;

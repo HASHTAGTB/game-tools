@@ -1,8 +1,10 @@
+import { useMemo } from "react";
 import { create } from "zustand";
+import { useGame } from "@/shared/lib/game";
 import { readFile } from "@/shared/lib/workspace";
 import { SCENES_DIR } from "@/shared/vault/places";
 import { createVaultStore } from "@/shared/vault/store";
-import { readInfo } from "./lib/frontmatter";
+import { labelsIn } from "./lib/labels";
 import { parseScript, sceneTemplate } from "./lib/script";
 
 /** The scene files (CANON/03_Story/02_Scenes), on the same store as the Notes tool. */
@@ -13,55 +15,61 @@ export const useScenes = createVaultStore({
   template: sceneTemplate,
 });
 
-type SceneFacts = { labels: string[]; owner: string };
-/** The open scene's facts from before the index was read */
-const pending: Record<string, SceneFacts> = {};
-
-/** What the other scenes hold that this one refers to: their labels (for jumps) and owners (for suggestions). Read
- *  once per story folder, a few files at a time (on GitHub each is a request); the open scene keeps its own entry up
- *  to date. Picking another folder reads it again; a read that fails is tried again on the next `load`. */
-let loading: Promise<void> | null = null;
-/** the story folder `loading` reads */
-let loadedFor: string | null = null;
+/** Which story folder the scenes come from (another one: the index is read again). */
 const locKey = () => { const l = useScenes.getState().loc; return l ? `${l.kind}:${l.label}:${l.name ?? ""}` : ""; };
-export const useSceneIndex = create<{
-  /** null until read */
-  files: Record<string, SceneFacts> | null;
+
+type SceneIndex = {
+  /** Every scene's labels (for jumps), by path; null until read. */
+  files: Record<string, string[]> | null;
+  /** The story folder `files` is (being) read from, and the read in progress. */
+  readFor: string | null;
+  reading: Promise<void> | null;
+  /** The open scene's labels from before the index was read. */
+  pending: Record<string, string[]>;
+  /** Read every scene once per story folder, a few files at a time (on GitHub each is a request). A read that fails
+   *  is tried again on the next call. */
   load: () => Promise<void>;
+  /** The open scene changed: keep its entry up to date. */
   update: (path: string, text: string) => void;
-}>()((set, get) => ({
-  files: null,
+};
+
+export const useSceneIndex = create<SceneIndex>()((set, get) => ({
+  files: null, readFor: null, reading: null, pending: {},
+
   load: () => {
     const key = locKey();
-    if (key !== loadedFor) {
-      if (loadedFor !== null) { loading = null; set({ files: null }); for (const k in pending) delete pending[k]; }
-      loadedFor = key;
-    }
-    return (loading ??= (async () => {
+    if (key !== get().readFor) set(s => ({ readFor: key, reading: null, files: null, pending: s.readFor === null ? s.pending : {} }));
+    const reading = get().reading ?? (async () => {
       await useScenes.getState().loadIndex();
       const paths = useScenes.getState().index ?? [];
-      const files: Record<string, SceneFacts> = {};
+      const files: Record<string, string[]> = {};
       for (let i = 0; i < paths.length; i += 8) {
         await Promise.all(paths.slice(i, i + 8).map(async p => {
           const f = await readFile(p).catch(() => null);
-          if (f) files[p] = factsOf(f.text);
+          if (f) files[p] = labelsOf(f.text);
         }));
       }
       if (locKey() !== key) return;   // another folder was picked meanwhile
-      set(s => ({ files: { ...files, ...pending, ...(s.files ?? {}) } }));
-    })().catch(e => { if (loadedFor === key) loading = null; throw e; }));
+      set(s => ({ files: { ...files, ...s.pending, ...(s.files ?? {}) } }));
+    })().catch(e => { if (get().readFor === key) set({ reading: null }); throw e; });
+    set({ reading });
+    return reading;
   },
+
   update: (path, text) => {
-    const facts = factsOf(text);
-    const files = get().files;
-    if (!files) { pending[path] = facts; return; }
-    const old = files[path];
-    if (old && old.owner === facts.owner && old.labels.join() === facts.labels.join()) return;
-    set({ files: { ...files, [path]: facts } });
+    const labels = labelsOf(text);
+    const { files } = get();
+    if (!files) return set(s => ({ pending: { ...s.pending, [path]: labels } }));
+    if (files[path]?.join() === labels.join()) return;
+    set({ files: { ...files, [path]: labels } });
   },
 }));
 
-function factsOf(text: string): SceneFacts {
-  const s = parseScript(text);
-  return { labels: s.parsed.flatMap(p => (p?.kind === "label" ? [p.name] : [])), owner: readInfo(text)?.owner ?? "" };
+const labelsOf = (text: string) => [...labelsIn(parseScript(text))];
+
+/** The labels jumps can go to: every scene's and the game's own (null while the scenes are being read). */
+export function useKnownLabels(): Set<string> | null {
+  const files = useSceneIndex(i => i.files);
+  const manifest = useGame(g => g.manifest);
+  return useMemo(() => (files ? new Set([...Object.values(files).flat(), ...(manifest?.labels ?? [])]) : null), [files, manifest]);
 }

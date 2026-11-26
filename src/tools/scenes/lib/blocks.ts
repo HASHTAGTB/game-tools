@@ -1,4 +1,6 @@
-import { inScript, type Line, type Script, type Stmt } from "./script";
+import { jumpsTo } from "./labels";
+import { chatHead, inScript, type Line, type Script } from "./script";
+import type { Stmt } from "./statements";
 
 /** The script as boxes, for the box view. Pure: reads the parsed lines, writes nothing.
  *
@@ -61,7 +63,7 @@ export type Tree = {
 
 type N = { n: number; p: Exclude<Line, { kind: "blank" }>; kids: N[]; last: number };
 
-const indentOf = (p: Line) => ("indent" in p ? p.indent : 0);
+const lineIndent = (p: Line) => ("indent" in p ? p.indent : 0);
 
 /** The script's lines as a tree by indentation. A comment belongs with the line after it (its own indent is often
  *  off), so it never ends a block. */
@@ -75,7 +77,7 @@ function nest(s: Script): N[] {
     const p = parsed[n - 1];
     if (!p || p.kind === "blank") continue;
     if (p.kind === "comment") eff[n] = Math.max(next, 0);
-    else { eff[n] = indentOf(p); next = eff[n]; }
+    else { eff[n] = lineIndent(p); next = eff[n]; }
   }
   // (a comment after the last real line gets 0: it ends up in the last label, see buildTree)
   const out: N[] = [];
@@ -92,8 +94,6 @@ function nest(s: Script): N[] {
   }
   return out;
 }
-
-const CHAT = /^\s*chat\s+(log\s+)?(.+?)\s*:\s*$/;
 
 /** The lines (first line of a box) to show as Ren'Py though they could be drawn otherwise. */
 type Raw = ReadonlySet<number>;
@@ -115,12 +115,12 @@ function toBox(node: N, s: Script, r: Raw): Box {
 }
 
 const rawOf = ({ n, p, last }: N, s: Script): Extract<Box, { kind: "raw" }> =>
-  ({ kind: "raw", from: n, to: last, indent: indentOf(p), bad: p.kind === "bad" ? p.reason : null, src: s.lines.slice(n - 1, last).join("\n"), as: null });
+  ({ kind: "raw", from: n, to: last, indent: lineIndent(p), bad: p.kind === "bad" ? p.reason : null, src: s.lines.slice(n - 1, last).join("\n"), as: null });
 
 function drawn(node: N, s: Script, r: Raw): Box {
   const { n, p, kids, last } = node;
   const text = s.lines[n - 1];
-  const indent = indentOf(p);
+  const indent = lineIndent(p);
   const raw = () => rawOf(node, s);
   switch (p.kind) {
     case "say":
@@ -133,11 +133,11 @@ function drawn(node: N, s: Script, r: Raw): Box {
       if (kids.length) return raw();
       return { kind: "stmt", from: n, to: n, indent, stmt: p.stmt };
     case "code": {
-      const m = CHAT.exec(text);
-      if (m && kids.length) {
+      const head = chatHead(text);
+      if (head && kids.length) {
         const items = toBoxes(kids, s, r);
-        const ind = indentOf(kids[0].p);
-        return { kind: "chat", from: n, to: last, indent, thread: m[2], log: !!m[1], items,
+        const ind = lineIndent(kids[0].p);
+        return { kind: "chat", from: n, to: last, indent, thread: head.thread, log: head.log, items,
           body: { after: n, indent: ind, tight: true, level: false, chat: true } };
       }
       return raw();
@@ -155,14 +155,14 @@ function menuBox(node: N, s: Script, r: Raw): Box {
       const text = s.lines[k.n - 1];
       const after = text.slice(k.p.to + 1).replace(/\s*#.*$/, "").trim().replace(/:$/, "").trim();
       const boxes = toBoxes(k.kids, s, r);
-      const ind = k.kids.length ? indentOf(k.kids[0].p) : k.p.indent + 4;
+      const ind = k.kids.length ? lineIndent(k.kids[0].p) : k.p.indent + 4;
       options.push({
         line: k.n, indent: k.p.indent, raw: text.slice(k.p.from, k.p.to), cond: after, boxes, route: null, hiddenJump: null,
         start: { after: k.n, indent: ind, tight: true, level: false, chat: false }, tight: true,
       });
     } else caption.push(toBox(k, s, r));   // the menu's caption line, or anything else under it
   }
-  return { kind: "menu", from: node.n, to: node.last, indent: indentOf(node.p), caption, options, cont: null };
+  return { kind: "menu", from: node.n, to: node.last, indent: lineIndent(node.p), caption, options, cont: null };
 }
 
 /** The place right after `b`, in a list laid out like `list`. A choice whose routes meet again continues at that label. */
@@ -182,7 +182,7 @@ export function buildTree(s: Script, raw: ReadonlySet<number> = new Set()): Tree
   for (; i < top.length; i++) {
     const node = top[i];
     if (node.p.kind === "label") {
-      const ind = node.kids.length ? indentOf(node.kids[0].p) : 4;
+      const ind = node.kids.length ? lineIndent(node.kids[0].p) : 4;
       sections.push({
         name: node.p.name, line: node.n, order: sections.length, boxes: toBoxes(node.kids, s, r),
         place: { after: node.n, indent: ind, tight: true, level: true, chat: false },
@@ -251,7 +251,7 @@ export function buildTree(s: Script, raw: ReadonlySet<number> = new Set()): Tree
   const extra = sections.filter(x => !used.has(x.name));
   for (const x of extra) resolve(x.boxes);
   for (const x of extra) {
-    const to = new RegExp(`^[^#]*\\b(jump|call)\\s+${x.name}\\b`);
+    const to = jumpsTo(x.name);
     x.reached = s.lines.some((l, k) => inScript(s.layout, k + 1) && to.test(l));
   }
   return { pre, scene, extra, empty };
@@ -265,6 +265,3 @@ export function* allBoxes(list: Box[]): Generator<Box> {
     if (b.kind === "chat") yield* allBoxes(b.items);
   }
 }
-
-/** The labels a file already has, for making new unique ones. */
-export const labelsIn = (s: Script) => new Set(s.parsed.flatMap(p => (p?.kind === "label" ? [p.name] : [])));

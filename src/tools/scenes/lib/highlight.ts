@@ -1,3 +1,5 @@
+import { tokenize } from "./renpyText";
+
 /** Ren'Py syntax colouring, for the raw boxes and the source view. Pure: lines in, coloured spans out.
  *
  *  Works line by line, the way Ren'Py reads a script: a line starts with a statement (`show`, `jump`, `$`, a speaker
@@ -118,25 +120,20 @@ function line(text: string, start: number, mode: "renpy" | "py", whoColor: (id: 
   return out;
 }
 
-/** A string from the quote at `at`, with its tags, interpolations and escapes; returns where it ends. */
+/** A string from the quote at `at`, its text tags, variables and escapes read the way the box view reads them
+ *  (renpyText.ts); returns where it ends. */
 function string(text: string, at: number, push: (from: number, to: number, tok: Tok) => void): number {
   const q = text[at];
-  const triple = text.startsWith(q.repeat(3), at);
-  const close = triple ? q.repeat(3) : q;
-  let i = at + close.length;
-  let run = at;
-  const flush = (to: number) => { push(run, to, "str"); };
-  while (i < text.length) {
-    if (text.startsWith(close, i)) { i += close.length; flush(i); return i; }
-    const c = text[i];
-    if (c === "\\" && i + 1 < text.length) { flush(i); push(i, i + 2, "esc"); i += 2; run = i; continue; }
-    if ((c === "{" || c === "[") && text[i + 1] === c) { i += 2; continue; }   // `{{` / `[[`: a plain brace
-    if (c === "{" || c === "[") {
-      const end = text.indexOf(c === "{" ? "}" : "]", i);
-      if (end > 0) { flush(i); push(i, end + 1, c === "{" ? "tag" : "var"); i = end + 1; run = i; continue; }
-    }
-    i++;
+  const close = text.startsWith(q.repeat(3), at) ? q.repeat(3) : q;
+  const inner = at + close.length;
+  let end = inner;
+  while (end < text.length && !text.startsWith(close, end)) end += text[end] === "\\" && end + 1 < text.length ? 2 : 1;
+  const stop = Math.min(text.length, end + close.length);
+  push(at, inner, "str");
+  for (const t of tokenize(text.slice(inner, end))) {
+    const tok: Tok = t.kind === "tag" ? "tag" : t.kind === "var" ? "var" : t.kind === "escape" && text[inner + t.from] === "\\" ? "esc" : "str";
+    push(inner + t.from, inner + t.to, tok);
   }
-  flush(text.length);
-  return text.length;
+  push(end, stop, "str");
+  return stop;
 }

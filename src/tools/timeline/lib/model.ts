@@ -1,5 +1,6 @@
 import type { RosterCharacter } from "@/shared/lib/roster";
 import type { Chapter, Filter, StoryEvent, Thread, View } from "./types";
+import { UNKNOWN_COLOR } from "@/shared/lib/colors";
 
 export type Doc = { chapters: Chapter[]; roster: RosterCharacter[]; threads: Thread[]; views: View[] };
 
@@ -20,7 +21,7 @@ export function castOf(roster: RosterCharacter[], chapters: Chapter[]): RosterCh
   const known = new Set(roster.map(c => c.id));
   const extra: RosterCharacter[] = [];
   for (const { event } of allEvents(chapters)) for (const c of event.chars) {
-    if (!known.has(c)) { known.add(c); extra.push({ id: c, name: c, color: "#9a8f86" }); }
+    if (!known.has(c)) { known.add(c); extra.push({ id: c, name: c, color: UNKNOWN_COLOR }); }
   }
   return [...roster, ...extra];
 }
@@ -29,7 +30,7 @@ export function threadsOf(threads: Thread[], chapters: Chapter[]): Thread[] {
   const known = new Set(threads.map(t => t.id));
   const extra: Thread[] = [];
   for (const { event } of allEvents(chapters)) for (const t of event.threads) {
-    if (!known.has(t)) { known.add(t); extra.push({ id: t, name: t, color: "#9a8f86" }); }
+    if (!known.has(t)) { known.add(t); extra.push({ id: t, name: t, color: UNKNOWN_COLOR }); }
   }
   return [...threads, ...extra];
 }

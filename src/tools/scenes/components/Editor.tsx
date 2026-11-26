@@ -1,15 +1,17 @@
 import { useEffect, useRef } from "react";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { forceLinting, linter, type Diagnostic } from "@codemirror/lint";
-import { search, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorState, type Extension } from "@codemirror/state";
-import { drawSelection, EditorView, keymap } from "@codemirror/view";
+import { forceLinting, linter } from "@codemirror/lint";
+import { Compartment, type Extension } from "@codemirror/state";
+import { EditorView, keymap } from "@codemirror/view";
 import { useGame } from "@/shared/lib/game";
 import { AnchoredMenuHost } from "@/shared/ui/anchored-menu";
-import { editorTheme, MONO } from "@/shared/vault/editorTheme";
+import { MONO } from "@/shared/vault/editorTheme";
+import { useDocEditor } from "@/shared/vault/useDocEditor";
 import type { Mode } from "@/shared/vault/store";
-import { checkScene, type CheckContext, type Problem } from "../lib/checks";
-import { lineIds, manifestField, scriptField, setManifest, sourceView } from "../lib/scriptView";
+import { checkScene } from "../lib/checks";
+import { tabKeys } from "../lib/codeEditor";
+import { checkInputField, lineIds, manifestField, scriptField, setCheckInput, setManifest } from "../lib/editorState";
+import { toDiagnostic } from "../lib/fixes";
+import { sourceView } from "../lib/sourceView";
 import { useSceneUi } from "../lib/ui";
 import { BoxView } from "./boxes/BoxView";
 import { MarkPopup } from "./boxes/TextTools";
@@ -45,51 +47,8 @@ const lintTheme = EditorView.theme({
 
 // ---------------------------------------------------------------- checks
 
-/** What the checks need besides the text; the page sets it. */
-export const checkContext: { current: Omit<CheckContext, "manifest"> } = { current: { labels: null, fileName: "" } };
-
-/** A problem's place and fix, for CodeMirror's lint. */
-export function toDiagnostic(state: EditorState, p: Problem): Diagnostic {
-  const L = state.doc.line(Math.min(p.line, state.doc.lines));
-  const from = L.from + (p.from ?? 0), to = L.from + (p.to ?? L.length);
-  return {
-    from, to, severity: p.severity, message: p.message,
-    actions: p.fix ? [{ name: p.fix.label, apply: (view) => applyFix(view, p) }] : undefined,
-  };
-}
-
-/** The problem's line is still what was checked (the checks run a moment after typing, so line numbers can be old). */
-const fresh = (view: EditorView, p: Problem) => {
-  const { doc } = view.state;
-  return p.line >= 1 && p.line <= doc.lines && (p.fix?.was === undefined || doc.line(p.line).text === p.fix.was);
-};
-
-export function applyFix(view: EditorView, p: Problem) {
-  if (!p.fix) return;
-  const at = p.fix.at ?? "line";
-  if (at !== "end" && !fresh(view, p)) { forceLinting(view); return; }
-  const { doc } = view.state;
-  const L = doc.line(p.line);
-  const change = at === "line" ? { from: L.from, to: L.to, insert: p.fix.text }
-    : at === "after" ? { from: L.to, insert: "\n" + p.fix.text }
-    : { from: doc.length, insert: (doc.length && !doc.sliceString(doc.length - 1).endsWith("\n") ? "\n" : "") + p.fix.text };
-  view.dispatch({ changes: change, userEvent: "input.fix" });
-  view.focus();
-}
-
-/** Every problem's line fix at once (one undo step). */
-export function applyFixes(view: EditorView, problems: Problem[]) {
-  const { doc } = view.state;
-  const seen = new Set<number>();
-  const changes = problems.filter(p => p.fix && (p.fix.at ?? "line") === "line" && fresh(view, p) && !seen.has(p.line) && seen.add(p.line))
-    .map(p => { const L = doc.line(p.line); return { from: L.from, to: L.to, insert: p.fix!.text }; });
-  if (changes.length) view.dispatch({ changes, userEvent: "input.fix" });
-  else forceLinting(view);
-  view.focus();
-}
-
 const checks = linter(view => {
-  const problems = checkScene(view.state.field(scriptField), { ...checkContext.current, manifest: view.state.field(manifestField) });
+  const problems = checkScene(view.state.field(scriptField), { ...view.state.field(checkInputField), manifest: view.state.field(manifestField) });
   useSceneUi.setState({ problems });
   return problems.map(p => toDiagnostic(view.state, p));
 }, { delay: 350 });
@@ -98,7 +57,7 @@ const checks = linter(view => {
 
 const MODES: Record<Mode, Extension> = {
   live: [],
-  source: [sourceView, sourceTheme, keymap.of([{ key: "Tab", run: v => { v.dispatch(v.state.replaceSelection("    ")); return true; } }])],
+  source: [sourceView, sourceTheme, keymap.of(tabKeys)],
 };
 const modeSlot = new Compartment();
 
@@ -113,68 +72,39 @@ type Props = {
   onChange: (text: string) => void;
 };
 
-const states = new Map<string, EditorState>();
-
 export function Editor({ path, text, rev, mode, labels, fileName, onChange }: Props) {
-  checkContext.current = { labels, fileName };
-  const host = useRef<HTMLDivElement>(null);
-  const view = useRef<EditorView | null>(null);
-  const change = useRef(onChange);
-  change.current = onChange;
   const modeNow = useRef(mode);
   modeNow.current = mode;
-  const current = useRef(path);
+  const checkInput = useRef({ labels, fileName });
+  checkInput.current = { labels, fileName };
   const manifest = useGame(s => s.manifest);
 
-  const extensions = useRef<Extension[]>([
-    history(),
-    drawSelection(),
-    search({ top: true }),
-    EditorView.lineWrapping,
-    manifestField,
-    scriptField,
-    lineIds,
-    modeSlot.of(MODES[mode]),
-    editorTheme,
-    lintTheme,
-    checks,
-    keymap.of([...searchKeymap, ...historyKeymap, ...defaultKeymap]),
-    EditorView.updateListener.of(u => {
-      if (u.docChanged) change.current(u.state.doc.toString());
-      if (u.docChanged || u.selectionSet || u.focusChanged) {
-        const line = u.state.doc.lineAt(u.state.selection.main.head).number;
-        const was = useSceneUi.getState();
-        useSceneUi.setState({
-          script: u.state.field(scriptField), line, head: u.state.selection.main.head,
-          moved: line !== was.line ? was.moved + 1 : was.moved,
-        });
-      }
-    }),
-  ]).current;
-
-  useEffect(() => {
-    const v = new EditorView({ parent: host.current! });
-    view.current = v;
-    return () => {
-      states.set(current.current, v.state);
-      v.destroy();
-      view.current = null;
-      useSceneUi.setState({ view: null, script: null, menu: null, focus: null, openCard: null, problems: [] });
-    };
-  }, []);
-
-  // another scene, or this one reloaded: keep the outgoing state (undo, cursor), load the incoming one
-  useEffect(() => {
-    const v = view.current!;
-    if (current.current !== path) states.set(current.current, v.state);
-    current.current = path;
-    const cached = states.get(path);
-    v.setState(cached && cached.doc.toString() === text ? cached : EditorState.create({ doc: text, extensions }));
-    v.dispatch({ effects: [modeSlot.reconfigure(MODES[modeNow.current]), setManifest.of(useGame.getState().manifest)] });
-    const s = v.state;
-    useSceneUi.setState({ view: v, script: s.field(scriptField), line: s.doc.lineAt(s.selection.main.head).number, head: s.selection.main.head, menu: null, focus: null, openCard: null, tabs: {}, rawIds: new Set() });
-    if (modeNow.current === "source") v.focus();
-  }, [path, rev]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const { host, view } = useDocEditor({
+    tool: "scenes", path, text, rev, onChange,
+    extensions: [
+      manifestField,
+      scriptField,
+      lineIds,
+      checkInputField,
+      modeSlot.of(MODES[mode]),
+      lintTheme,
+      checks,
+      EditorView.updateListener.of(u => {
+        if (u.docChanged || u.selectionSet || u.focusChanged) {
+          const line = u.state.doc.lineAt(u.state.selection.main.head).number;
+          const was = useSceneUi.getState();
+          useSceneUi.setState({ script: u.state.field(scriptField), line, moved: line !== was.line ? was.moved + 1 : was.moved });
+        }
+      }),
+    ],
+    onLoad: v => {
+      v.dispatch({ effects: [modeSlot.reconfigure(MODES[modeNow.current]), setManifest.of(useGame.getState().manifest), setCheckInput.of(checkInput.current)] });
+      const s = v.state;
+      useSceneUi.setState({ view: v, script: s.field(scriptField), line: s.doc.lineAt(s.selection.main.head).number, menu: null, focus: null, openCard: null, tabs: {}, rawIds: new Set() });
+      if (modeNow.current === "source") v.focus();
+    },
+    onClose: () => useSceneUi.setState({ view: null, script: null, menu: null, focus: null, openCard: null, problems: [] }),
+  });
 
   useEffect(() => {
     const v = view.current;
@@ -182,9 +112,14 @@ export function Editor({ path, text, rev, mode, labels, fileName, onChange }: Pr
     v.dispatch({ effects: modeSlot.reconfigure(MODES[mode]), scrollIntoView: mode === "source" });
     if (mode === "source") v.focus();
     useSceneUi.setState({ menu: null, openCard: null });
-  }, [mode]);
-  useEffect(() => { view.current?.dispatch({ effects: setManifest.of(manifest) }); }, [manifest]);
-  useEffect(() => { if (view.current) forceLinting(view.current); }, [labels, manifest, fileName]);
+  }, [mode, view]);
+  useEffect(() => { view.current?.dispatch({ effects: setManifest.of(manifest) }); }, [manifest, view]);
+  useEffect(() => {
+    const v = view.current;
+    if (!v) return;
+    v.dispatch({ effects: setCheckInput.of({ labels, fileName }) });
+    forceLinting(v);
+  }, [labels, manifest, fileName, view]);
 
   const shown = useSceneUi(s => s.view);
   return (

@@ -1,17 +1,18 @@
 import { useEffect, useRef } from "react";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { indentWithTab } from "@codemirror/commands";
 import { markdownKeymap, markdownLanguage } from "@codemirror/lang-markdown";
 import { defineLanguageFacet, HighlightStyle, Language, syntaxHighlighting } from "@codemirror/language";
-import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorState, type Extension } from "@codemirror/state";
-import { drawSelection, EditorView, keymap, placeholder } from "@codemirror/view";
+import { highlightSelectionMatches } from "@codemirror/search";
+import { Compartment, type Extension } from "@codemirror/state";
+import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { styleTags, Tag, tags as t } from "@lezer/highlight";
 import type { MarkdownConfig, MarkdownParser } from "@lezer/markdown";
 import { formatTracker, publish, toggleInline } from "../lib/format";
 import { markdownView } from "../lib/livePreview";
 import { liveTables } from "../lib/tableEditor";
 import { AnchoredMenuHost } from "@/shared/ui/anchored-menu";
-import { editorTheme as theme, MONO } from "@/shared/vault/editorTheme";
+import { MONO } from "@/shared/vault/editorTheme";
+import { useDocEditor } from "@/shared/vault/useDocEditor";
 import type { Mode } from "../state";
 
 /** Markdown editor (CodeMirror 6, the editor Obsidian is built on), in Live Preview or Source mode. Either way the text
@@ -176,70 +177,48 @@ type Props = {
   onOpenLink: (target: string) => void;
 };
 
-const states = new Map<string, EditorState>();
-
 export function Editor({ path, text, rev, mode, onChange, onOpenLink }: Props) {
-  const host = useRef<HTMLDivElement>(null);
-  const view = useRef<EditorView | null>(null);
-  const change = useRef(onChange);
-  change.current = onChange;
   const follow = useRef(onOpenLink);
   follow.current = onOpenLink;
   const modeNow = useRef(mode);
   modeNow.current = mode;
-  const current = useRef(path);
 
-  const extensions = useRef<Extension[]>([
-    history(),
-    drawSelection(),
-    search({ top: true }),
-    highlightSelectionMatches(),
-    EditorView.lineWrapping,
-    notesMarkdown,
-    modeSlot.of(MODES[mode]),
-    theme,
-    placeholder("Start writing…"),
-    keymap.of([
-      { key: "Mod-b", run: toggleInline("bold") },
-      { key: "Mod-i", run: toggleInline("italic") },
-      ...markdownKeymap, ...searchKeymap, ...historyKeymap, ...defaultKeymap, indentWithTab,
-    ]),
-    // rendered links open on a click; any link (also in Source mode) on Ctrl/Cmd+click
-    EditorView.domEventHandlers({
-      mousedown: e => {
-        const el = e.button === 0 && (e.target as HTMLElement).closest?.("[data-link]");
-        if (!el || !(e.ctrlKey || e.metaKey || el.classList.contains("cm-live-link"))) return false;
-        e.preventDefault();
-        const target = el.getAttribute("data-link")!;
-        if (el.getAttribute("data-kind") === "wiki") follow.current(target);
-        else if (external(target)) { if (safeUrl(target)) window.open(target.trim(), "_blank", "noopener"); }
-        else { try { follow.current(decodeURIComponent(target)); } catch { follow.current(target); } }
-        return true;
-      },
-    }),
-    EditorView.updateListener.of(u => { if (u.docChanged) change.current(u.state.doc.toString()); }),
-    formatTracker,
-  ]).current;
+  const { host, view } = useDocEditor({
+    tool: "notes", path, text, rev, onChange,
+    extensions: [
+      highlightSelectionMatches(),
+      notesMarkdown,
+      modeSlot.of(MODES[mode]),
+      placeholder("Start writing…"),
+      keymap.of([
+        { key: "Mod-b", run: toggleInline("bold") },
+        { key: "Mod-i", run: toggleInline("italic") },
+        ...markdownKeymap, indentWithTab,
+      ]),
+      // rendered links open on a click; any link (also in Source mode) on Ctrl/Cmd+click
+      EditorView.domEventHandlers({
+        mousedown: e => {
+          const el = e.button === 0 && (e.target as HTMLElement).closest?.("[data-link]");
+          if (!el || !(e.ctrlKey || e.metaKey || el.classList.contains("cm-live-link"))) return false;
+          e.preventDefault();
+          const target = el.getAttribute("data-link")!;
+          if (el.getAttribute("data-kind") === "wiki") follow.current(target);
+          else if (external(target)) { if (safeUrl(target)) window.open(target.trim(), "_blank", "noopener"); }
+          else { try { follow.current(decodeURIComponent(target)); } catch { follow.current(target); } }
+          return true;
+        },
+      }),
+      formatTracker,
+    ],
+    onLoad: v => {
+      v.dispatch({ effects: modeSlot.reconfigure(MODES[modeNow.current]) });   // a kept state may be in the other mode
+      publish(v);
+      v.focus();
+    },
+    onClose: () => publish(null),
+  });
 
-  useEffect(() => {
-    const v = new EditorView({ parent: host.current! });
-    view.current = v;
-    return () => { states.set(current.current, v.state); v.destroy(); view.current = null; publish(null); };
-  }, []);
-
-  // a different note, or this one reloaded: keep the outgoing note's state (undo, cursor), load the incoming one
-  useEffect(() => {
-    const v = view.current!;
-    if (current.current !== path) states.set(current.current, v.state);
-    current.current = path;
-    const cached = states.get(path);
-    v.setState(cached && cached.doc.toString() === text ? cached : EditorState.create({ doc: text, extensions }));
-    v.dispatch({ effects: modeSlot.reconfigure(MODES[modeNow.current]) });   // a kept state may be in the other mode
-    publish(v);
-    v.focus();
-  }, [path, rev]);   // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => { view.current?.dispatch({ effects: modeSlot.reconfigure(MODES[mode]) }); }, [mode]);
+  useEffect(() => { view.current?.dispatch({ effects: modeSlot.reconfigure(MODES[mode]) }); }, [mode, view]);
 
   return <><div ref={host} className="h-full min-h-0" /><AnchoredMenuHost /></>;
 }

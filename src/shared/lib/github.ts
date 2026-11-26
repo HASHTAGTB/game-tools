@@ -1,3 +1,5 @@
+import { openDb, req } from "./idb";
+import { isUnder } from "./utils";
 import type { Entry, FileData } from "./workspace";
 
 /** The vault as a GitHub repository, used through GitHub's REST API, so the static build works in any browser.
@@ -35,15 +37,9 @@ export class GitHubError extends Error {
 // ---------------------------------------------------------------- this browser's copy (config + pending changes)
 
 let dbp: Promise<IDBDatabase> | null = null;
-const db = () => dbp ??= new Promise((resolve, reject) => {
-  const r = indexedDB.open("game-tools-github", 1);
-  r.onupgradeneeded = () => r.result.createObjectStore("kv");
-  r.onsuccess = () => resolve(r.result);
-  r.onerror = () => reject(r.error);
-});
+const db = () => dbp ??= openDb("game-tools-github", d => d.createObjectStore("kv"));
 async function kv<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest): Promise<T> {
-  const s = (await db()).transaction("kv", mode).objectStore("kv");
-  return new Promise((resolve, reject) => { const r = fn(s); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+  return req(fn((await db()).transaction("kv", mode).objectStore("kv")));
 }
 
 let config: GitHubConfig | null | undefined;
@@ -122,7 +118,7 @@ async function call<T>(method: string, path: string, body?: unknown, headers: Re
   return { data, res };
 }
 
-const repoPath = (c: GitHubConfig) => `/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}`;
+const repoPath = (c: { owner: string; repo: string }) => `/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}`;
 
 async function cfg() {
   const c = await getConfig();
@@ -138,8 +134,9 @@ async function currentTree(force = false): Promise<Tree> {
   return (treeLoad = p);
 }
 
-/** Put in a tree known some other way (right after a commit). Loads still running can no longer replace it. */
-function setTree(t: Tree) {
+/** Put in a tree known some other way (right after a commit), or none (another token, disconnected). Loads still
+ *  running can no longer replace it. */
+function setTree(t: Tree | null) {
   treeGen++;
   treeLoad = null;
   tree = t;
@@ -214,6 +211,9 @@ async function blobSha(text: string) {
 /** A blob sha as a change time (48 bits fit a JS number exactly). */
 const shaTime = (sha: string) => parseInt(sha.slice(0, 12), 16);
 
+/** The repo's version a change to `path` starts from: the one its pending change started from, else the current one. */
+const baseOf = (ps: Map<string, Pending>, t: Tree, path: string) => (ps.has(path) ? ps.get(path)!.base : t.files.get(path) ?? null);
+
 // ---------------------------------------------------------------- the Store
 
 export const github = {
@@ -228,7 +228,7 @@ export const github = {
   async write(path: string, text: string): Promise<number> {
     const [ps, t, sha] = await Promise.all([pend(), currentTree(), blobSha(text)]);
     const remote = t.files.get(path) ?? null;
-    const base = ps.has(path) ? ps.get(path)!.base : remote;
+    const base = baseOf(ps, t, path);
     blobs.set(sha, text);
     if (sha === remote && base === remote) {
       // back to what the repo has: nothing to save
@@ -243,10 +243,7 @@ export const github = {
 
   async remove(path: string): Promise<void> {
     const [ps, t] = await Promise.all([pend(), currentTree()]);
-    const remote = t.files.get(path) ?? null;
-    const base = ps.has(path) ? ps.get(path)!.base : remote;
-    if (base === null && remote === null) ps.delete(path);   // only ever existed here
-    else ps.set(path, { text: null, base, mtime: 0 });
+    markRemoved(ps, t, path);
     changed();
   },
 
@@ -282,7 +279,7 @@ export const github = {
       const dest = to + path.slice(from.length);
       const p = ps.get(path);
       const remote = t.files.get(dest) ?? null;
-      const base = ps.has(dest) ? ps.get(dest)!.base : remote;
+      const base = baseOf(ps, t, dest);
       const sha = p ? p.sha : t.files.get(path)!;
       if (p && !p.sha) ps.set(dest, { text: p.text, base, mtime: p.mtime });
       else if (sha === remote && base === remote) ps.delete(dest);   // moved back to where the repo has it
@@ -303,7 +300,7 @@ export const github = {
 
 /** Files (not deleted) that are `path` itself or inside the folder `path`. */
 function filesUnder(ps: Map<string, Pending>, t: Tree, path: string) {
-  const inside = (f: string) => f === path || f.startsWith(path + "/");
+  const inside = (f: string) => isUnder(f, path);
   const out = new Set<string>();
   for (const f of t.files.keys()) if (inside(f) && !(ps.has(f) && deleted(ps.get(f)!))) out.add(f);
   for (const [f, p] of ps) if (inside(f) && !deleted(p)) out.add(f);
@@ -311,9 +308,8 @@ function filesUnder(ps: Map<string, Pending>, t: Tree, path: string) {
 }
 
 function markRemoved(ps: Map<string, Pending>, t: Tree, path: string) {
-  const remote = t.files.get(path) ?? null;
-  const base = ps.has(path) ? ps.get(path)!.base : remote;
-  if (base === null && remote === null) ps.delete(path);   // only ever existed here
+  const base = baseOf(ps, t, path);
+  if (base === null && !t.files.has(path)) ps.delete(path);   // only ever existed here
   else ps.set(path, { text: null, base, mtime: 0 });
 }
 
@@ -323,16 +319,14 @@ function markRemoved(ps: Map<string, Pending>, t: Tree, path: string) {
 export async function connect(token: string): Promise<GitHubConfig> {
   token = token.trim();
   if (!token) throw new Error("Paste a token.");
-  const path = `/repos/${REPO.owner}/${REPO.repo}`;
+  const path = repoPath(REPO);
   const repo = (await call<{ permissions?: { push?: boolean } }>("GET", path, undefined, {}, token)).data;
   if (!repo.permissions?.push) throw new Error("This token can read the repository but not write to it. Give it Contents: Read and write.");
   await call("GET", `${path}/git/ref/heads/${REPO.branch}`, undefined, {}, token);
   const login = (await call<{ login: string }>("GET", "/user", undefined, {}, token).catch(() => null))?.data.login ?? "";
   config = { ...REPO, token, login };
   await kv("readwrite", s => s.put(config, "config"));
-  treeGen++;
-  treeLoad = null;
-  tree = null;
+  setTree(null);
   return config;
 }
 
@@ -340,9 +334,7 @@ export async function connect(token: string): Promise<GitHubConfig> {
 export async function disconnect() {
   await discard();
   config = null;
-  treeGen++;
-  treeLoad = null;
-  tree = null;
+  setTree(null);
   await kv("readwrite", s => s.delete("config"));
 }
 

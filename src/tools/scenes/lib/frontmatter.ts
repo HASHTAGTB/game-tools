@@ -5,8 +5,7 @@
 export type SceneInfo = {
   status: string;
   renpy: string;
-  owner: string;
-  /** Note names from the `[[links]]` ("Rin Takeda") */
+  /** Note names from the `[[links]]` ("Rin Takeda"): who can speak in the scene (lib/cast.ts) */
   characters: string[];
 };
 
@@ -79,7 +78,6 @@ export function readInfo(text: string): SceneInfo | null {
   return {
     status: str(get("status")),
     renpy: str(get("renpy")),
-    owner: str(get("owner")),
     characters: (Array.isArray(chars) ? chars : chars ? [chars] : []).map(linkName),
   };
 }

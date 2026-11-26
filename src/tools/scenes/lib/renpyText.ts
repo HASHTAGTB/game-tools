@@ -1,5 +1,7 @@
-/** The text of a line as Ren'Py reads it: plain text, text tags (`{w=0.5}`, `{i}…{/i}`) and escapes (`\"`). Offsets
- *  are into the raw text between the quotes. */
+/** The text between a line's quotes, as Ren'Py reads it: plain text, text tags (`{w=0.5}`, `{i}…{/i}`), variables
+ *  (`[name]`) and escapes (`\"`, `\n`, `{{`, `[[`). The one codec for it: the parser, the box view's text, the
+ *  checks, the colouring and the preview all read it through `tokenize`, and plain text goes in through `escapeText`.
+ *  Offsets are into the raw text between the quotes. */
 
 export type Tok =
   | { kind: "text"; from: number; to: number; text: string }
@@ -53,11 +55,16 @@ export function tokenize(raw: string): Tok[] {
   return out;
 }
 
+/** Plain text as it goes between quotes: `\` and `"` escaped, `{` and `[` doubled (else Ren'Py reads them as a
+ *  text tag or a variable), line breaks as `\n`. */
+export const escapeText = (s: string) =>
+  s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\{/g, "{{").replace(/\[/g, "[[").replace(/\n/g, "\\n");
+
+/** The other way: what the text between the quotes says (tags and variables kept as they're written). */
+export const unescapeText = (raw: string) => tokenize(raw).map(t => (t.kind === "tag" ? raw.slice(t.from, t.to) : t.text)).join("");
+
 /** Tags that come in pairs, `{i}…{/i}`. */
 export const PAIRED = new Set(["i", "b", "u", "s", "cps", "color", "size", "alpha", "font", "k", "a", "plain"]);
-
-/** The text as the player reads it (tags dropped). */
-export const plainText = (raw: string) => tokenize(raw).map(t => (t.kind === "tag" ? "" : t.text)).join("");
 
 // ---------------------------------------------------------------- the text crawl
 
@@ -70,6 +77,13 @@ export type Beat =
 
 /** Characters per second at Ren'Py's default text speed setting. */
 export const BASE_CPS = 40;
+
+/** How much faster a `{cps=…}` writes: `*0.5` → 0.5, `20` (characters per second) → 20 / 40. */
+export function factorOf(value: string | null) {
+  const v = value ?? "";
+  const f = v.startsWith("*") ? +v.slice(1) : +v / BASE_CPS;
+  return f > 0 ? f : 1;
+}
 
 export function beatsOf(raw: string): Beat[] {
   const out: Beat[] = [];
@@ -85,8 +99,7 @@ export function beatsOf(raw: string): Beat[] {
     if (name in style) { style[name as keyof Style] = !close; continue; }
     if (name === "cps") {
       if (close) speeds.pop();
-      else if (value?.startsWith("*")) speeds.push(+value.slice(1) || 1);
-      else if (value) speeds.push((+value || BASE_CPS) / BASE_CPS);
+      else if (value) speeds.push(factorOf(value));
       continue;
     }
     if (name === "w") out.push({ kind: "pause", seconds: value ? +value || 0.5 : 0.6, click: !value });

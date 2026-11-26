@@ -3,7 +3,6 @@ import { createContext, useContext, useLayoutEffect, useState, type RefObject } 
 import type { Manifest } from "@/shared/lib/game";
 import type { Box, Place } from "../../lib/blocks";
 import type { Problem } from "../../lib/checks";
-import { legible, who } from "../../lib/scriptView";
 import { EMPTY_STAGE, type Stage } from "../../lib/stage";
 
 /** What every box needs: the view that holds the file, the game's data, what's on stage at each line, who's in the
@@ -30,7 +29,8 @@ export type BoxCtx = {
 export const BoxContext = createContext<BoxCtx | null>(null);
 export const useBox = () => useContext(BoxContext)!;
 
-/** Hovered or focused: only then a box mounts its buttons (hundreds of boxes, each with a toolbar, would be slow). */
+/** Hovered or focused: only then a say box listens for the caret, so the top bar's text tools act on the box you're
+ *  in (the hover buttons themselves are always there, shown by CSS). */
 export function useHot() {
   const [hot, setHot] = useState(false);
   return {
@@ -50,10 +50,17 @@ export type ListLayout = Omit<Place, "after">;
 /** The stage just before line `n`. */
 export const stageBefore = (c: BoxCtx, n: number) => (n > 1 ? c.stages[n - 2] ?? EMPTY_STAGE : EMPTY_STAGE);
 
-/** Name and colours for the speaker column: the game's colour, and one that reads on ink. */
-export function speaker(c: BoxCtx, id: string) {
-  const w = who(c.manifest, id);
-  return { ...w, legible: legible(w.color) };
+/** A field's own value while you type in it, the file's otherwise: what you type is written to the file as you go,
+ *  and the field doesn't take the file's value back meanwhile (the caret would jump); undo and the source view show
+ *  in it once you leave it. */
+export function useDraft(fileValue: string) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return {
+    value: draft ?? fileValue,
+    onChange: (v: string) => setDraft(v),
+    onFocus: () => setDraft(fileValue),
+    onBlur: () => setDraft(null),
+  };
 }
 
 /** The problems on a box's lines (for nested boxes: only the lines the box itself draws). */

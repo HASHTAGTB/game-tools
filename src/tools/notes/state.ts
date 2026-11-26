@@ -1,4 +1,5 @@
-import { isUnder, sceneHref, SCENES_DIR } from "@/shared/vault/places";
+import { isUnder } from "@/shared/lib/utils";
+import { sceneHref, SCENES_DIR } from "@/shared/vault/places";
 import { createVaultStore } from "@/shared/vault/store";
 
 export type { Mode } from "@/shared/vault/store";

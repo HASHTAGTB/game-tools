@@ -7,12 +7,14 @@ import { useMemo, useState, type CSSProperties, type KeyboardEvent } from "react
 import { cn } from "@/shared/lib/utils";
 import { AnimatePresence, m as motion, pop } from "@/shared/ui/motion";
 import { popoverCls } from "@/shared/ui/popover";
-import { insertAt, insertChoice, removeBox, sayText, setRaw, setSpeaker } from "../../lib/ops";
-import { formatStmt, type Stmt } from "../../lib/script";
+import { insertAt, insertChoice, removeBox, setRaw, setSpeaker } from "../../lib/ops";
+import { chatHead, sayText } from "../../lib/script";
+import { formatStmt, type Stmt } from "../../lib/statements";
 import { EMPTY_STAGE } from "../../lib/stage";
 import { closeMenu, focusLine, idAt, markRaw, useSceneUi, type BoxMenu } from "../../lib/ui";
-import { speaker, useBox } from "./context";
+import { useBox } from "./context";
 import { defaults } from "./fields";
+import { look } from "../../lib/look";
 
 /** The box view's one popup: the Add menu at a slot, or who says a line. */
 export function BoxMenus() {
@@ -102,8 +104,6 @@ function Picker({ groups, placeholder }: { groups: Group[]; placeholder: string 
 
 // ---------------------------------------------------------------- Add
 
-const CHAT_HEAD = /^\s*chat\s+(?:log\s+)?(.+?)\s*:\s*$/;
-
 function AddMenu({ menu }: { menu: Extract<BoxMenu, { kind: "add" }> }) {
   const c = useBox();
   const script = useSceneUi(s => s.script)!;
@@ -124,11 +124,11 @@ function AddMenu({ menu }: { menu: Extract<BoxMenu, { kind: "add" }> }) {
 
   const thread = useMemo(() => {
     const count = new Map<string, number>();
-    for (const l of script.lines) { const m = CHAT_HEAD.exec(l); if (m) count.set(m[1], (count.get(m[1]) ?? 0) + 1); }
+    for (const l of script.lines) { const h = chatHead(l); if (h) count.set(h.thread, (count.get(h.thread) ?? 0) + 1); }
     return [...count].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "chat";
   }, [script]);
   const pov = stage.pov ?? cast[0] ?? "satoru";
-  const people = cast.map(id => { const w = speaker(c, id); return { label: w.name, color: w.legible, keys: id, run: line(id) } as Item; });
+  const people = cast.map(id => { const w = look(c.manifest, id); return { label: w.name, color: w.legible, keys: id, run: line(id) } as Item; });
 
   if (menu.chat) {
     return <Picker placeholder="Who writes…" groups={[
@@ -180,9 +180,9 @@ function SpeakerMenu({ menu }: { menu: Extract<BoxMenu, { kind: "speaker" }> }) 
   const others = (c.manifest?.characters ?? []).filter(x => !c.cast.includes(x.id));
   return <Picker placeholder="Who says it…" groups={[
     { layout: "list", items: [
-      ...(menu.chat ? [] : [{ icon: Text, label: "Narration", keys: pov ? speaker(c, pov).name.toLowerCase() : "", current: current === null, run: set(null) }]),
-      ...c.cast.map(id => { const w = speaker(c, id); return { label: w.name, color: w.legible, keys: id, current: current === id, run: set(id) }; }),
+      ...(menu.chat ? [] : [{ icon: Text, label: "Narration", keys: pov ? look(c.manifest, pov).name.toLowerCase() : "", current: current === null, run: set(null) }]),
+      ...c.cast.map(id => { const w = look(c.manifest, id); return { label: w.name, color: w.legible, keys: id, current: current === id, run: set(id) }; }),
     ] },
-    ...(others.length ? [{ title: "Everyone else", layout: "list" as const, search: true, items: others.map(x => ({ label: x.name, color: speaker(c, x.id).legible, keys: x.id, current: current === x.id, run: set(x.id) })) }] : []),
+    ...(others.length ? [{ title: "Everyone else", layout: "list" as const, search: true, items: others.map(x => ({ label: x.name, color: look(c.manifest, x.id).legible, keys: x.id, current: current === x.id, run: set(x.id) })) }] : []),
   ]} />;
 }

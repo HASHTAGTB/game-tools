@@ -8,8 +8,9 @@ import { Section } from "@/shared/ui/section";
 import { visible } from "../lib/colors";
 import { allEvents, castOf, deleteEvent, findEvent, moveEvent, orderBetween, threadsOf } from "../lib/model";
 import { nav } from "../lib/nav";
-import { useTimeline } from "../state";
+import { useTimeline, useTimelinePick } from "../state";
 import { AutoText, ChipPicker, ColorInput, Field, inputCls, TextInput } from "./fields";
+import { DEFAULT_COLOR } from "@/shared/lib/colors";
 
 export function Inspector() {
   const sel = useTimeline(s => s.selection);
@@ -70,7 +71,7 @@ function Help() {
 }
 
 function EventPanel({ id }: { id: string }) {
-  const { doc, edit, select } = useTimeline();
+  const { doc, edit, select } = useTimelinePick("doc", "edit", "select");
   const f = findEvent(doc.chapters, id);
   if (!f) return <Help />;
   const { event, chapter } = f;
@@ -150,7 +151,7 @@ function EventPanel({ id }: { id: string }) {
 }
 
 function ChapterPanel({ id }: { id: string }) {
-  const { doc, edit, select, folded, toggleFolded } = useTimeline();
+  const { doc, edit, select, folded, toggleFolded } = useTimelinePick("doc", "edit", "select", "folded", "toggleFolded");
   const i = doc.chapters.findIndex(c => c.id === id);
   const ch = doc.chapters[i];
   if (!ch) return <Help />;
@@ -189,7 +190,7 @@ function ChapterPanel({ id }: { id: string }) {
 }
 
 function ThreadPanel({ id }: { id: string }) {
-  const { doc, edit, select, setFilter } = useTimeline();
+  const { doc, edit, select, setFilter } = useTimelinePick("doc", "edit", "select", "setFilter");
   const t = doc.threads.find(x => x.id === id);
   const count = allEvents(doc.chapters).filter(x => x.event.threads.includes(id)).length;
   const strip = () => edit(d => { for (const { event } of allEvents(d.chapters)) event.threads = event.threads.filter(x => x !== id); d.threads = d.threads.filter(x => x.id !== id); });
@@ -197,7 +198,7 @@ function ThreadPanel({ id }: { id: string }) {
     <div className="space-y-4">
       <Section title={id} actions={<Close />} />
       <p className="font-talk text-sm text-bone">{count} events use this thread, but it isn't in the thread list.</p>
-      <Button size="sm" onClick={() => edit(d => { d.threads.push({ id, name: id, color: "#c4956a" }); })}>Add it to the list</Button>
+      <Button size="sm" onClick={() => edit(d => { d.threads.push({ id, name: id, color: DEFAULT_COLOR }); })}>Add it to the list</Button>
     </div>
   );
   const set = (fn: (x: NonNullable<typeof t>) => void, key?: string) => edit(d => { const x = d.threads.find(y => y.id === id); if (x) fn(x); }, key);
@@ -224,14 +225,14 @@ function ThreadPanel({ id }: { id: string }) {
 }
 
 function CharPanel({ id }: { id: string }) {
-  const { doc, edit, select, setFilter } = useTimeline();
+  const { doc, edit, select, setFilter } = useTimelinePick("doc", "edit", "select", "setFilter");
   const c = doc.roster.find(x => x.id === id);
   const count = allEvents(doc.chapters).filter(x => x.event.chars.includes(id)).length;
   if (!c) return (
     <div className="space-y-4">
       <Section title={id} actions={<Close />} />
       <p className="font-talk text-sm text-bone">{count} events use this character, but it isn't in the character list.</p>
-      <Button size="sm" onClick={() => edit(d => { d.roster.push({ id, name: id, color: "#c4956a" }); })}>Add it to the list</Button>
+      <Button size="sm" onClick={() => edit(d => { d.roster.push({ id, name: id, color: DEFAULT_COLOR }); })}>Add it to the list</Button>
     </div>
   );
   const set = (fn: (x: NonNullable<typeof c>) => void, key?: string) => edit(d => { const x = d.roster.find(y => y.id === id); if (x) fn(x); }, key);
@@ -255,7 +256,7 @@ function CharPanel({ id }: { id: string }) {
 }
 
 function ViewPanel({ id }: { id: string }) {
-  const { doc, edit, select, filter, viewId, setFilter } = useTimeline();
+  const { doc, edit, select, filter, viewId, setFilter } = useTimelinePick("doc", "edit", "select", "filter", "viewId", "setFilter");
   const v = doc.views.find(x => x.id === id);
   if (!v) return <Help />;
   const cast = castOf(doc.roster, doc.chapters), threads = threadsOf(doc.threads, doc.chapters);

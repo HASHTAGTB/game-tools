@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { listDir, readJson, TOOLS_DIR } from "./workspace";
+import { DEFAULT_COLOR } from "./colors";
+import { readJson, TOOLS_DIR } from "./workspace";
 
 /** What the game (HTAWAGE) defines, as its `tools/export_manifest.py` writes it into the vault:
  *  `.game-tools/renpy.json`. Re-run that script after adding characters, sprites, backgrounds or music. */
@@ -36,9 +37,6 @@ export type Manifest = {
 
 export const MANIFEST_PATH = `${TOOLS_DIR}/renpy.json`;
 
-/** Used until the manifest is there, and for characters it doesn't know: the GUI accent. */
-export const DEFAULT_COLOR = "#c4956a";
-
 export type GameState = {
   manifest: Manifest | null;
   /** false until the first load finished (then `manifest` null means there is none) */
@@ -71,19 +69,5 @@ export function boxLook(m: Manifest | null, id: string | null | undefined) {
   };
 }
 
-/** The character notes in the vault (folders count: "Rin Takeda/" holds her notes), for a scene's `characters`. */
-export const CHARACTER_DIRS = ["CANON/01_Characters/01_Main", "CANON/01_Characters/02_Supporting"];
-export async function characterNotes(): Promise<string[]> {
-  const out: string[] = [];
-  for (const dir of CHARACTER_DIRS) {
-    for (const e of await listDir(dir).catch(() => [])) {
-      if (e.name.startsWith(".")) continue;
-      if (e.kind === "directory") out.push(e.name);
-      else if (/\.md$/i.test(e.name)) out.push(e.name.replace(/\.md$/i, ""));
-    }
-  }
-  return [...new Set(out)].sort((a, b) => a.localeCompare(b));
-}
-
-/** The game character a character note is about: its first name ("Rin Takeda" → rin). */
-export const noteCharacterId = (note: string) => note.trim().split(/\s+/)[0].toLowerCase();
+/** The game character a name is about: its first word ("Rin Takeda", "rin_casual" → rin). */
+export const characterIdIn = (name: string) => name.trim().split(/[\s_-]+/)[0].toLowerCase();

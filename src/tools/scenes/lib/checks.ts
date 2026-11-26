@@ -1,7 +1,9 @@
 import type { Manifest } from "@/shared/lib/game";
-import { formatStmt, inScript, labelOf, suggestLabel, type Script } from "./script";
+import { labelOf, labelsIn } from "./labels";
+import { PAIRED, tokenize } from "./renpyText";
+import { chatHead, inScript, suggestLabel, type Script } from "./script";
 import { EMPTY_STAGE, playScript } from "./stage";
-import { PAIRED, tokenize } from "./textTags";
+import { formatStmt } from "./statements";
 
 /** Problems in a scene, in plain words, each on a line and with a fix where there's an obvious one. Things the game
  *  doesn't have yet (a sprite, a background) are only notes: the art often comes later. */
@@ -73,7 +75,7 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
   const chars = new Map(m?.characters.map(c => [c.id, c]) ?? []);
   const positions = new Set(m?.positions.map(p => p.name) ?? []);
   const transitions = new Set(m?.transitions ?? []);
-  const ownLabels = new Set(parsed.flatMap(p => (p?.kind === "label" ? [p.name] : [])));
+  const ownLabels = labelsIn(s);
   let povWarned = false, seenLabel = false;
   /** indent of the `chat …:` block we're in, if any */
   let chatIndent: number | null = null;
@@ -85,7 +87,7 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
     const ind = "indent" in p ? p.indent : null;
 
     if (p.kind !== "blank" && chatIndent !== null && ind !== null && ind <= chatIndent) chatIndent = null;
-    if (p.kind === "code" && /^\s*chat\b.*:\s*$/.test(text)) chatIndent = p.indent;
+    if (p.kind === "code" && chatHead(text)) chatIndent = p.indent;
 
     if (p.kind === "label") { seenLabel = true; return; }
     if (p.kind !== "blank" && p.kind !== "comment" && seenLabel && ind === 0) {
@@ -108,7 +110,7 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
         }
         if (!p.who && !before.pov && !povWarned && chatIndent === null) {
           povWarned = true;
-          out.push({ line: n, severity: "warning", message: "No point of view is set yet, so the narration has no textbox colour. Pick the POV at the top." });
+          out.push({ line: n, severity: "warning", message: "No point of view is set yet, so the narration has no textbox colour. Add a POV card before it." });
         }
         checkTags(out, n, p.from, text.slice(p.from, p.to));
         return;

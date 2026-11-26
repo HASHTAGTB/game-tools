@@ -1,9 +1,8 @@
 import { useEffect } from "react";
 import { BookOpen, Code, FilePlus, FolderPlus } from "lucide-react";
 import { TOOLS } from "@/app/tools";
-import { Button } from "@/shared/ui/button";
 import { IconButton } from "@/shared/ui/icon-button";
-import { Toasts } from "@/shared/ui/toasts";
+import { ConflictBar, saveState, StatusToasts } from "@/shared/ui/status";
 import { ToolNav } from "@/shared/ui/tool-nav";
 import { WorkspaceLocation } from "@/shared/ui/workspace-location";
 import { Editor } from "./components/Editor";
@@ -66,16 +65,13 @@ export default function Notes() {
       </aside>
 
       <main className="relative flex min-h-0 flex-col">
-        <Toasts className="bottom-6" items={[
-          ...(error ? [{ id: "error", kind: "error" as const, text: error, onDismiss: () => s.setError(null) }] : []),
-          ...(notice ? [{ id: "notice", kind: "notice" as const, text: notice, onDismiss: () => s.setNotice(null) }] : []),
-        ]} />
+        <StatusToasts className="bottom-6" error={error} notice={notice} setError={s.setError} setNotice={s.setNotice} />
 
         <PathBar>
           {path && <FormatBar />}
           {path && (
             <span className="shrink-0 font-talk text-xs text-taupe">
-              {words(text)} words · {saving ? "Saving…" : unsaved ? "Unsaved" : loc?.kind === "github" ? "Staged" : "Saved"}
+              {words(text)} words · {saveState({ saving, unsaved, github: loc?.kind === "github" })}
             </span>
           )}
           {path && (
@@ -85,15 +81,8 @@ export default function Notes() {
           )}
         </PathBar>
 
-        {conflict && (
-          <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b-2 border-coral bg-coral/10 px-6 py-2.5 font-talk text-base">
-            <span className="min-w-0 flex-1">
-              This note was {conflict.theirs === null ? "deleted" : "changed"} somewhere else (Obsidian? git pull?) while you had unsaved edits.
-            </span>
-            <Button size="sm" onClick={() => s.resolveConflict("theirs")}>Load theirs</Button>
-            <Button size="sm" variant="danger" onClick={() => s.resolveConflict("mine")}>Keep mine (overwrite)</Button>
-          </div>
-        )}
+        <ConflictBar items={conflict ? [{ key: "note", label: "This note", deleted: conflict.theirs === null }] : []}
+          onResolve={(_, keep) => s.resolveConflict(keep)} />
 
         {path ? (
           <div className="min-h-0 flex-1"><Editor path={path} text={text} rev={rev} mode={mode} onChange={s.type} onOpenLink={s.openLink} /></div>

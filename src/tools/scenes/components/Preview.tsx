@@ -5,12 +5,13 @@ import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { m, spring, useReducedMotion } from "@/shared/ui/motion";
 import type { Problem } from "../lib/checks";
-import { who } from "../lib/scriptView";
+import { look } from "../lib/look";
 import { EMPTY_STAGE, placeOf, playScript, type Stage } from "../lib/stage";
-import { beatsOf, type Beat } from "../lib/textTags";
+import { beatsOf, type Beat } from "../lib/renpyText";
 import { useSceneUi } from "../lib/ui";
 import { useScenes } from "../state";
-import { applyFix, applyFixes } from "./Editor";
+import { applyFixes } from "../lib/fixes";
+import { DOT, FixButton } from "./problems";
 
 /** Beside the script: what the player sees at the cursor (background, sprites, the textbox writing the line out with
  *  its pauses), and the scene's problems. */
@@ -39,7 +40,7 @@ export function Preview() {
       <div className="shrink-0 space-y-4">
         <StageView stage={stage} manifest={manifest} />
         <Facts stage={stage} manifest={manifest} />
-        <SayBox say={say} pov={stage.pov} manifest={manifest} restart={moved} />
+        <TextboxPreview say={say} pov={stage.pov} manifest={manifest} restart={moved} />
       </div>
       {loaded && !manifest && (
         <p className="shrink-0 rounded-lg border border-dashed border-ink-line p-3 font-talk text-sm text-taupe">
@@ -70,7 +71,7 @@ function StageView({ stage, manifest }: { stage: Stage; manifest: Manifest | nul
       {!bg && <span className="absolute inset-0 grid place-items-center font-talk text-sm text-taupe">No background yet</span>}
       {stage.sprites.map(sp => {
         const { x, scale } = placeOf(sp.at, manifest?.positions);
-        const c = who(manifest, sp.tag);
+        const c = look(manifest, sp.tag);
         const h = 74 * scale;
         return (
           <m.div key={sp.tag} layout="position" transition={spring.smooth}
@@ -88,7 +89,7 @@ function StageView({ stage, manifest }: { stage: Stage; manifest: Manifest | nul
 
 function Facts({ stage, manifest }: { stage: Stage; manifest: Manifest | null }) {
   const d = stage.date && /^(\d{4})-(\d{2})-(\d{2})$/.exec(stage.date);
-  const pov = stage.pov && who(manifest, stage.pov);
+  const pov = stage.pov && look(manifest, stage.pov);
   const item = "flex items-center gap-1.5";
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1 font-talk text-sm text-taupe">
@@ -104,7 +105,7 @@ function Facts({ stage, manifest }: { stage: Stage; manifest: Manifest | null })
 
 /** The game's textbox for the line: the speaker's colour, the POV's for narration, written out like the game does it
  *  (pauses included) each time the cursor moves to another line. Click to skip. */
-function SayBox({ say, pov, manifest, restart }: { say: { who: string | null; raw: string; n: number } | null; pov: string | null; manifest: Manifest | null; restart: number }) {
+function TextboxPreview({ say, pov, manifest, restart }: { say: { who: string | null; raw: string; n: number } | null; pov: string | null; manifest: Manifest | null; restart: number }) {
   const beats = useMemo(() => (say ? beatsOf(say.raw) : []), [say?.raw]);   // eslint-disable-line react-hooks/exhaustive-deps
   const [shown, skip] = useCrawl(beats, `${restart}:${say?.n}`);
   const speaker = say?.who && say.who !== "extend" ? characterOf(manifest, say.who) : null;
@@ -165,8 +166,6 @@ function Crawled({ beats, shown }: { beats: Beat[]; shown: number }) {
 
 // ---------------------------------------------------------------- problems
 
-const DOT: Record<Problem["severity"], string> = { error: "bg-coral", warning: "bg-butter", info: "bg-taupe/60" };
-
 function Problems() {
   const problems = useSceneUi(s => s.problems);
   const [showNotes, setShowNotes] = useState(false);
@@ -204,12 +203,7 @@ function Problems() {
             <button onClick={() => go(p)} className="min-w-0 flex-1 text-left font-talk text-sm text-bone hover:text-paper">
               <span className="mr-1.5 text-xs tabular-nums text-taupe">{p.line}</span>{p.message}
             </button>
-            {p.fix && (
-              <Button size="sm" variant="quiet" className="shrink-0" title={p.fix.label}
-                onClick={() => { const v = useSceneUi.getState().view; if (v) applyFix(v, p); }}>
-                <Wrench className="h-3.5 w-3.5" />{p.fix.label}
-              </Button>
-            )}
+            <FixButton view={useSceneUi.getState().view} problem={p} className="shrink-0" />
           </li>
         ))}
       </ul>

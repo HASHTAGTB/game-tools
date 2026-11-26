@@ -2,13 +2,14 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import type { Box } from "../../lib/blocks";
-import { formatStmt, type Stmt } from "../../lib/script";
-import { describe, EDITABLE } from "../../lib/scriptView";
+import { worst } from "../../lib/fixes";
 import { setStmt } from "../../lib/ops";
+import { describe, formatStmt, isEditable, stmtHint, validStmt, type Stmt } from "../../lib/statements";
 import { idAt, useSceneUi } from "../../lib/ui";
-import { follow, problemsOf, speaker, stageBefore, useBox, type ListLayout } from "./context";
-import { Fields, validStmt } from "./fields";
-import { Acts, Problems, useMoves, worst } from "./List";
+import { follow, problemsOf, stageBefore, useBox, type ListLayout } from "./context";
+import { Fields } from "./fields";
+import { Acts, Problems, useMoves } from "./List";
+import { look } from "../../lib/look";
 
 type StmtBox = Extract<Box, { kind: "stmt" }>;
 
@@ -23,9 +24,9 @@ export function StageCard({ box: b, prev, next }: { box: StmtBox; prev: Box | nu
   const d = describe(b.stmt, before, c.manifest);
   const probs = problemsOf(c, b);
   const bad = worst(probs);
-  const editable = EDITABLE.has(b.stmt.kind);
+  const editable = isEditable(b.stmt);
   const tint = b.stmt.kind === "show" || b.stmt.kind === "hide" ? b.stmt.tag : b.stmt.kind === "pov" ? b.stmt.who : null;
-  const style = tint ? ({ "--whoL": speaker(c, tint).legible } as CSSProperties) : undefined;
+  const style = tint ? ({ "--whoL": look(c.manifest, tint).legible } as CSSProperties) : undefined;
   const close = () => useSceneUi.setState({ openCard: null });
 
   return (
@@ -64,23 +65,10 @@ function CardForm({ box: b, onDone }: { box: StmtBox; onDone: () => void }) {
     <div className="space-y-3.5 px-4 pb-3.5 pt-1.5" onKeyDown={e => { if (e.key === "Escape") { e.stopPropagation(); onDone(); } }}>
       <Fields x={x} set={set} cast={c.cast} m={c.manifest} stage={stageBefore(c, b.from)} script={script} line={b.from} />
       <div className="flex items-center justify-end gap-3">
-        {!validStmt(x) && formatStmt(x) !== formatStmt(b.stmt) && <span className="mr-auto font-talk text-sm text-coral">Not written yet: {hint(x)}</span>}
+        {!validStmt(x) && formatStmt(x) !== formatStmt(b.stmt) && <span className="mr-auto font-talk text-sm text-coral">Not written yet: {stmtHint(x)}</span>}
         <Button size="sm" variant="primary" onClick={onDone}>Done</Button>
       </div>
       <Problems list={problemsOf(c, b)} />
     </div>
   );
-}
-
-function hint(x: Stmt) {
-  switch (x.kind) {
-    case "jump": case "call": return "pick the scene it goes to.";
-    case "date": return "pick a day.";
-    case "time": return "write it like 13:12.";
-    case "phone": return "name the chat.";
-    case "show": if (x.at && !/^\w+(\([^)]*\))?$/.test(x.at)) return "write the place like center or sprite(xalign=0.3).";
-      return "names can't have spaces.";
-    case "play": case "stop": case "pause": return "names can't have spaces, and times are numbers like 2.0.";
-    default: return "names can't have spaces.";
-  }
 }
