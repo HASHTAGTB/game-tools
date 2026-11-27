@@ -45,6 +45,9 @@ interface Store {
   write(path: string, text: string): Promise<number>;
   remove(path: string): Promise<void>;
   list(dir: string): Promise<Entry[]>;
+  /** Every file under `dir` in one go, not looking into dot-folders (see `walkFiles`). Only where that's cheaper
+   *  than listing folder by folder. */
+  walk?(dir: string): Promise<string[]>;
   /** Last change time of a file, null if it doesn't exist. */
   stat(path: string): Promise<number | null>;
   /** Move or rename a file or a whole folder, any kind of file (images too). `to` must not exist yet. */
@@ -86,6 +89,7 @@ const server: Store = {
   write: async (path, text) => (await api<{ mtime: number }>("PUT", `/api/fs/file${q(path)}`, { text })).mtime,
   remove: async path => void (await api("DELETE", `/api/fs/file${q(path)}`)),
   list: dir => api("GET", `/api/fs/list${q(dir)}`),
+  walk: dir => api("GET", `/api/fs/walk${q(dir)}`),
   stat: async path => (await api<{ mtime: number | null }>("GET", `/api/fs/stat${q(path)}`)).mtime,
   move: async (from, to) => void (await api("POST", "/api/fs/move", { from: check(from).join("/"), to: check(to).join("/") })),
   removeDir: async dir => void (await api("DELETE", `/api/fs/dir${q(dir)}`)),
@@ -340,6 +344,30 @@ export const movePath = async (from: string, to: string) => (await store()).move
 export const removeDir = async (dir: string) => (await store()).removeDir(dir);
 export const makeDir = async (dir: string) => (await store()).mkdir(dir);
 
+/** Every file under `dir` (full paths), not looking into dot-folders and dot-files (.git, .obsidian) below it, nor
+ *  into the folders `skip` says. On the dev server one request, elsewhere all folders at once. */
+export const walkFiles = async (dir = "", skip: (path: string) => boolean = () => false) =>
+  // sorted like the dev server's walk, so every backend gives the same order (the first of two same names wins)
+  (await walkIn(await store(), dir, skip)).sort();
+
+async function walkIn(s: Store, dir: string, skip: (path: string) => boolean): Promise<string[]> {
+  if (s.walk) {
+    // the folders a file is in, below `dir`: none of them may be skipped
+    const inSkipped = (f: string) => {
+      const parts = f.slice(dir ? dir.length + 1 : 0).split("/").slice(0, -1);
+      return parts.some((_, i) => skip(joinPath(dir, ...parts.slice(0, i + 1))));
+    };
+    return (await s.walk(dir)).filter(f => !inSkipped(f));
+  }
+  // a folder that can't be read is skipped instead of failing the whole walk
+  const entries = await s.list(dir).catch(() => []);
+  const nested = await Promise.all(entries.filter(e => !e.name.startsWith(".")).map(e => {
+    const p = joinPath(dir, e.name);
+    return e.kind === "file" ? [p] : skip(p) ? [] : walkIn(s, p, skip);
+  }));
+  return nested.flat();
+}
+
 /** Files directly in `dir` with the given extension, as full paths. */
 export async function listFiles(dir: string, ext: string) {
   return (await listDir(dir)).filter(e => e.kind === "file" && e.name.endsWith(ext)).map(e => joinPath(dir, e.name)).sort();
@@ -371,16 +399,13 @@ export async function reconnectFolder() {
 
 // ---------------------------------------------------------------- changing the location
 
+let version = 0;
+/** Counts changes of the location (another folder, backend or repository). A tool's data read for an older one is
+ *  stale; one read for this one stays good while another tool is open (its poll picks up outside changes). */
+export const locationVersion = () => version;
+
 /** Every file under `.game-tools/`, recursively. */
-async function toolFiles(s: Store, dir = TOOLS_DIR): Promise<string[]> {
-  const out: string[] = [];
-  for (const e of await s.list(dir).catch(() => [] as Entry[])) {
-    const p = joinPath(dir, e.name);
-    if (e.kind === "directory") out.push(...await toolFiles(s, p));
-    else out.push(p);
-  }
-  return out;
-}
+const toolFiles = (s: Store) => walkIn(s, TOOLS_DIR, () => false).catch(() => [] as string[]);
 
 /** Run `change`, then bring the tools' data along if the new place has none yet. Returns how many files were copied. */
 async function moveData(change: () => Promise<void>): Promise<number> {
@@ -390,7 +415,8 @@ async function moveData(change: () => Promise<void>): Promise<number> {
     const f = await from.read(p);
     if (f) files.push([p, f.text]);
   }
-  await change();
+  // a change that fails partway may still have moved things: data read before it counts as stale either way
+  try { await change(); } finally { version++; }
   const to = await store();
   if (!files.length || (await toolFiles(to)).length) return 0;
   for (const [p, text] of files) await to.write(p, text);

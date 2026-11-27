@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { DEFAULT_COLOR } from "./colors";
 import { addCharacter, readGame } from "./gameFiles";
+import { locationVersion } from "./workspace";
 
 /** What the game defines, read live from the Ren'Py project in the vault (gameFiles.ts). */
 
@@ -47,11 +48,17 @@ export type GameState = {
   manifest: Manifest | null;
   /** false until the first load finished or a cached copy was found (then `manifest` null means there is none) */
   loaded: boolean;
-  /** Read the game files again (cheap: a few small files and the assets' names). Every tool calls it when it opens. */
+  /** Read the game files again (every .rpy for its labels, the assets' names: a few hundred requests). */
   load: () => Promise<void>;
+  /** `load`, unless the last read is from this location and less than `STALE_MS` old. What a tool calls when it opens,
+   *  so switching between tools doesn't read the whole game each time (Reload reads it right away). */
+  fresh: () => Promise<void>;
 };
 
 let loading: Promise<void> | null = null;
+/** When the last read finished, and for which location (`locationVersion`). */
+let readAt = -Infinity, readFor = -1;
+const STALE_MS = 30_000;
 
 /** The last game data read, kept in this browser so colours and patterns are there right away on the next start; a
  *  fresh read replaces it moments later. */
@@ -75,16 +82,22 @@ const start = fromCache();
 /** What the store holds now, as JSON: a read that finds the same leaves the store alone (no re-render). */
 let current = start?.text ?? null;
 
-export const useGame = create<GameState>()((set) => ({
+export const useGame = create<GameState>()((set, get) => ({
   manifest: start?.manifest ?? null,
   loaded: !!start,
-  load: () => loading ??= readGame()
-    .then(manifest => {
-      const text = manifest && JSON.stringify(manifest);
-      if (text !== current) { current = text; toCache(text); set({ manifest }); }
-      set({ loaded: true });
-    }, () => set({ loaded: true }))
-    .finally(() => { loading = null; }),
+  load: () => {
+    const version = locationVersion();
+    return loading ??= readGame()
+      .then(manifest => {
+        const text = manifest && JSON.stringify(manifest);
+        if (text !== current) { current = text; toCache(text); set({ manifest }); }
+        readAt = Date.now();
+        readFor = version;
+        set({ loaded: true });
+      }, () => set({ loaded: true }))
+      .finally(() => { loading = null; });
+  },
+  fresh: () => (readFor === locationVersion() && Date.now() - readAt < STALE_MS ? Promise.resolve() : get().load()),
 }));
 
 /** Define a new nameless speaker in the game (end of core/characters.rpy, grey, never POV) and read the game again, so

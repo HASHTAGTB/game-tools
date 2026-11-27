@@ -9,10 +9,14 @@ import { IconButton } from "@/shared/ui/icon-button";
 /** A row's icon buttons: hidden until the row is hovered or focused (always shown on touch). */
 export const hoverOnly = "opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 [@media(hover:none)]:opacity-100";
 
+/** The slot a row's icon buttons sit in: no width until the row is hovered or focused (always there on touch), so
+ *  the name only gets cut short while the buttons are showing. */
+export const hoverSlot = "relative flex max-w-0 overflow-hidden group-hover/row:max-w-none group-hover/row:overflow-visible group-focus-within/row:max-w-none group-focus-within/row:overflow-visible [@media(hover:none)]:max-w-none [@media(hover:none)]:overflow-visible";
+
 /** Rename and delete, on a row's right. */
 export function RowActions({ onRename, onDelete }: { onRename: () => void; onDelete: () => void }) {
   return (
-    <span className="relative flex">
+    <span className={hoverSlot}>
       <IconButton icon={Pencil} size="sm" label="Rename" tooltipSide="right" className={hoverOnly} onClick={onRename} />
       <IconButton icon={Trash2} size="sm" tone="danger" label="Delete" tooltipSide="right" className={hoverOnly} onClick={onDelete} />
     </span>

@@ -15,6 +15,8 @@ import type { TargetAndTransition, Transition } from "motion/react";
      text in an editor React doesn't own                ./flair.ts: decode, wave, glow, typeIn
      pointing at one thing                              ./flair.ts: spotlight; the board's ping
      a scene opens                                      ./flair.ts: cascade
+     the same text shown another way (script ↔ source)  ./flair.ts: unfold, from the line you were on (kept where it
+                                                        was on screen)
 
    Springs and presets for Motion are here; ./flair.ts has the Web Animations ones. Reduced motion: Motion follows
    <MotionProvider>, flair checks `calm()`, CSS animations are off (src/index.css).

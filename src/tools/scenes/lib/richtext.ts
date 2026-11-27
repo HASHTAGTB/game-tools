@@ -192,7 +192,10 @@ const isMark = (n: Node | null): n is HTMLElement => n instanceof HTMLElement &&
 /** A mark can't hold the caret, and the browser won't put it after one with nothing behind it (the end of the box, of
  *  a speed span, or right before another mark): give each such mark an invisible character to stand behind. */
 export function padMarks(el: HTMLElement) {
-  const r = selRange();
+  // the caret only matters in the box it's in (focus may still be on a menu that put a mark there); reading the range
+  // costs a layout, which adds up over a scene's boxes
+  const at = getSelection()?.anchorNode;
+  const r = at && el.contains(at) ? selRange() : null;
   el.querySelectorAll<HTMLElement>("[data-raw]").forEach(m => {
     const n = m.nextSibling;
     if (n?.nodeType === Node.TEXT_NODE && (n as Text).data) return;

@@ -1,8 +1,9 @@
 import { create } from "zustand";
+import { useShallow } from "zustand/shallow";
 import { browserPrefs, debounce, noticeSetter, serialQueue, whenHidden, whileVisible } from "@/shared/lib/toolState";
 import { errorMessage, freeName, isUnder, plural, strings } from "@/shared/lib/utils";
 import {
-  getLocation, joinPath, listDir, makeDir, movePath, NeedsPermission, readFile, removeDir, removeFile, statFile, writeText,
+  getLocation, joinPath, listDir, locationVersion, makeDir, movePath, NeedsPermission, readFile, removeDir, removeFile, statFile, walkFiles, writeText,
   type Entry, type Location,
 } from "@/shared/lib/workspace";
 import { indexFiles, resolve, rewriteLinks } from "./links";
@@ -60,6 +61,8 @@ type State = {
   recent: string[];
   /** Editor mode, the same for every note (this browser only) */
   mode: Mode;
+  /** The open note's last move or rename, so the editor can tell it's the same note under a new name */
+  moved: { from: string; to: string } | null;
   /** Counts the notes opened by `open`, so the URL knows which path changes deserve a history entry */
   opened: number;
   error: string | null;
@@ -118,6 +121,11 @@ const hasExt = (p: string, ext: string) => p.toLowerCase().endsWith(ext);
 const byKindThenName = (a: Node, b: Node) =>
   a.kind !== b.kind ? (a.kind === "directory" ? -1 : 1) : a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
 
+/** `next`, or `prev` if it lists the same: a folder that didn't change keeps its array, so what shows it doesn't draw
+ *  again (the poll lists the open folders every few seconds). */
+const sameList = (prev: Node[] | undefined, next: Node[]) =>
+  prev && prev.length === next.length && prev.every((n, i) => n.path === next[i].path && n.kind === next[i].kind) ? prev : next;
+
 async function listNodes(dir: string, ext: string, virtual: Set<string>, hide: (path: string) => boolean): Promise<Node[]> {
   const shown = (e: Entry) => !e.name.startsWith(".") && (e.kind === "directory" || hasExt(e.name, ext));
   const nodes: Node[] = (await listDir(dir)).filter(shown).map(e => ({ name: e.name, kind: e.kind, path: joinPath(dir, e.name) }))
@@ -134,18 +142,6 @@ async function freeFileName(dir: string, base: string, ext: string, virtual: Set
   return freeName(base + ext, n => taken.has(n.toLowerCase()), i => `${base} ${i}${ext}`);
 }
 
-/** Every file under `dir` (any type), skipping dot-folders like .obsidian and .git and the folders `skip` says. */
-async function allFiles(dir = "", skip: (path: string) => boolean = () => false): Promise<string[]> {
-  const out: string[] = [];
-  for (const e of await listDir(dir)) {
-    if (e.name.startsWith(".")) continue;
-    const p = joinPath(dir, e.name);
-    if (e.kind === "directory") { if (!skip(p)) out.push(...await allFiles(p, skip)); }
-    else out.push(p);
-  }
-  return out;
-}
-
 export function createVaultStore(cfg: VaultConfig) {
   const { root, noun } = cfg;
   const ext = (cfg.ext ?? ".md").toLowerCase();
@@ -153,7 +149,7 @@ export function createVaultStore(cfg: VaultConfig) {
   const hide = cfg.hide ?? (() => false);
   const isNote = (p: string) => hasExt(p, ext);
   /** The files a move has to look at: the whole vault for Markdown (links), else only this tool's folder. */
-  const filesForMoves = () => (markdown ? allFiles() : allFiles(root, hide));
+  const filesForMoves = () => (markdown ? walkFiles() : walkFiles(root, hide));
   const Noun = noun[0].toUpperCase() + noun.slice(1);
   const serial = serialQueue();
   /** Saving: a moment after the last keystroke (and when the tab is hidden, below). */
@@ -164,23 +160,35 @@ export function createVaultStore(cfg: VaultConfig) {
   let everyNote: string[] | null = null;
   const prefsStore = vaultPrefs(cfg.prefsKey);
   const prefs = prefsStore.read();
+  /** The location the store last loaded from (see `init`) */
+  let loadedFor = -1;
   /** A file this tool shows */
   const mine = (p: string | null): p is string => !!p && (!root || isUnder(p, root)) && !hide(p);
 
   const store = create<State & Actions>()((set, get) => {
   const savePrefs = () => { const s = get(); prefsStore.write({ expanded: [...s.expanded], path: s.path, recent: s.recent, mode: s.mode }); };
-  const refreshDir = async (dir: string) => {
-    const nodes = await listNodes(dir, ext, get().virtual, hide);
-    set(s => ({ tree: { ...s.tree, [dir]: nodes } }));
+  /** List these folders again (all at once). Only the ones that changed get a new array. */
+  const refreshDirs = async (dirs: string[]) => {
+    const lists = await Promise.all(dirs.map(d => listNodes(d, ext, get().virtual, hide)));
+    set(s => {
+      let tree = s.tree;
+      dirs.forEach((d, i) => { const l = sameList(tree[d], lists[i]); if (l !== tree[d]) tree = { ...tree, [d]: l }; });
+      return tree === s.tree ? s : { tree };
+    });
+    return lists;
   };
+  const refreshDir = (dir: string) => refreshDirs([dir]);
   /** List the vault and every open folder again; open folders that are gone get closed. */
   const refreshAll = async () => {
     const dirs = [root, ...get().expanded];
     const lists = await Promise.all(dirs.map(d => listNodes(d, ext, get().virtual, hide).catch(() => null)));
-    const tree: Record<string, Node[]> = {};
-    dirs.forEach((d, i) => { if (lists[i]) tree[d] = lists[i]!; });
-    const expanded = new Set([...get().expanded].filter(d => tree[d]?.length || tree[parentOf(d)]?.some(n => n.path === d)));
-    set({ tree, expanded });
+    const prev = get().tree;
+    const next: Record<string, Node[]> = {};
+    dirs.forEach((d, i) => { if (lists[i]) next[d] = sameList(prev[d], lists[i]!); });
+    const keys = Object.keys(next);
+    const tree = keys.length === Object.keys(prev).length && keys.every(k => next[k] === prev[k]) ? prev : next;
+    const open = [...get().expanded].filter(d => tree[d]?.length || tree[parentOf(d)]?.some(n => n.path === d));
+    set(s => ({ tree, expanded: open.length === s.expanded.size ? s.expanded : new Set(open) }));
     savePrefs();
   };
   const fail = (what: string) => (e: unknown) => set({ error: `${what}: ${errorMessage(e)}`, busy: null });
@@ -241,6 +249,7 @@ export function createVaultStore(cfg: VaultConfig) {
         const mtime = openDisk !== null || now !== open ? await statFile(now) : get().saved?.mtime ?? null;
         const s = get();   // read after the awaits
         if (s.path === open && s.saved) {
+          if (now !== open) set({ moved: { from: open, to: now } });
           const live = fix(s.text, now) ?? s.text;
           const disk = openDisk ?? (s.conflict ? s.conflict.theirs : s.saved.text);
           if (!s.conflict && s.text === s.saved.text) {
@@ -297,7 +306,7 @@ export function createVaultStore(cfg: VaultConfig) {
   /** Pick up changes made elsewhere (Obsidian, git pull): the open note and the folders that are open. */
   async function poll() {
     try {
-      for (const dir of [root, ...get().expanded]) await refreshDir(dir);
+      await refreshDirs([root, ...get().expanded]);
       const { path, saved } = get();
       if (!path || !saved || get().conflict) return;
       const now = await statFile(path);
@@ -317,26 +326,35 @@ export function createVaultStore(cfg: VaultConfig) {
   return {
     loc: null, ready: false, tree: {}, expanded: new Set(prefs.expanded), path: null, text: "", saved: null, rev: 0,
     saving: false, conflict: null, renaming: null, virtual: new Set(), busy: null, error: null, notice: null,
-    index: null, recent: prefs.recent, mode: prefs.mode, opened: 0,
+    index: null, recent: prefs.recent, mode: prefs.mode, opened: 0, moved: null,
 
     init: want => {
       startWith = want ?? null;
-      get().load();
+      // Opened again after another tool: what's here is still good, so only look for changes made meanwhile.
+      if (get().ready && loadedFor === locationVersion()) {
+        // files may have come and gone meanwhile: the finder and link lookups list them again when asked
+        everyNote = null;
+        set({ index: null });
+        serial(poll);
+      } else get().load();
       return whileVisible(() => { if (get().ready) serial(poll); });
     },
 
     load: async () => {
       try {
+        const version = locationVersion();
         const loc = await getLocation();
         set({ loc });
         if (!loc.ready) return set({ ready: false, tree: {} });
         await refreshAll();
+        loadedFor = version;
         set({ ready: true, error: null });
         const want = [get().path, startWith, prefs.path].find(mine) ?? null;
         const f = want ? await readFile(want) : null;
         show(f ? want : null, f);
         if (!f && want && want === startWith) get().setNotice(`There's no ${noun} called ${baseName(want)}.`);
         startWith = null;
+        everyNote = null;
         set({ index: null });
         savePrefs();
       } catch (e) {
@@ -377,16 +395,12 @@ export function createVaultStore(cfg: VaultConfig) {
       savePrefs();
     },
 
-    listFolder: async dir => {
-      const nodes = await listNodes(dir, ext, get().virtual, hide);
-      set(s => ({ tree: { ...s.tree, [dir]: nodes } }));
-      return nodes;
-    },
+    listFolder: async dir => (await refreshDirs([dir]))[0],
 
     loadIndex: () => {
       if (!get().ready) return Promise.resolve();
       // Markdown: every note, for following links; other files: only this tool's folders
-      return (indexing ??= (markdown ? allFiles() : allFiles(root, hide))
+      return (indexing ??= filesForMoves()
         .then(files => {
           everyNote = files.filter(isNote);
           set({ index: everyNote.filter(mine).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })) });
@@ -543,3 +557,10 @@ export function createVaultStore(cfg: VaultConfig) {
 }
 
 export type VaultStore = ReturnType<typeof createVaultStore>;
+export type VaultState = State & Actions;
+
+/** Some of a vault store's state and actions; the component draws again only when one of them changes (not on every
+ *  keystroke, as a bare `store()` would). */
+export function useVaultPick<K extends keyof VaultState>(store: VaultStore, ...keys: K[]): Pick<VaultState, K> {
+  return store(useShallow(s => Object.fromEntries(keys.map(k => [k, s[k]])) as Pick<VaultState, K>));
+}

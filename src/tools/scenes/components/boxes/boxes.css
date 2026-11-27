@@ -117,7 +117,13 @@
 /* ---------- notes */
 .bx-note { --ay: calc(1px + .4rem + 11px); display: flex; gap: .55rem; align-items: flex-start; padding: .4rem .8rem; background: color-mix(in srgb, var(--color-butter) 6%, transparent); border: 1px solid color-mix(in srgb, var(--color-butter) 22%, transparent); }
 .bx-note > svg { width: 14px; height: 14px; margin-top: .3rem; flex: none; color: var(--color-butter); opacity: .8; }
-.bx-note textarea { all: unset; flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-talk); font-size: 14px; line-height: 1.6; color: color-mix(in srgb, var(--color-butter) 55%, var(--color-bone)); field-sizing: content; }
+.bx-note textarea { all: unset; align-self: stretch; overflow: hidden; resize: none; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-talk); font-size: 14px; line-height: 1.6; color: color-mix(in srgb, var(--color-butter) 55%, var(--color-bone)); }
+/* a textarea that grows with its text, by CSS alone: an invisible copy of the text (data-value) sits in the same grid
+   cell and gives the row its height. Firefox has no field-sizing, and measuring every note costs a layout each. After the textarea's
+   `all: unset`, which would undo the grid cell. */
+.bx-grow { display: grid; flex: 1; min-width: 0; }
+.bx-grow::after { content: attr(data-value) " "; visibility: hidden; }
+.bx-grow > textarea, .bx-grow::after { grid-area: 1 / 1; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-talk); font-size: 14px; line-height: 1.6; }
 .bx-note textarea::placeholder { color: var(--color-taupe); }
 
 /* ---------- raw Ren'Py */
@@ -181,4 +187,24 @@
 
 @media (prefers-reduced-motion: reduce) {
   .bx-slot::before, .bx-slot-plus, .bx-acts, .bx-who, .bx-card { transition: none; }
+}
+
+/* ---------- a scene opening: its title card (./TitleCard.tsx) is up while the boxes are built, which keeps the page
+   busy. Only opacity and transform move, so it goes on playing meanwhile. The boxes stay hidden until it goes. */
+.bx-page[data-opening] > .bx-col { opacity: 0; }
+.bx-title { position: absolute; inset: 0; display: grid; place-content: center; gap: .6rem; padding: 1.5rem; text-align: center; pointer-events: none; }
+.bx-title-ch { font-family: var(--font-sans); font-size: 13px; line-height: 18px; letter-spacing: .16em; text-transform: uppercase; color: var(--color-taupe);
+  opacity: 0; transform: translateY(.4em); animation: bx-rise .45s cubic-bezier(.2, .8, .2, 1) forwards; }
+.bx-title h2 { margin: 0; font-family: var(--font-sans); font-weight: 600; font-size: 28px; line-height: 34px; color: var(--color-paper); text-wrap: balance; }
+.bx-title h2 span { display: inline-block; white-space: pre; opacity: 0; transform: translateY(.4em); animation: bx-rise .4s cubic-bezier(.2, .8, .2, 1) forwards; }
+.bx-title-rule { width: 7.5rem; height: 2px; margin: .2rem auto 0; border-radius: 2px; background: var(--color-caramel); transform: scaleX(0);
+  animation: bx-draw .5s .18s cubic-bezier(.6, 0, .2, 1) forwards; }
+.bx-title p { max-width: 30rem; margin: .3rem auto 0; font-family: var(--font-talk); font-size: 16px; line-height: 1.6; font-style: italic; color: var(--color-bone);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; opacity: 0; animation: bx-rise .4s .3s ease forwards; }
+.bx-title.bx-out { animation: bx-title-out .32s cubic-bezier(.5, 0, .8, .4) forwards; }
+@keyframes bx-rise { to { opacity: 1; transform: none; } }
+@keyframes bx-draw { to { transform: scaleX(1); } }
+@keyframes bx-title-out { to { opacity: 0; transform: translateY(-24px); } }
+@media (prefers-reduced-motion: reduce) {
+  .bx-title-ch, .bx-title h2 span, .bx-title-rule, .bx-title p { animation-duration: 1ms; animation-delay: 0s; }
 }

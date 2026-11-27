@@ -1,9 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { forceLinting, linter } from "@codemirror/lint";
 import { Compartment, type Extension } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { useGame } from "@/shared/lib/game";
 import { AnchoredMenuHost } from "@/shared/ui/anchored-menu";
+import { calm, unfold } from "@/shared/ui/flair";
 import { MONO } from "@/shared/vault/editorTheme";
 import { useDocEditor } from "@/shared/vault/useDocEditor";
 import type { Mode } from "@/shared/vault/store";
@@ -13,6 +14,8 @@ import { checkInputField, lineIds, manifestField, scriptField, setCheckInput, se
 import { toDiagnostic } from "../lib/fixes";
 import { sourceView } from "../lib/sourceView";
 import { useSceneUi } from "../lib/ui";
+import { swapFromBoxes, swapFromSource, type Swap } from "../lib/viewSwap";
+import { useScenes } from "../state";
 import { BoxView } from "./boxes/BoxView";
 import { MarkPopup } from "./boxes/TextTools";
 import "./highlight.css";
@@ -61,19 +64,16 @@ const MODES: Record<Mode, Extension> = {
 };
 const modeSlot = new Compartment();
 
+/** The open scene (from the Scenes store). */
 type Props = {
-  path: string;
-  text: string;
-  rev: number;
   mode: Mode;
   /** labels of the other scenes and the game, for checking jumps (null while they're read) */
   labels: Set<string> | null;
   /** the scene's title, for the label the checks suggest */
   title: string;
-  onChange: (text: string) => void;
 };
 
-export function Editor({ path, text, rev, mode, labels, title, onChange }: Props) {
+export function Editor({ mode, labels, title }: Props) {
   const modeNow = useRef(mode);
   modeNow.current = mode;
   const checkInput = useRef({ labels, title });
@@ -81,7 +81,7 @@ export function Editor({ path, text, rev, mode, labels, title, onChange }: Props
   const manifest = useGame(s => s.manifest);
 
   const { host, view } = useDocEditor({
-    tool: "scenes", path, text, rev, onChange,
+    tool: "scenes", store: useScenes,
     extensions: [
       manifestField,
       scriptField,
@@ -98,20 +98,45 @@ export function Editor({ path, text, rev, mode, labels, title, onChange }: Props
         }
       }),
     ],
-    onLoad: v => {
+    onLoad: (v, followed) => {
       v.dispatch({ effects: [modeSlot.reconfigure(MODES[modeNow.current]), setManifest.of(useGame.getState().manifest), setCheckInput.of(checkInput.current)] });
       const s = v.state;
-      useSceneUi.setState({ view: v, script: s.field(scriptField), line: s.doc.lineAt(s.selection.main.head).number, menu: null, focus: null, openCard: null, tabs: {}, rawIds: new Set() });
+      // moved or renamed: still the scene that's open, so the box view stays where it is (no title card, no rebuild)
+      if (followed) return useSceneUi.setState({ view: v, script: s.field(scriptField), line: s.doc.lineAt(s.selection.main.head).number });
+      useSceneUi.setState(u => ({ view: v, opened: useScenes.getState().path, loaded: u.loaded + 1, script: s.field(scriptField), line: s.doc.lineAt(s.selection.main.head).number, menu: null, focus: null, openCard: null, tabs: {}, rawIds: new Set() }));
       if (modeNow.current === "source") v.focus();
     },
     onClose: () => useSceneUi.setState({ view: null, script: null, menu: null, focus: null, openCard: null, problems: [] }),
   });
 
-  useEffect(() => {
+  // Switching views: the line your eyes were on (the cursor's, else the top one) is measured in the old view while it's
+  // still there (this render, before React replaces it) and comes up at the same height in the new one, which unfolds
+  // from it. The box view does its part when it mounts (`swap`).
+  const shownMode = useRef(mode);
+  const swap = useRef<Swap | null>(null);
+  if (shownMode.current !== mode) {
+    const was = shownMode.current, v = view.current, loaded = useSceneUi.getState().loaded;
+    const page = host.current?.parentElement?.querySelector<HTMLElement>(".bx-page");
+    swap.current = !v ? null : was === "source" ? swapFromSource(v, loaded) : page ? swapFromBoxes(page, v, loaded) : null;
+    shownMode.current = mode;
+  }
+  useLayoutEffect(() => {
     const v = view.current;
     if (!v) return;
-    v.dispatch({ effects: modeSlot.reconfigure(MODES[mode]), scrollIntoView: mode === "source" });
-    if (mode === "source") v.focus();
+    const sw = mode === "source" ? swap.current : null;
+    swap.current = null;
+    const reconfigure = modeSlot.reconfigure(MODES[mode]);
+    if (sw && sw.loaded === useSceneUi.getState().loaded) {
+      const line = v.state.doc.line(Math.min(sw.line, v.state.doc.lines));
+      const margin = Math.max(0, sw.y - v.scrollDOM.getBoundingClientRect().top);
+      v.dispatch({ effects: [reconfigure, EditorView.scrollIntoView(line.from, { y: "start", yMargin: margin })] });
+      if (!calm()) {
+        // CodeMirror scrolls (and draws the lines there) in its next frame: keep the text hidden until then
+        const veil = v.contentDOM.animate([{ opacity: 0 }, { opacity: 0 }], { duration: 1000 });
+        requestAnimationFrame(() => { unfold(v.contentDOM.querySelectorAll(".cm-line"), sw.y); veil.cancel(); });
+      }
+    } else v.dispatch({ effects: reconfigure, scrollIntoView: mode === "source" });
+    if (mode === "source") v.focus();   // CodeMirror focuses without scrolling
     useSceneUi.setState({ menu: null, openCard: null });
   }, [mode, view]);
   useEffect(() => { view.current?.dispatch({ effects: setManifest.of(manifest) }); }, [manifest, view]);
@@ -126,7 +151,7 @@ export function Editor({ path, text, rev, mode, labels, title, onChange }: Props
   return (
     <>
       <div ref={host} className="h-full min-h-0" hidden={mode === "live"} />
-      {mode === "live" && shown && <BoxView view={shown} />}
+      {mode === "live" && shown && <BoxView view={shown} swap={swap.current} />}
       <AnchoredMenuHost />
       <MarkPopup />
     </>

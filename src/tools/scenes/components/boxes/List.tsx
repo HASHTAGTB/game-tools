@@ -19,15 +19,17 @@ import { StageCard } from "./StageCard";
  *  `layout`: where one goes after a box. */
 /** A new box drops in (or peels out of the one above, when Enter split it), a deleted one crumples, and the boxes
  *  around slide: when boxes come, go or move anywhere in the scene, not while a line you type in wraps. Boxes are
- *  keyed by their first line's lasting name, so a box keeps its place (and its motion) while lines above change. */
+ *  keyed by their first line's lasting name, so a box keeps its place (and its motion) while lines above change.
+ *  When the whole script is replaced (another scene, a reload) the old boxes just go: only the cascade plays. */
 export function List({ boxes, start, layout, empty }: { boxes: Box[]; start: Place; layout: ListLayout; empty?: string }) {
   const c = useBox();
   const entering = useSceneUi(s => s.entering);
+  const loaded = useSceneUi(s => s.loaded);
   const lay = JSON.stringify(layout);
   return (
     <div className="bx-list relative">
       {boxes.length ? <Slot place={start} /> : <FirstSlot place={start} label={empty ?? "Add the first line"} />}
-      <MotionList slideWhen={c.structure}>
+      <MotionList reset={loaded} slideWhen={c.structure}>
         {boxes.map((b, i) => {
           const prev = boxes[i - 1] ?? null, next = boxes[i + 1] ?? null;
           const id = c.ids[b.from - 1] ?? -b.from;

@@ -4,17 +4,16 @@ import { useHotkeys } from "@/shared/lib/hotkeys";
 import { HelpButton, type Gesture } from "@/shared/ui/help";
 import { IconButton } from "@/shared/ui/icon-button";
 import { MenuGroup } from "@/shared/ui/menu";
-import { SaveState } from "@/shared/ui/status";
 import { EmptyState, HintLink, NotReady, ToolPage } from "@/shared/ui/tool-page";
 import { Editor } from "./components/Editor";
 import { VaultProvider } from "@/shared/vault/context";
+import { DocStatus } from "@/shared/vault/DocStatus";
 import { FileTree } from "@/shared/vault/FileTree";
 import { PathBar } from "@/shared/vault/PathBar";
+import { useVaultPick } from "@/shared/vault/store";
 import { useVaultUrl } from "@/shared/vault/url";
 import { FormatBar } from "./components/FormatBar";
 import { useNotes } from "./state";
-
-const words = (s: string) => (s.match(/\S+/g) ?? []).length;
 
 const HELP: Gesture[] = [
   ["Click the note's name", "Find a note by name (Enter opens it)"],
@@ -29,14 +28,14 @@ const HELP: Gesture[] = [
 ];
 
 export default function Notes() {
-  const s = useNotes();
-  const { loc, ready, path, text, saved, rev, saving, conflict, mode } = s;
+  // not the text: the editor and DocStatus follow that themselves
+  const s = useVaultPick(useNotes, "loc", "ready", "path", "conflict", "mode", "busy", "error", "notice",
+    "setError", "setNotice", "reload", "flush", "revert", "create", "createFolder", "setMode", "resolveConflict", "openLink");
+  const { loc, ready, path, conflict, mode } = s;
 
   useVaultUrl(useNotes, "/notes");
   // Live Preview / Source, as in Obsidian
   useHotkeys({ "mod+e": () => s.setMode(useNotes.getState().mode === "live" ? "source" : "live") });
-
-  const unsaved = !!saved && text !== saved.text;
 
   return (
     <VaultProvider store={useNotes}>
@@ -53,11 +52,7 @@ export default function Notes() {
         bar={
           <PathBar>
             {path && <FormatBar />}
-            {path && (
-              <span className="shrink-0 font-talk text-xs text-taupe">
-                {words(text)} words · <SaveState saving={saving} unsaved={unsaved} github={loc?.kind === "github"} />
-              </span>
-            )}
+            {path && <DocStatus words />}
             {path && (
               <IconButton icon={mode === "live" ? Code : BookOpen} size="sm" kbd="Ctrl+E" tooltipSide="bottom"
                 label={mode === "live" ? "Show the Markdown source" : "Back to Live Preview"}
@@ -69,7 +64,7 @@ export default function Notes() {
         conflicts={conflict ? [{ key: "note", label: "This note", deleted: conflict.theirs === null }] : []}
         onResolve={(_, keep) => s.resolveConflict(keep)}>
         {path ? (
-          <div className="min-h-0 flex-1"><Editor path={path} text={text} rev={rev} mode={mode} onChange={s.type} onOpenLink={s.openLink} /></div>
+          <div className="min-h-0 flex-1"><Editor mode={mode} onOpenLink={s.openLink} /></div>
         ) : !ready ? <NotReady loc={loc} /> : (
           <EmptyState title="No note open.">
             Pick one on the left, or start a <HintLink onClick={() => s.create("")}>new note</HintLink>.

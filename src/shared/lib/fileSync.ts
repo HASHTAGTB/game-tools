@@ -1,5 +1,5 @@
 import { serialQueue, whileVisible } from "./toolState";
-import { readFile, removeFile, statFile, writeText, type FileData } from "./workspace";
+import { locationVersion, readFile, removeFile, statFile, writeText, type FileData } from "./workspace";
 
 /** Keeps a tool's data and its files in the data folder in step, for tools whose data is a set of JSON files (the
  *  Timeline's chapters, the Prompt Builder's characters). The tool says what its data is as files (`files`); this
@@ -37,6 +37,8 @@ export type FileSyncConfig = {
 export function createFileSync(c: FileSyncConfig) {
   const serial = serialQueue();
   let known = new Map<string, FileData>();
+  /** The location the files were last read from (`locationVersion`). */
+  let loadedFor = -1;
 
   /** The text a file holds as far as this tab knows. */
   const base = (path: string) => known.get(path)?.text ?? c.blank?.(path) ?? null;
@@ -73,8 +75,14 @@ export function createFileSync(c: FileSyncConfig) {
     const files = c.files();
     const paths = new Set([...await c.list(), ...files.keys(), ...known.keys()]);
     const incoming: [string, FileData | null][] = [];
+    // the change times a few at a time (on GitHub each is a request), then the few files that changed one by one
+    const list = [...paths], times = new Map<string, number | null>();
+    for (let i = 0; i < list.length; i += 8) {
+      const batch = list.slice(i, i + 8);
+      (await Promise.all(batch.map(statFile))).forEach((t, j) => times.set(batch[j], t));
+    }
     for (const path of paths) {
-      const now = await statFile(path);
+      const now = times.get(path) ?? null;
       if (now === (known.get(path)?.mtime ?? null)) continue;
       const f = now === null ? null : await readFile(path);
       const mine = files.get(path) ?? null;
@@ -91,6 +99,7 @@ export function createFileSync(c: FileSyncConfig) {
   return {
     /** Read every file and hand them to `load`. Returns the files that couldn't be used. */
     load: async (): Promise<string[]> => {
+      const version = locationVersion();
       const paths = await c.list();
       const read: [string, FileData][] = [];
       // a few at a time: on GitHub each file is a request
@@ -103,10 +112,15 @@ export function createFileSync(c: FileSyncConfig) {
       known = new Map();
       for (const [p, f] of read) if (used.has(p)) remember(p, f);
       c.setConflicts([]);
+      loadedFor = version;
       return read.filter(([p]) => !used.has(p)).map(([p]) => p);
     },
     /** Forget everything (no data folder to use). */
-    reset: () => { known = new Map(); c.setConflicts([]); },
+    reset: () => { known = new Map(); loadedFor = -1; c.setConflicts([]); },
+    /** The data was read from the location in use (another tool was open meanwhile: no need to read it all again). */
+    current: () => loadedFor === locationVersion(),
+    /** Look for changes made elsewhere now, instead of at the next poll. */
+    check: () => serial(() => pollNow().catch(() => {})),
     /** Write what changed. */
     flush: () => serial(() => flushNow().catch(c.onError)),
     /** Run `fn` when no write is running (dropping unsaved edits, then loading again). */

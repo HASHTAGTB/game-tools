@@ -13,7 +13,7 @@ import { liveTables } from "../lib/tableEditor";
 import { AnchoredMenuHost } from "@/shared/ui/anchored-menu";
 import { MONO } from "@/shared/vault/editorTheme";
 import { useDocEditor } from "@/shared/vault/useDocEditor";
-import type { Mode } from "../state";
+import { useNotes, type Mode } from "../state";
 
 /** Markdown editor (CodeMirror 6, the editor Obsidian is built on), in Live Preview or Source mode. Either way the text
  *  stays exactly as written, so the notes keep working in Obsidian. One editor state per note, so undo history survives
@@ -166,25 +166,21 @@ const external = (url: string) => /^[a-z][a-z0-9+.-]*:/i.test(url);
 /** Only these open: notes can come from other people's commits, and a javascript: link would run on this page. */
 const safeUrl = (url: string) => /^(https?|mailto):/i.test(url.trim());
 
+/** The open note (from the Notes store). */
 type Props = {
-  path: string;
-  text: string;
-  /** Changes when `text` was replaced from outside (opened, reloaded): the editor then takes it. */
-  rev: number;
   mode: Mode;
-  onChange: (text: string) => void;
   /** A link was followed: a wikilink target or a relative Markdown link (external URLs open in a new tab here). */
   onOpenLink: (target: string) => void;
 };
 
-export function Editor({ path, text, rev, mode, onChange, onOpenLink }: Props) {
+export function Editor({ mode, onOpenLink }: Props) {
   const follow = useRef(onOpenLink);
   follow.current = onOpenLink;
   const modeNow = useRef(mode);
   modeNow.current = mode;
 
   const { host, view } = useDocEditor({
-    tool: "notes", path, text, rev, onChange,
+    tool: "notes", store: useNotes,
     extensions: [
       highlightSelectionMatches(),
       notesMarkdown,
@@ -213,7 +209,8 @@ export function Editor({ path, text, rev, mode, onChange, onOpenLink }: Props) {
     onLoad: v => {
       v.dispatch({ effects: modeSlot.reconfigure(MODES[modeNow.current]) });   // a kept state may be in the other mode
       publish(v);
-      v.focus();
+      // not while a name is edited in the tree: double-clicking a note opens it and starts renaming it
+      if (!useNotes.getState().renaming) v.focus();
     },
     onClose: () => publish(null),
   });

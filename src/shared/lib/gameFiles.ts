@@ -1,6 +1,6 @@
 import { GAME_DIR } from "@/shared/vault/places";
 import { assetUrl } from "./assetUrl";
-import { joinPath, listDir, readText, writeText } from "./workspace";
+import { joinPath, readText, walkFiles, writeText } from "./workspace";
 import type { GameCharacter, Manifest } from "./game";
 
 /** Reads what the game defines straight from the Ren'Py project in the vault (`renpy/game`), on whichever backend the
@@ -44,15 +44,11 @@ const baseName = (path: string) => path.split("/").pop()!;
 /** Text of a game file with Unix line endings (Windows checkouts have \r\n); "" if it doesn't exist. */
 const gameText = async (rel: string) => ((await readText(joinPath(GAME_DIR, rel)).catch(() => null)) ?? "").replace(/\r\n?/g, "\n");
 
-/** Every file under `dir`, as paths relative to it. */
-async function walk(dir: string, skip?: Set<string>, prefix = ""): Promise<string[]> {
-  const entries = await listDir(joinPath(dir, prefix)).catch(() => []);
-  const nested = await Promise.all(entries.map(e => {
-    const rel = joinPath(prefix, e.name);
-    if (e.kind === "file") return [rel];
-    return skip?.has(rel) ? [] : walk(dir, skip, rel);
-  }));
-  return nested.flat();
+/** Every file under `dir`, as paths relative to it; `skip`: folders (relative to it) not to look into. */
+async function walk(dir: string, skip?: Set<string>): Promise<string[]> {
+  const rel = (p: string) => p.slice(dir.length + 1);
+  const files = await walkFiles(dir, p => !!skip?.has(rel(p))).catch(() => []);
+  return files.map(rel);
 }
 
 /** The line without a trailing # comment (outside strings). */

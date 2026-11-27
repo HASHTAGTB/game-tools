@@ -119,7 +119,8 @@ export const usePromptBuilder = create<State & Actions>()((set, get) => {
   drag: null,
 
   init: () => {
-    get().load();
+    // opened again after another tool: keep what's here, only look for changes made meanwhile
+    if (get().loaded && sync.current()) sync.check(); else get().load();
     loadTagDb().then(db => set({ db }), e => set({ error: "tag data: " + e }));
     return sync.watch(() => !!get().loc?.ready);
   },

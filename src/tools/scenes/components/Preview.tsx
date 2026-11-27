@@ -1,6 +1,6 @@
 import { CalendarDays, Clock, Eye, Music, Wrench } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { useAssetUrl } from "@/shared/lib/assetUrl";
+import { preloadAssets, useAssetImage, type AssetImage } from "@/shared/lib/assetUrl";
 import { boxLook, characterOf, useGame, type Manifest } from "@/shared/lib/game";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
@@ -30,6 +30,7 @@ export function Preview() {
 
   const stages = useMemo(() => (script ? playScript(script) : []), [script]);
   const { stage, cue } = useShownStage(script, stages, line, moved, manifest);
+  usePreloadStages(stages, manifest);
 
   // the line in the textbox: the one at the cursor, or the last one before it
   let say: { who: string | null; raw: string; n: number } | null = null;
@@ -94,6 +95,20 @@ function useShownStage(script: Script | null, stages: Stage[], line: number, mov
   return { stage: stages[line - 1] ?? EMPTY_STAGE, cue: r?.cue ?? cue };
 }
 
+/** Reads the scene's backgrounds and sprites ahead, so moving the cursor shows them at once. */
+function usePreloadStages(stages: Stage[], manifest: Manifest | null) {
+  useEffect(() => {
+    if (!manifest?.media) return;
+    const files = new Set<string>();
+    for (const st of stages) {
+      const bg = st.background && st.background !== "black" ? manifest.imageFiles[st.background] : null;
+      if (bg) files.add(bg);
+      for (const sp of st.sprites) { const f = spriteFile(manifest, sp); if (f) files.add(f); }
+    }
+    preloadAssets(files);
+  }, [stages, manifest]);
+}
+
 type Target = Record<string, string | number>;
 type Enter = { initial: Target | false; transition: Transition };
 
@@ -142,10 +157,17 @@ const SHAKE = {
  *  (else the background's name on a tinted backdrop and sprites as tinted figures), with the lines' transitions. */
 function StageView({ stage, cue, manifest }: { stage: Stage; cue: Cue; manifest: Manifest | null }) {
   const bg = stage.background;
+  // like a sprite's look: while a new background is still being read the old one stays, and the change plays once it's
+  // there (else its transition would play on an empty frame and the image pop in after)
+  const { pending } = useAssetImage(bg && bg !== "black" ? manifest?.imageFiles[bg] : null, manifest);
+  const lastBg = useRef(bg);
+  if (!pending) lastBg.current = bg;
+  const shownBg = pending ? lastBg.current : bg;
   const frame = useRef<HTMLDivElement>(null);
   const veil = useRef<HTMLDivElement>(null);
   const missing = !!bg && !!manifest?.media && !manifest.backgrounds.includes(bg);
-  useEffect(() => {
+  // before the first frame of the new stage, so a fade covers it from the start
+  useLayoutEffect(() => {
     if (cue.punch) frame.current?.animate(SHAKE[cue.punch].map(translate => ({ translate })), { duration: 300 });
     const f = cue.fade, v = veil.current;
     if (f && v) {
@@ -158,7 +180,7 @@ function StageView({ stage, cue, manifest }: { stage: Stage; cue: Cue; manifest:
     <div className="group relative aspect-video overflow-hidden rounded-lg border border-ink-line bg-black">
       <div ref={frame} className="absolute inset-0">
         <AnimatePresence initial={false} custom={cue}>
-          <Backdrop key={bg ?? ""} bg={bg} cue={cue} manifest={manifest} />
+          <Backdrop key={shownBg ?? ""} bg={shownBg} cue={cue} manifest={manifest} />
         </AnimatePresence>
         <div className="absolute inset-0 z-[2]">
           <AnimatePresence initial={false} custom={cue}>
@@ -178,14 +200,17 @@ function StageView({ stage, cue, manifest }: { stage: Stage; cue: Cue; manifest:
   );
 }
 
-/** One background: its image, or its name's colours while there is none. A new one comes on over the old. */
+/** One background: its image, or its name's colours while there is none (nothing while it's still being read, so the
+ *  stand-in doesn't flash up; StageView normally waits for the image before showing a new one). A new one comes on
+ *  over the old. */
 function Backdrop({ bg, cue, manifest }: { bg: string | null; cue: Cue; manifest: Manifest | null }) {
   const hue = bg ? [...bg].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7) : 0;
-  const url = useAssetUrl(bg && bg !== "black" ? manifest?.imageFiles[bg] : null, manifest);
+  const { img, pending } = useAssetImage(bg && bg !== "black" ? manifest?.imageFiles[bg] : null, manifest);
+  const url = img?.url;
   const e = enterOf(cue.background, cue);
   return (
     <m.div className="absolute inset-0"
-      style={{ background: !bg || bg === "black" ? "#000" : `linear-gradient(180deg, hsl(${hue} 22% 30%), hsl(${(hue + 40) % 360} 18% 16%))` }}
+      style={{ background: !bg || bg === "black" ? "#000" : pending || url ? "transparent" : `linear-gradient(180deg, hsl(${hue} 22% 30%), hsl(${(hue + 40) % 360} 18% 16%))` }}
       initial={e.initial} animate={{ opacity: 1, scale: 1, clipPath: SHOWN, zIndex: 1 }} transition={e.transition}
       variants={{ out: (c: Cue) => ({ zIndex: 0, ...exitOf(c.background, c, true) }) }} exit="out">
       {url && <img src={url} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />}
@@ -210,11 +235,15 @@ function spriteFile(m: Manifest | null, sp: Sprite) {
 
 /** One sprite where it stands: the game's image (anchored like xalign/yalign 1.0 do), or a tinted figure with the
  *  character's name while there is none. It comes, goes, moves and changes its look the way the script says; a move
- *  written without a transition still glides a little, so you can see who went where. */
+ *  written without a transition still glides a little, so you can see who went where. While a new look is still being
+ *  read the old one stays (the change plays once it's there), never the stand-in figure. */
 function SpriteView({ sprite: sp, cue, manifest }: { sprite: Sprite; cue: Cue; manifest: Manifest | null }) {
   const { x, scale } = placeOf(sp.at, manifest?.positions);
-  const url = useAssetUrl(spriteFile(manifest, sp), manifest);
-  const [natural, setNatural] = useState<Record<string, number>>({});
+  const { img: read, pending } = useAssetImage(spriteFile(manifest, sp), manifest);
+  const last = useRef<AssetImage | null>(null);
+  if (!pending) last.current = read;
+  const img = pending ? last.current : read;
+  const url = img?.url;
   const c = look(manifest, sp.tag);
   const tag = sp.tag;
 
@@ -229,24 +258,26 @@ function SpriteView({ sprite: sp, cue, manifest }: { sprite: Sprite; cue: Cue; m
     : { initial: false, transition: instant };
   const swapOut = { out: (k: Cue) => ({ zIndex: 0, ...exitOf(k.look[tag], k, true) }) };
 
-  const h = url ? natural[url] : null;
+  const h = img?.h || null;
   const fig = 74 * scale;
+  // The outer box is the point the sprite stands on (no width); each look sits on it by its own size, so an old look
+  // fading out and a new one fading in are both where they belong (never side by side in a shared box).
   return (
-    <m.div className="absolute inset-y-0 flex items-end" style={{ translate: url ? `-${x * 100}% 0` : "-50% 0", originY: 1 }}
+    <m.div className="absolute inset-y-0 w-0" style={{ originY: 1 }}
       initial={come.initial} animate={{ left: `${x * 100}%`, opacity: 1, y: "0%", scale: 1 }}
       transition={tag in cue.enter ? come.transition : glide}
       variants={{ out: (k: Cue) => exitOf(k.exit[tag], k) }} exit="out">
-      <AnimatePresence initial={false} mode="popLayout" custom={cue}>
+      <AnimatePresence initial={false} custom={cue}>
         {url ? (
-          <m.div key={url} className="relative" style={{ height: `${h ? (h * BASE_ZOOM * scale / SCREEN_H) * 100 : 85}%` }}
+          <m.div key={url} className="absolute bottom-0 left-0"
+            style={{ height: `${h ? (h * BASE_ZOOM * scale / SCREEN_H) * 100 : 85}%`, aspectRatio: img?.w && h ? `${img.w} / ${h}` : undefined, translate: `-${x * 100}% 0` }}
             initial={swap.initial} animate={{ opacity: 1, zIndex: 1 }} transition={swap.transition} variants={swapOut} exit="out">
-            <img src={url} alt={`${c.name} ${sp.attrs.join(" ")}`} draggable={false} className="h-full w-auto max-w-none"
-              style={{ opacity: h ? 1 : 0 }} onLoad={e => { const n = e.currentTarget.naturalHeight; setNatural(v => ({ ...v, [url]: n })); }} />
+            <img src={url} alt={`${c.name} ${sp.attrs.join(" ")}`} draggable={false} className={cn("h-full max-w-none", img?.w ? "w-full" : "w-auto")} />
           </m.div>
-        ) : (
+        ) : pending ? null : (
           <m.div key={`fig:${sp.attrs.join(" ")}`}
-            className="relative flex flex-col items-center justify-start rounded-t-[999px] pt-[14%]"
-            style={{ height: `${fig}%`, aspectRatio: 0.34 * 16 / 9, background: `color-mix(in srgb, ${c.color} 42%, #1f1c1a)`, boxShadow: `inset 0 0 0 1.5px color-mix(in srgb, ${c.color} 70%, transparent)` }}
+            className="absolute bottom-0 left-0 flex flex-col items-center justify-start rounded-t-[999px] pt-[14%]"
+            style={{ height: `${fig}%`, translate: "-50% 0", aspectRatio: 0.34 * 16 / 9, background: `color-mix(in srgb, ${c.color} 42%, #1f1c1a)`, boxShadow: `inset 0 0 0 1.5px color-mix(in srgb, ${c.color} 70%, transparent)` }}
             initial={swap.initial} animate={{ opacity: 1, zIndex: 1 }} transition={swap.transition} variants={swapOut} exit="out">
             <span className="max-w-full truncate px-1 font-sans text-xs font-semibold text-paper">{c.name}</span>
             <span className="max-w-full truncate px-1 text-center font-talk text-[11px] leading-tight text-paper/75">{sp.attrs.slice(1).join(" ")}</span>
@@ -302,7 +333,8 @@ function TextboxPreview({ say, pov, manifest, restart, wait }: { say: { who: str
 function useCrawl(beats: Beat[], key: string, wait = 0): [number, () => void] {
   const reduce = useReducedMotion();
   const [shown, setShown] = useState(Infinity);
-  useEffect(() => {
+  // before paint: else the whole line shows for a frame before it starts writing out
+  useLayoutEffect(() => {
     if (reduce || !beats.length) return setShown(Infinity);
     // when each beat is due (pauses as written, but at most 1.5s so the preview never stalls)
     const due: number[] = [];

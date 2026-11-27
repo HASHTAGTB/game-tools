@@ -16,7 +16,7 @@ import { popoverCls } from "@/shared/ui/popover";
 import { Rule } from "@/shared/ui/heading";
 import { useVault } from "./context";
 import { baseName, parentOf, type Node } from "./store";
-import { DropRing, GroupRule, hoverOnly, InlineRename, RowActions, useHoverOpen } from "./tree-parts";
+import { DropRing, GroupRule, hoverOnly, hoverSlot, InlineRename, RowActions, useHoverOpen } from "./tree-parts";
 
 const INDENT = 14;
 /** Left padding of a top-level row. */
@@ -40,7 +40,11 @@ export function FileTree() {
   const useStore = useVault();
   const { root: rootDir, noun } = useStore.config;
   const Noun = useStore.Noun;
-  const { tree, ready, expanded, busy, create, createFolder, setRenaming, duplicate, move, toggle } = useStore();
+  // what this draws, picked one by one: the rows pick their own, so typing in the editor redraws none of it
+  const root = useStore(s => s.tree[rootDir]);
+  const ready = useStore(s => s.ready);
+  const busy = useStore(s => s.busy);
+  const { create, createFolder, setRenaming, duplicate, move, toggle } = useStore.getState();
   /** What the context menu is for; null is the vault. */
   const [menuFor, setMenuFor] = useState<Node | null>(null);
   const [deleting, setDeleting] = useState<Node | null>(null);
@@ -48,7 +52,6 @@ export function FileTree() {
   const [dropDir, setDropDir] = useState<string | null>(null);
   const hoverOpen = useHoverOpen(toggle);
 
-  const root = tree[rootDir];
   if (!ready) return null;
 
   const canDrop = (dir: string) => !!dragging && dir !== parentOf(dragging) && !isUnder(dir, dragging);
@@ -60,7 +63,7 @@ export function FileTree() {
     e.dataTransfer.dropEffect = "move";
     setDropDir(dir);
     // hovering a closed folder for a moment opens it, so you can drop deeper
-    hoverOpen.over(n?.kind === "directory" && !expanded.has(n.path) ? n.path : null);
+    hoverOpen.over(n?.kind === "directory" && !useStore.getState().expanded.has(n.path) ? n.path : null);
   };
   const endDrag = () => { setDragging(null); setDropDir(null); hoverOpen.reset(); };
   const onDrop = (e: DragEvent) => {
@@ -127,11 +130,14 @@ type RowProps = {
 
 function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete, ref }: RowProps) {
   const useStore = useVault();
-  const { tree, expanded, path: open, renaming, toggle, open: openNote, create, setRenaming, rename } = useStore();
   const isDir = node.kind === "directory";
-  const isOpen = expanded.has(node.path);
-  const active = open === node.path;
-  const children = tree[node.path];
+  const isOpen = useStore(s => s.expanded.has(node.path));
+  const active = useStore(s => s.path === node.path);
+  const children = useStore(s => s.tree[node.path]);
+  const renaming = useStore(s => s.renaming === node.path);
+  /** the open note is directly in this folder */
+  const holdsOpen = useStore(s => isDir && !!s.path && parentOf(s.path) === node.path);
+  const { toggle, open: openNote, create, setRenaming, rename } = useStore.getState();
   const pad = { paddingLeft: BASE + depth * INDENT };
   const target = isDir && dropDir === node.path;
 
@@ -145,7 +151,7 @@ function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete,
         )}
         {target && <DropRing />}
 
-        {renaming === node.path ? (
+        {renaming ? (
           <InlineRename value={baseName(node.path)} label={isDir ? "Folder name" : "Name"} onCommit={v => rename(node.path, v)} onCancel={() => setRenaming(null)}
             className={isDir ? "font-sans" : "font-talk"} style={{ paddingLeft: pad.paddingLeft + (isDir ? 0 : 18) }} />
         ) : (
@@ -165,8 +171,8 @@ function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete,
           </button>
         )}
 
-        {renaming !== node.path && !dragging && (
-          <span className="relative flex">
+        {!renaming && !dragging && (
+          <span className={isDir ? hoverSlot : "contents"}>
             {isDir ? (
               <IconButton icon={FilePlus} size="sm" label={`New ${useStore.config.noun} here`} tooltipSide="right" className={hoverOnly} onClick={() => create(node.path)} />
             ) : <RowActions onRename={() => setRenaming(node.path)} onDelete={() => onDelete(node)} />}
@@ -179,7 +185,7 @@ function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete,
           <m.ul role="group" key="kids" className="relative overflow-hidden" transition={spring.smooth}
             initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
             {/* the menu rule, one per folder level; lights up while something can be dropped into this folder */}
-            <GroupRule drop={target} holdsOpen={!!open && parentOf(open) === node.path} style={{ left: ruleX(depth + 1) }} />
+            <GroupRule drop={target} holdsOpen={holdsOpen} style={{ left: ruleX(depth + 1) }} />
             {children === undefined
               ? <li className="h-7 font-talk text-sm leading-7 text-taupe" style={{ paddingLeft: BASE + (depth + 1) * INDENT + 18 }}>…</li>
               : children.length === 0
@@ -198,7 +204,9 @@ function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete,
 export function DeleteDialog({ node, onClose, name, what = "Links to it will stop working." }: {
   node: Node | null; onClose: () => void; name?: string; what?: string;
 }) {
-  const { remove, removeFolder, loc } = useVault()();
+  const useStore = useVault();
+  const loc = useStore(s => s.loc);
+  const { remove, removeFolder } = useStore.getState();
   const last = useRef(node);
   if (node) last.current = node;
   const n = last.current;

@@ -7,12 +7,12 @@ import { download } from "@/shared/lib/utils";
 import { HelpButton, type Gesture } from "@/shared/ui/help";
 import { IconButton } from "@/shared/ui/icon-button";
 import { MenuGroup } from "@/shared/ui/menu";
-import { SaveState } from "@/shared/ui/status";
 import { EmptyState, HintLink, NotReady, ToolPage } from "@/shared/ui/tool-page";
 import { useCopy } from "@/shared/ui/use-copy";
 import { VaultProvider } from "@/shared/vault/context";
+import { DocStatus } from "@/shared/vault/DocStatus";
 import { PathBar } from "@/shared/vault/PathBar";
-import { baseName } from "@/shared/vault/store";
+import { baseName, useVaultPick } from "@/shared/vault/store";
 import { useVaultUrl } from "@/shared/vault/url";
 import { Editor } from "./components/Editor";
 import { Preview } from "./components/Preview";
@@ -42,30 +42,28 @@ const HELP: Gesture[] = [
 
 /** The scene editor: the game's scene files (.rpy) written as a screenplay, saved as the Ren'Py the game runs. */
 export default function Scenes() {
-  const s = useScenes();
-  const { loc, ready, path, text, saved, rev, saving, conflict, mode } = s;
+  // not the text: the editor, the list and DocStatus follow that themselves
+  const s = useVaultPick(useScenes, "loc", "ready", "path", "conflict", "mode", "busy", "error", "notice",
+    "setError", "setNotice", "reload", "flush", "revert", "setMode", "resolveConflict");
+  const { loc, ready, path, conflict, mode } = s;
   const [copied, copy] = useCopy();
 
   useVaultUrl(useScenes, "/scenes");
 
   useEffect(() => {
     if (!ready) return;
-    useGame.getState().load();
+    useGame.getState().fresh();
     useChapters.getState().load();
     useSceneIndex.getState().load().catch(() => {});   // tried again on the next change
   }, [ready, loc]);
-
-  // the open scene's labels, as saved, for the other scenes' checks
-  useEffect(() => { if (path && saved) useSceneIndex.getState().update(path, saved.text); }, [path, saved]);
 
   const labels = useKnownLabels();
 
   // the script view or the Ren'Py source
   useHotkeys({ "mod+e": () => s.setMode(useScenes.getState().mode === "live" ? "source" : "live") });
 
-  const unsaved = !!saved && text !== saved.text;
   const fileName = path ? baseName(path) : "";
-  const title = readInfo(text).title || fileName;
+  const title = useScenes(st => readInfo(st.text).title) || fileName;
 
   const downloadRpy = () => download(`${fileName}.rpy`, useScenes.getState().text);
 
@@ -82,11 +80,7 @@ export default function Scenes() {
         bar={
           <PathBar rootLabel="Scenes" title={title}>
             {path && mode === "live" && <TextBar />}
-            {path && (
-              <span className="shrink-0 font-talk text-xs text-taupe">
-                <SaveState saving={saving} unsaved={unsaved} github={loc?.kind === "github"} />
-              </span>
-            )}
+            {path && <DocStatus />}
             {path && (
               <span className="flex shrink-0">
                 <IconButton icon={copied ? Check : ClipboardCopy} size="sm" tooltipSide="bottom" label={copied ? "Copied" : "Copy the Ren'Py"}
@@ -104,10 +98,10 @@ export default function Scenes() {
         onResolve={(_, keep) => s.resolveConflict(keep)}
         // a fragment, so the column stays while no scene is open
         aside={<>{path && <Preview />}</>}>
-        {path && <SceneHeader text={text} title={title} />}
+        {path && <SceneHeader title={title} />}
         {path ? (
           <div className="min-h-0 flex-1">
-            <Editor path={path} text={text} rev={rev} mode={mode} labels={labels} title={title} onChange={s.type} />
+            <Editor mode={mode} labels={labels} title={title} />
           </div>
         ) : !ready ? <NotReady loc={loc} /> : (
           <EmptyState title="No scene open.">

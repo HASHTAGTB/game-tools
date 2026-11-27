@@ -39,8 +39,16 @@ function stagger(els: Iterable<Element>, kf: Keyframe[], o: Opts & { step: numbe
   const { step, spread, inWindow = true, delay = 0, ...rest } = o;
   const list = [...els];
   if (!list.length) return;
-  const clip = clipOf(list[0], inWindow);
+  // each item by what clips it (items may sit in different scrollers); siblings share it, so it's worked out once each
+  const clips = new Map<Element | null, ReturnType<typeof clipOf>>();
+  const clipFor = (el: Element) => {
+    const k = el.parentElement;
+    let c = clips.get(k);
+    if (!c) clips.set(k, c = clipOf(el, inWindow));
+    return c;
+  };
   const seen = list.filter(el => {
+    const clip = clipFor(el);
     const r = el.getBoundingClientRect();
     return (r.width || r.height) && r.bottom > clip.top && r.top < clip.bottom && r.right > clip.left && r.left < clip.right;
   });
@@ -87,6 +95,28 @@ export const fadeIn = (el: Element) => play(el, [{ opacity: 0 }, { opacity: 1 }]
 export function cascade(els: Iterable<Element>) {
   // `translate`, not `transform`: list items' transform is Motion's (they slide)
   stagger(els, [{ opacity: 0, translate: "0 -10px" }, { opacity: 1, translate: "0 0" }], { duration: 320, step: 55, spread: 700 });
+}
+
+/** Unfold, for the same text shown another way (a scene's script ↔ source view): the view has been scrolled so the
+ *  line you were on is where it was (screen height `at`); it stays put and everything else opens out from it, the
+ *  nearest first, each coming from a little closer to it. Only what can be seen takes part. */
+export function unfold(els: Iterable<Element>, at: number) {
+  if (calm()) return;
+  const clips = new Map<Element | null, ReturnType<typeof clipOf>>();
+  const reach = innerHeight / 2 || 1;
+  for (const el of els) {
+    const k = el.parentElement;
+    let clip = clips.get(k);
+    if (!clip) clips.set(k, clip = clipOf(el, true));
+    const r = el.getBoundingClientRect();
+    if (!(r.width || r.height) || r.bottom <= clip.top || r.top >= clip.bottom) continue;
+    const d = Math.max(r.top - at, Math.min(0, r.bottom - at));   // 0 for the line itself
+    const far = Math.min(1, Math.abs(d) / reach);
+    play(el, [
+      { opacity: Math.max(0, 0.6 - Math.abs(d) / 160), translate: `0 ${Math.round(-d * 0.08)}px` },
+      { opacity: 1, translate: "0 0" },
+    ], { duration: 300, delay: far * 180, fill: "backwards" });
+  }
 }
 
 // ---------------------------------------------------------------- moving

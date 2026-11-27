@@ -1,5 +1,6 @@
 import { Wand2 } from "lucide-react";
 import { useState } from "react";
+import { useShallow } from "zustand/shallow";
 import { cn } from "@/shared/lib/utils";
 import { Field } from "@/shared/ui/field";
 import { IconButton } from "@/shared/ui/icon-button";
@@ -9,12 +10,12 @@ import { setLabel } from "../lib/ops";
 import { labelOf } from "../lib/labels";
 import { suggestLabel } from "../lib/script";
 import { useSceneUi } from "../lib/ui";
-import { useChapters } from "../state";
+import { useChapters, useScenes } from "../state";
 
 /** The scene's info above the script: its chapter (a timeline chapter), status and Ren'Py level (the file's `##`
  *  header) and its label (in the script). Each field writes through the editor, so Ctrl+Z undoes it too. */
-export function SceneHeader({ text, title }: { text: string; title: string }) {
-  const info = readInfo(text);
+export function SceneHeader({ title }: { title: string }) {
+  const info = useScenes(useShallow(s => readInfo(s.text)));
   const label = useSceneUi(s => (s.script ? labelOf(s.script) : null));
   const suggested = suggestLabel(title);
   const chapters = useChapters(c => c.list) ?? [];

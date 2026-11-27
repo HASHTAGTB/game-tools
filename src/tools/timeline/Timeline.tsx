@@ -37,7 +37,7 @@ export default function Timeline() {
   useEffect(() => useTimeline.getState().init(), []);
   // the game's characters and colours join the roster (castOf); re-read whenever the timeline (re)loads
   const game = useGame(g => g.manifest);
-  useEffect(() => { if (loaded) useGame.getState().load(); }, [loaded, loc]);
+  useEffect(() => { if (loaded) useGame.getState().fresh(); }, [loaded, loc]);
 
   const st = useTimeline.getState;
   /** Only events: chapters, threads and characters are deleted from their panel, with a confirm. Not a bare

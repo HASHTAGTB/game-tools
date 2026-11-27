@@ -23,7 +23,17 @@ function fromLegacy(dataDir: string) {
   return m ? m[1] : dataDir;
 }
 
+/** The config as last read or written: every request needs it, so it's read from disk only once
+ *  (editing config.json by hand needs a server restart; the app's own changes go through POST /api/config). */
+let config: Config | null = null;
+
 async function readConfig(): Promise<Config> {
+  if (config) return config;
+  const c = await readConfigFile();
+  return (config ??= c); // a POST /api/config that landed during the read wins
+}
+
+async function readConfigFile(): Promise<Config> {
   try {
     const c = JSON.parse(await fs.readFile(CONFIG, "utf8"));
     if (typeof c.root === "string" && c.root) return { root: c.root };
@@ -118,6 +128,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<boolea
     const dir = expand(root);
     await fs.mkdir(dir, { recursive: true });
     await writeAtomic(CONFIG, JSON.stringify({ root: dir }, null, 2) + "\n");
+    config = { root: dir };
     return send(res, 200, { root: dir }), true;
   }
 
@@ -135,6 +146,24 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<boolea
       if (missing(e)) return send(res, 200, []), true;
       throw e;
     }
+  }
+
+  if (route === "GET /api/fs/walk") {
+    // every file below, as root-relative paths; dot-folders (.git, .obsidian) aren't looked into
+    const rel = path.relative(root, full).split(path.sep).filter(Boolean).join("/");
+    const out: string[] = [];
+    const walk = async (dir: string, at: string) => {
+      // a folder that can't be read (gone mid-walk, no permission) is skipped, like the per-folder fallback does
+      const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+      await Promise.all(entries.filter(e => !e.name.startsWith(".")).map(e => {
+        const p = at ? `${at}/${e.name}` : e.name;
+        if (e.isDirectory()) return walk(path.join(dir, e.name), p);
+        if (e.isFile()) out.push(p);
+      }));
+    };
+    await walk(full, rel);
+    // sibling folders are read in parallel, so sort: callers rely on a stable order (first duplicate name wins)
+    return send(res, 200, out.sort()), true;
   }
 
   if (route === "GET /api/fs/stat") {

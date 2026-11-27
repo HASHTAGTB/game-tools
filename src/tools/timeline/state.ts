@@ -116,7 +116,8 @@ export const useTimeline = create<State & Actions>()((set, get) => {
     conflicts: [], error: null, notice: null, canUndo: false, canRedo: false,
 
     init: () => {
-      get().load();
+      // opened again after another tool: keep what's here, only look for changes made meanwhile
+      if (get().loaded && sync.current()) sync.check(); else get().load();
       return sync.watch(() => get().loaded);
     },
 

@@ -2,6 +2,7 @@ import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { folderSupported, STATIC } from "@/shared/lib/env";
 import { cn } from "@/shared/lib/utils";
+import { useGame } from "@/shared/lib/game";
 import { disconnect, getConfig, REPO } from "@/shared/lib/github";
 import {
   pickServerRoot, reconnectFolder, refreshLocation, setServerRoot, switchTo, switchToGitHub, TOOLS_DIR, type Location,
@@ -40,7 +41,10 @@ export function WorkspaceLocation({ data }: Props) {
   useEffect(() => {
     if (open) getConfig().then(c => setGh({ token: "", login: c?.login ?? "", show: false }));
   }, [open, loc]);
-  const onReload = () => { refreshLocation().catch(() => {}).finally(() => data.reload(reloaded(loc))); };
+  // the game's data too: tools only read it again on opening when it's a while old (useGame.fresh)
+  const onReload = () => {
+    refreshLocation().catch(() => {}).finally(() => { data.reload(reloaded(loc)); useGame.getState().load(); });
+  };
 
   const run = async (fn: () => Promise<string | null>) => {
     setErr("");

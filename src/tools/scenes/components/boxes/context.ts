@@ -1,5 +1,5 @@
 import type { EditorView } from "@codemirror/view";
-import { createContext, useContext, useLayoutEffect, useState, type RefObject } from "react";
+import { createContext, useContext, useState } from "react";
 import type { Manifest } from "@/shared/lib/game";
 import type { Box, Place } from "../../lib/blocks";
 import type { Problem } from "../../lib/checks";
@@ -71,16 +71,6 @@ export function problemsOf(c: BoxCtx, b: Box): Problem[] {
   return lines.flatMap(n => c.problems.get(n) ?? []);
 }
 const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
-
-/** A textarea that grows with its text. */
-export function useAutosize(ref: RefObject<HTMLTextAreaElement | null>, value: string) {
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = el.scrollHeight + "px";
-  }, [ref, value]);
-}
 
 /** Tell the source view's cursor (and so the preview and header) which line the box in focus is on. */
 export function follow(view: EditorView, line: number) {

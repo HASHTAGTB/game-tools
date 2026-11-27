@@ -107,7 +107,11 @@ export const useSceneIndex = create<SceneIndex>()((set, get) => ({
   },
 }));
 
-useScenes.subscribe((s, prev) => { if (s.tree !== prev.tree) useSceneIndex.getState().sync(); });
+useScenes.subscribe((s, prev) => {
+  if (s.tree !== prev.tree) useSceneIndex.getState().sync();
+  // the open scene's labels, as saved, for the other scenes' checks
+  if (s.saved !== prev.saved && s.path && s.saved) useSceneIndex.getState().update(s.path, s.saved.text);
+});
 
 /** The labels jumps can go to: every scene's and the game's own (null while the scenes are being read). */
 export function useKnownLabels(): Set<string> | null {

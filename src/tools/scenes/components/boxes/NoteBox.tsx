@@ -9,22 +9,25 @@ import { fileHistoryKey, fileHistoryKeys, newline, rawColours, rawIndent, rawThe
 import { rawText, removeBox, setNote, setRaw } from "../../lib/ops";
 import { focusLine, isRaw, markRaw } from "../../lib/ui";
 import { stepToText } from "../../lib/richtext";
-import { follow, problemsOf, useAutosize, useBox, type ListLayout } from "./context";
+import { follow, problemsOf, useBox, type ListLayout } from "./context";
 import { Acts, addAfter, Problems, useMoves } from "./List";
 
 type Props<K extends Box["kind"]> = { box: Extract<Box, { kind: K }>; prev: Box | null; next: Box | null; layout: ListLayout };
+
+const PLACEHOLDER = "A note for the team (the game ignores it)";
 
 /** A note for the team (`# …`): the game ignores it. */
 export function NoteBox({ box: b, prev, next, layout }: Props<"note">) {
   const { view } = useBox();
   const ref = useRef<HTMLTextAreaElement>(null);
   const moves = useMoves(b, prev, next);
-  useAutosize(ref, b.text);
   const lone = b.from === b.to;
   return (
     <div className="bx-box bx-note" data-line={b.from} data-from={b.from} data-to={b.to}>
       <StickyNote strokeWidth={2.25} />
-      <textarea ref={ref} rows={1} value={b.text} data-text placeholder="A note for the team (the game ignores it)" spellCheck
+      {/* grows with its text by CSS alone (see .bx-grow): nothing is measured, in any browser */}
+      <div className="bx-grow" data-value={b.text || PLACEHOLDER}>
+      <textarea ref={ref} rows={1} value={b.text} data-text placeholder={PLACEHOLDER} spellCheck
         readOnly={!lone} title={lone ? undefined : "A note of several lines: edit it in the source view (Ctrl+E)"}
         onFocus={() => follow(view, b.from)}
         onChange={e => setNote(view, b.from, e.target.value)}
@@ -48,6 +51,7 @@ export function NoteBox({ box: b, prev, next, layout }: Props<"note">) {
             el.setSelectionRange(at, at);
           }
         }} />
+      </div>
       <Acts box={b} prev={prev} next={next} />
     </div>
   );

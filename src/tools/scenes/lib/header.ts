@@ -46,11 +46,15 @@ function headerKeys(lines: string[]): string[] {
 
 export function readInfo(text: string): SceneInfo {
   const info: SceneInfo = { title: "", chapter: "", status: "", renpy: "" };
-  for (const l of text.split("\n")) {
-    const m = HEADER_LINE.exec(l);
+  // line by line, only as far as the header goes (this runs on every keystroke)
+  for (let at = 0; at <= text.length;) {
+    const end = text.indexOf("\n", at);
+    const m = HEADER_LINE.exec(text.slice(at, end < 0 ? undefined : end));
     if (!m) break;
     const k = m[1].toLowerCase() as InfoKey;
     if (k in info) info[k] = m[2].trim();
+    if (end < 0) break;
+    at = end + 1;
   }
   return info;
 }

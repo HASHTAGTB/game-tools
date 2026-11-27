@@ -26,6 +26,11 @@ type SceneUi = {
   moved: number;
   /** the open scene's problems, from the last check */
   problems: Problem[];
+  /** the scene the editor last loaded (its path): when it changes another scene opened, the box view starts again */
+  opened: string | null;
+  /** counts loads (another scene, this one reloaded or reverted): the whole script was replaced, so the boxes that
+   *  were there just go, they don't crumple away one by one */
+  loaded: number;
 
   /** where the caret goes once the boxes have been drawn again (after an edit that moved lines) */
   focus: { line: number; caret: Caret } | null;
@@ -49,7 +54,7 @@ type SceneUi = {
 };
 
 export const useSceneUi = create<SceneUi>(() => ({
-  view: null, script: null, line: 1, moved: 0, problems: [],
+  view: null, script: null, line: 1, moved: 0, problems: [], opened: null, loaded: 0,
   focus: null, openCard: null, tabs: {}, reveal: null, menu: null, entering: null, rawIds: new Set(),
   typing: null, speedOpen: false,
 }));

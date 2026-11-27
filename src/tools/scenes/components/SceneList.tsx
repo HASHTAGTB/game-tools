@@ -3,6 +3,7 @@ import { bloomRef } from "@/shared/ui/flair";
 import { bloomCls } from "@/shared/ui/motion";
 import { ChevronRight, Copy, FilePlus, Pencil, Trash2 } from "lucide-react";
 import { useMemo, useState, type DragEvent, type MouseEvent } from "react";
+import { useShallow } from "zustand/shallow";
 import { cn, isUnder } from "@/shared/lib/utils";
 import { ContextMenuItem as Item, ContextMenuSeparator } from "@/shared/ui/menu-item";
 import { MenuMarker } from "@/shared/ui/menu";
@@ -31,7 +32,9 @@ const byTitle = (a: Row, b: Row) => a.title.localeCompare(b.title, undefined, { 
 export function SceneList() {
   const files = useSceneIndex(i => i.files);
   const chapters = useChapters(c => c.list);
-  const { ready, path: open, text, setRenaming } = useScenes();
+  const ready = useScenes(s => s.ready);
+  const open = useScenes(s => s.path);
+  const { setRenaming } = useScenes.getState();
   const [menuFor, setMenuFor] = useState<Row | null>(null);
   const [deleting, setDeleting] = useState<Row | null>(null);
   const [closed, setClosed] = useState<Set<string>>(new Set());
@@ -40,8 +43,8 @@ export function SceneList() {
   const toggle = (id: string) => setClosed(s => { const n = new Set(s); if (!n.delete(id)) n.add(id); return n; });
   const hoverOpen = useHoverOpen(toggle);
 
-  // the open scene from its live text, so a new title shows while typing
-  const openInfo = useMemo(() => (open ? readInfo(text) : null), [open, text]);
+  // the open scene from its live text, so a new title shows while typing (only its header: not on every keystroke)
+  const openInfo = useScenes(useShallow(s => (s.path ? readInfo(s.text) : null)));
 
   const groups = useMemo(() => {
     if (!files) return null;
@@ -152,13 +155,14 @@ type RowProps = {
 };
 
 function SceneRow({ row, active, onDelete, dragging, onDragStart, onDragEnd, ref }: RowProps) {
-  const { renaming, open, setRenaming } = useScenes();
+  const renaming = useScenes(s => s.renaming === row.path);
+  const { open, setRenaming } = useScenes.getState();
   return (
     <MotionItem ref={ref} aria-current={active || undefined}>
       <div data-path={row.path} data-title={row.title} className={cn("group/row relative flex h-7 items-center pr-2", dragging === "self" && "opacity-40")}>
         {/* the signature moment: the marker slides along the rule to the scene that was just opened */}
         {active && <MenuMarker layoutId="scene-marker" className="z-10" style={{ left: 17 }} />}
-        {renaming === row.path ? (
+        {renaming ? (
           // the scene's `## title:` line; the file keeps its name
           <InlineRename value={row.title} label="Title" className="font-talk" style={{ paddingLeft: 30 }}
             onCommit={v => (v !== row.title ? retitleScene(row.path, v) : setRenaming(null))} onCancel={() => setRenaming(null)} />
@@ -172,7 +176,7 @@ function SceneRow({ row, active, onDelete, dragging, onDragStart, onDragEnd, ref
             <span className="truncate">{row.title}</span>
           </button>
         )}
-        {renaming !== row.path && !dragging && (
+        {!renaming && !dragging && (
           <RowActions onRename={() => setRenaming(row.path)} onDelete={() => onDelete(row)} />
         )}
       </div>

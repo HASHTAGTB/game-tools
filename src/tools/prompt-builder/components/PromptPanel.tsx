@@ -21,7 +21,7 @@ export function PromptPanel({ ch, onNegative }: { ch: Character; onNegative: (v:
   const prompt = segs.map(s => s.tag).join(", ");
   const [copied, copyText] = useCopy<"p" | "n">();
   const manifest = useGame(s => s.manifest);
-  useEffect(() => { useGame.getState().load(); }, []);   // a cached copy shows meanwhile
+  useEffect(() => { useGame.getState().fresh(); }, []);   // a cached copy shows meanwhile
   const look = castLook(ch.name, manifest);
   const [shown, skip] = useCrawl(ch.id, prompt.length);
 

@@ -1,33 +1,43 @@
 import { EditorView } from "@codemirror/view";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useGame } from "@/shared/lib/game";
 import { EmptyState } from "@/shared/ui/tool-page";
-import { cascade, spotlight } from "@/shared/ui/flair";
+import { cascade, spotlight, unfold } from "@/shared/ui/flair";
 import { allBoxes, buildTree, type Box, type Tree } from "../../lib/blocks";
 import { sceneCast } from "../../lib/cast";
 import type { Problem } from "../../lib/checks";
 import { lineIds } from "../../lib/editorState";
+import { readInfo } from "../../lib/header";
 import { labelOf, labelsIn } from "../../lib/labels";
 import { setCaret } from "../../lib/richtext";
 import { playScript } from "../../lib/stage";
 import { idAt, useSceneUi } from "../../lib/ui";
+import { boxFor, type Swap } from "../../lib/viewSwap";
+import { useChapters, useScenes } from "../../state";
+import { baseName } from "@/shared/vault/store";
 import { FixButton } from "../problems";
 import { BoxMenus } from "./BoxMenus";
 import { BoxContext, type BoxCtx } from "./context";
 import { BoxItem, List } from "./List";
+import { CARD_MIN, CARD_OUT, firstLine, TitleCard } from "./TitleCard";
 import "./boxes.css";
 
 /** The script as boxes: what people say, narration, notes, stage changes, choices and chats, with a slot between
  *  every two of them where new things are added. There's nowhere else to type, so the Ren'Py stays valid. The file
  *  lives in the (hidden) CodeMirror `view`; every box edits its own lines there. */
-export function BoxView({ view }: { view: EditorView }) {
+export function BoxView({ view, swap }: { view: EditorView; swap: Swap | null }) {
   const script = useSceneUi(s => s.script);
   const problems = useSceneUi(s => s.problems);
   const focus = useSceneUi(s => s.focus);
   const reveal = useSceneUi(s => s.reveal);
   const tabs = useSceneUi(s => s.tabs);
   const rawIds = useSceneUi(s => s.rawIds);
+  const opened = useSceneUi(s => s.opened);
+  const loaded = useSceneUi(s => s.loaded);
   const manifest = useGame(s => s.manifest);
+  const info = useScenes(s => { const i = readInfo(s.text); return `${i.title}\n${i.chapter}`; });
+  const fileName = useScenes(s => (s.path ? baseName(s.path) : ""));
+  const chapterName = useChapters(c => { const id = info.split("\n")[1]; return id ? c.list?.find(x => x.id === id)?.name ?? id : ""; });
   const page = useRef<HTMLDivElement>(null);
 
   const tree = useMemo(() => {
@@ -58,9 +68,62 @@ export function BoxView({ view }: { view: EditorView }) {
     return shared.current;
   }, [view, script, manifest, problems, tree]);
 
+  /* A scene opens: first only its title card is drawn (and shown), then all its boxes in one go, which keeps the page
+     busy for a moment while the card goes on playing (see ./TitleCard.tsx). Once the card has been up long enough it
+     goes, the page starts at its bottom (where you go on writing) and what's on screen falls into place. */
+  // Coming from the source view (`swap`, same editor) the scene isn't opening: no card, the boxes are there at once,
+  // the line you were on is put where it was on screen and they unfold from it.
+  // kept from mount: the tree may only come later, when the prop has already been cleared
+  const swapped = useRef(swap && swap.loaded === loaded ? swap : null);
+  const [built, setBuilt] = useState<unknown>(() => (swapped.current ? opened : undefined));
+  // a caret or problem was pointed at since the boxes were built: the opening then doesn't take the page to the bottom
+  const pointed = useRef(false);
+  const [card, setCard] = useState<{ for: unknown; out: boolean } | null>(null);
+  const building = !!tree && built !== opened;
+  const cardAt = useRef(0);
+  useLayoutEffect(() => {
+    if (!building) return;
+    cardAt.current = performance.now();
+    setCard({ for: opened, out: false });
+    // two frames: the card is on screen (and playing) before the boxes are built
+    let f = requestAnimationFrame(() => { f = requestAnimationFrame(() => setBuilt(opened)); });
+    return () => cancelAnimationFrame(f);
+  }, [building, opened]);
+  const handed = useRef<unknown>(undefined);
+  useLayoutEffect(() => {
+    const el = page.current;
+    if (building || !el || !tree || handed.current === built) return;
+    handed.current = built;
+    pointed.current = false;
+    const swap = swapped.current;
+    if (swap) {
+      swapped.current = null;
+      const box = boxFor(el, swap.line);
+      if (box) el.scrollTop += box.getBoundingClientRect().top - swap.y;
+      unfold(el.querySelectorAll(OPENING), swap.y);
+      return;
+    }
+    el.dataset.opening = "1";
+    el.scrollTop = el.scrollHeight;
+    const go = window.setTimeout(() => {
+      delete el.dataset.opening;
+      if (!pointed.current) el.scrollTop = el.scrollHeight;
+      setCard(c => c && { ...c, out: true });
+      cascade([...el.querySelectorAll<HTMLElement>(OPENING)].reverse());
+      gone = window.setTimeout(() => setCard(c => (c?.for === built ? null : c)), CARD_OUT);
+    }, Math.max(0, CARD_MIN - (performance.now() - cardAt.current)));
+    let gone = 0;
+    // only another scene opening (or the view going) calls it off: the script is parsed again meanwhile (a reload
+    // does, more than once), which mustn't
+    return () => { window.clearTimeout(go); window.clearTimeout(gone); delete el.dataset.opening; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [building, built]);
+
   // after an edit that moved lines: the caret goes where the edit said
   useLayoutEffect(() => {
-    if (!focus || !page.current) return;
+    // while the title card is up there are no boxes yet: the request waits for them
+    if (!focus || !page.current || building) return;
+    pointed.current = true;
     const box = page.current.querySelector(`[data-line="${focus.line}"]`);
     const el = box?.querySelector<HTMLElement>("[data-text]");
     if (el) {
@@ -77,19 +140,11 @@ export function BoxView({ view }: { view: EditorView }) {
       box.scrollIntoView({ block: "nearest" });
     }
     useSceneUi.setState({ focus: null });
-  }, [focus, script]);
-
-  // a scene just opened: its boxes fall into place one after another
-  const cascaded = useRef<EditorView | null>(null);
-  useLayoutEffect(() => {
-    if (!tree || !page.current || cascaded.current === view) return;
-    cascaded.current = view;
-    cascade(page.current.querySelectorAll(".bx-col > :not(.bx-list), .bx-col > .bx-list > *, .bx-col > section > :not(.bx-list), .bx-col > section > .bx-list > *"));
-  }, [tree, view]);
+  }, [focus, script, building]);
 
   // a problem clicked in the checks list: open the tab it's in, scroll there, point at it
   useEffect(() => {
-    if (!reveal || !tree || !page.current) return;
+    if (!reveal || !tree || !page.current || building) return;
     const path = tabsTo(tree, reveal.line).map(([menu, i]) => [idAt(view, menu), i] as const);
     const need = path.filter(([menu, i]) => (tabs[menu] ?? 0) !== i);
     if (need.length) { useSceneUi.setState(s => ({ tabs: { ...s.tabs, ...Object.fromEntries(need) } })); return; }
@@ -97,22 +152,24 @@ export function BoxView({ view }: { view: EditorView }) {
       .filter(el => +el.dataset.from! <= reveal.line && reveal.line <= +el.dataset.to!)
       .sort((a, b) => (+a.dataset.to! - +a.dataset.from!) - (+b.dataset.to! - +b.dataset.from!))[0];
     if (hit) {
+      pointed.current = true;
       const target = hit.classList.contains("bx-box") ? hit : hit.querySelector<HTMLElement>(".bx-box") ?? hit;
       target.scrollIntoView({ block: "center", behavior: "smooth" });
       spotlight(target, page.current, ".bx-box");
       hit.querySelector<HTMLElement>("[data-text]")?.focus({ preventScroll: true });
     }
     useSceneUi.setState({ reveal: null });
-  }, [reveal, tree, tabs]);
+  }, [reveal, tree, tabs, building]);
 
   if (!script || !tree || !ctx) return null;
   const fix = (p: Problem | undefined) => p && <FixButton view={view} problem={p} variant="primary" className="mt-4" />;
 
   return (
     <BoxContext.Provider value={ctx}>
+      <div className="relative h-full">
       <div ref={page} className="bx-page h-full overflow-y-auto">
         <div className="bx-col">
-          {!tree.scene ? (
+          {building ? null : !tree.scene ? (
             <EmptyState className="flex-none py-24" title="The script has no label yet, so nothing can jump to it.">{fix(problems.find(p => p.fix?.at === "after" || p.fix?.at === "start"))}</EmptyState>
           ) : (
             <>
@@ -133,10 +190,16 @@ export function BoxView({ view }: { view: EditorView }) {
           )}
         </div>
       </div>
+      {card && <TitleCard out={card.out} title={info.split("\n")[0] || fileName} chapter={chapterName}
+        first={tree.scene ? firstLine(tree.scene.boxes) : ""} />}
+      </div>
       <BoxMenus />
     </BoxContext.Provider>
   );
 }
+
+/** What falls into place when the scene opens: everything at the top of the page and in its lists. */
+const OPENING = ".bx-col > :not(.bx-list), .bx-col > .bx-list > *, .bx-col > section > :not(.bx-list), .bx-col > section > .bx-list > *";
 
 /** Every box of the scene, nested ones included, by its first line's name. */
 function structureOf(tree: Tree, ids: number[]) {
