@@ -62,6 +62,7 @@ export default function PromptBuilder() {
           </ToolBar>
         }
         conflicts={s.conflicts.map(c => ({ key: c.path, label: `Character ${c.label}`, deleted: c.theirs === null }))} onResolve={s.resolveConflict}
+        asideTitle="Tags"
         aside={<TagBrowser db={db} target={cur ? listLabel(cur, target) : "General"} targetColor={cur ? targetColor(cur, target) : segColor(0)} selected={selected} onToggle={text => cur && s.toggleInTarget(text)} />}>
           {!loaded ? <NotReady loc={loc} /> : !cur ? (
             <EmptyState title="No character open.">Name one on the left to start.</EmptyState>

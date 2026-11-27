@@ -1,13 +1,12 @@
+import { useRef } from "react";
 import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Eye, Trash2, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Confirm } from "@/shared/ui/confirm";
 import { IconButton } from "@/shared/ui/icon-button";
 import { fade, m, spring } from "@/shared/ui/motion";
-import { GestureList } from "@/shared/ui/help";
 import { Section } from "@/shared/ui/section";
 import { removeEvent } from "../lib/actions";
-import { GESTURES } from "../lib/help";
 import { visible } from "../lib/colors";
 import { allEvents, castOf, deleteEvent, findEvent, moveEvent, orderBetween, threadsOf } from "../lib/model";
 import { nav } from "../lib/nav";
@@ -17,14 +16,19 @@ import { Select } from "@/shared/ui/select";
 import { ChipPicker } from "./fields";
 import { DEFAULT_COLOR } from "@/shared/lib/colors";
 
+/** Only open while something is picked (Timeline passes `asideOpen`). While it slides shut it keeps showing what
+ *  was picked last, instead of going blank. */
 export function Inspector() {
-  const sel = useTimeline(s => s.selection);
+  const picked = useTimeline(s => s.selection);
+  const last = useRef(picked);
+  if (picked) last.current = picked;
+  const sel = last.current;
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
       {/* a new panel slides in a little, so it's clear the panel now shows something else */}
-      <m.div key={sel ? `${sel.kind}:${sel.id}` : "help"} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}
+      <m.div key={sel ? `${sel.kind}:${sel.id}` : "none"} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}
         transition={{ ...spring.snappy, opacity: fade.in }}>
-        {!sel ? <Help /> : sel.kind === "event" ? <EventPanel id={sel.id} /> : sel.kind === "chapter" ? <ChapterPanel id={sel.id} />
+        {!sel ? null : sel.kind === "event" ? <EventPanel id={sel.id} /> : sel.kind === "chapter" ? <ChapterPanel id={sel.id} />
           : sel.kind === "thread" ? <ThreadPanel id={sel.id} /> : sel.kind === "view" ? <ViewPanel id={sel.id} /> : <CharPanel id={sel.id} />}
       </m.div>
     </div>
@@ -36,24 +40,10 @@ function Close() {
   return <IconButton icon={X} label="Close" kbd="Esc" onClick={() => select(null)} />;
 }
 
-function Help() {
-  return (
-    <div className="space-y-5 font-talk text-bone">
-      <Section title="Timeline" />
-      <p className="text-sm leading-snug">
-        Chapters run left to right. Inside a chapter, events in the same <b className="font-semibold text-paper">column</b> happen
-        at the same time. <b className="font-semibold text-paper">Threads</b> are storylines across chapters.
-      </p>
-      <GestureList items={GESTURES} className="gap-x-3" />
-      <p className="text-xs leading-snug text-taupe">Changes save on their own, except on GitHub: there, use Save to GitHub. If someone else changed a file, it reloads, or asks first when you had changes in it too.</p>
-    </div>
-  );
-}
-
 function EventPanel({ id }: { id: string }) {
   const { doc, edit, select } = useTimelinePick("doc", "edit", "select");
   const f = findEvent(doc.chapters, id);
-  if (!f) return <Help />;
+  if (!f) return null;
   const { event, chapter } = f;
   const cast = castOf(doc.roster, doc.chapters);
   const threads = threadsOf(doc.threads, doc.chapters);
@@ -131,7 +121,7 @@ function ChapterPanel({ id }: { id: string }) {
   const { doc, edit, select, folded, toggleFolded } = useTimelinePick("doc", "edit", "select", "folded", "toggleFolded");
   const i = doc.chapters.findIndex(c => c.id === id);
   const ch = doc.chapters[i];
-  if (!ch) return <Help />;
+  if (!ch) return null;
   const set = (fn: (c: typeof ch) => void, key?: string) => edit(d => { const x = d.chapters.find(c => c.id === id); if (x) fn(x); }, key);
   // moving only renumbers this chapter: it goes between its new neighbours
   const move = (dir: -1 | 1) => {
@@ -245,7 +235,7 @@ function CharPanel({ id }: { id: string }) {
 function ViewPanel({ id }: { id: string }) {
   const { doc, edit, select, filter, viewId, setFilter } = useTimelinePick("doc", "edit", "select", "filter", "viewId", "setFilter");
   const v = doc.views.find(x => x.id === id);
-  if (!v) return <Help />;
+  if (!v) return null;
   const cast = castOf(doc.roster, doc.chapters), threads = threadsOf(doc.threads, doc.chapters);
   const names = (ids: string[], list: { id: string; name: string }[]) => ids.map(x => list.find(y => y.id === x)?.name ?? x).join(", ");
   const same = JSON.stringify({ ...filter }) === JSON.stringify({ groupBy: v.groupBy, chars: v.chars, threads: v.threads, hideOthers: v.hideOthers });

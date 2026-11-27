@@ -63,7 +63,7 @@ export function TagBrowser({ db, target, targetColor, selected, onToggle }: Prop
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" style={{ "--target": targetColor } as React.CSSProperties}>
-      <div className="space-y-3 px-5 pb-3 pt-6">
+      <div className="space-y-3 px-5 pb-3 pt-4">
         <div className="flex min-h-7 flex-wrap items-center gap-x-2 gap-y-1 font-talk text-sm text-taupe">
           Adding to
           <AnimatePresence mode="popLayout" initial={false}>

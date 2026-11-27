@@ -80,6 +80,19 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
     });
   }, [lay]);
 
+  // picking an event opens the Inspector, which makes the board narrower: once it's open, keep the card in view
+  const pickedEvent = selection?.kind === "event" ? selection.id : null;
+  useEffect(() => {
+    if (!pickedEvent) return;
+    const t = setTimeout(() => {
+      const c = lay.primary.get(pickedEvent), el = scroller.current;
+      if (!c || !el) return;
+      const over = c.box.x + c.box.w + 24 - (el.scrollLeft + el.clientWidth);
+      if (over > 0) el.scrollBy({ left: Math.min(over, c.box.x - el.scrollLeft - LABEL_W - 24), behavior: "smooth" });
+    }, 320);
+    return () => clearTimeout(t);
+  }, [pickedEvent]);
+
   // ---------------------------------------------------------------- pointer handling
 
   const trackPos = (e: { clientX: number; clientY: number }) => {

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/shared/lib/utils";
 import { MenuMarker, MenuRule } from "@/shared/ui/menu";
 import { Popover, popoverCls } from "@/shared/ui/popover";
-import { toolBarCls } from "@/shared/ui/tool-page";
+import { BarOpener, toolBarCls } from "@/shared/ui/tool-page";
 import { menuButtonCls } from "@/shared/ui/menu-item";
 import { useVault } from "./context";
 import { fuzzy, shownPath, type Hit } from "./fuzzy";
@@ -17,8 +17,10 @@ export function PathBar({ rootLabel, title, children }: { rootLabel?: string; ti
   const [searching, setSearching] = useState(false);
   return (
     <div className={cn(toolBarCls, "relative z-30 gap-3")}>
+      <BarOpener side="left" />
       {searching ? <QuickSwitch onClose={() => setSearching(false)} /> : <Crumbs rootLabel={rootLabel} title={title} onSearch={() => setSearching(true)} />}
       {!searching && children}
+      <BarOpener side="right" />
     </div>
   );
 }

@@ -97,6 +97,7 @@ export default function Scenes() {
         conflicts={conflict ? [{ key: "scene", label: "This scene", deleted: conflict.theirs === null }] : []}
         onResolve={(_, keep) => s.resolveConflict(keep)}
         // a fragment, so the column stays while no scene is open
+        asideTitle="Preview"
         aside={<>{path && <Preview />}</>}>
         {path && <SceneHeader title={title} />}
         {path ? (

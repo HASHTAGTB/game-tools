@@ -30,7 +30,7 @@ import { UNKNOWN_COLOR } from "@/shared/lib/colors";
 import { useGame } from "@/shared/lib/game";
 
 export default function Timeline() {
-  const s = useTimelinePick("loc", "loaded", "doc", "error", "notice", "conflicts", "zoom", "canUndo", "canRedo", "filter", "folded",
+  const s = useTimelinePick("loc", "loaded", "doc", "selection", "error", "notice", "conflicts", "zoom", "canUndo", "canRedo", "filter", "folded",
     "undo", "redo", "setZoom", "setFilter", "toggleFolded", "resolveConflict", "setError", "setNotice", "reload", "flush", "revert");
   const { loc, loaded, doc, conflicts, zoom, canUndo, canRedo } = s;
 
@@ -74,7 +74,7 @@ export default function Timeline() {
   const events = allEvents(doc.chapters).length;
 
   return (
-    <ToolPage tool={TOOLS.timeline} data={s} sidebar={<Sidebar />} aside={<Inspector />}
+    <ToolPage tool={TOOLS.timeline} data={s} sidebar={<Sidebar />} aside={<Inspector />} asideOpen={!!s.selection}
       bar={<>
         <ToolBar>
           <IconButton icon={Undo2} size="sm" tooltipSide="bottom" label="Undo" kbd="Ctrl+Z" onClick={s.undo} disabled={!canUndo} />
@@ -87,11 +87,15 @@ export default function Timeline() {
           <BarDivider />
           <Button size="sm" onClick={newChapter} disabled={!loaded}><SquarePlus className="h-4 w-4" />New chapter</Button>
           <span className="flex-1" />
-          <span className="mr-2 hidden font-talk text-xs text-taupe 2xl:inline">{doc.chapters.length} chapters · {events} events</span>
+          <span className="mr-2 hidden whitespace-nowrap font-talk text-xs text-taupe @5xl:inline">{doc.chapters.length} chapters · {events} events</span>
           {loaded && <FindButton />}
           {loaded && <ChecksButton checks={checks} onGo={goToCheck} />}
           <BarDivider />
-          <HelpButton items={GESTURES} />
+          <HelpButton items={GESTURES} intro={<>
+            Chapters run left to right. Inside a chapter, events in the same <b className="font-semibold text-paper">column</b> happen
+            at the same time. <b className="font-semibold text-paper">Threads</b> are storylines across chapters. Pick anything to
+            edit it on the right. Changes save on their own, except on GitHub: there, use Save to GitHub.
+          </>} />
         </ToolBar>
         <AnimatePresence initial={false}>
           {isFiltered(s.filter) && (
@@ -121,12 +125,12 @@ function GroupSwitch() {
   const { filter, setFilter } = useTimelinePick("filter", "setFilter");
   return (
     <div role="radiogroup" aria-label="Lanes" className="flex items-center gap-0.5 rounded-md bg-ink-2 p-0.5">
-      <span className="px-1.5 font-sans text-sm text-taupe">Lanes</span>
+      <span className="hidden px-1.5 font-sans text-sm text-taupe @4xl:inline">Lanes</span>
       {GROUPS.map(g => {
         const on = filter.groupBy === g.id;
         return (
           <button key={g.id} role="radio" aria-checked={on} onClick={() => setFilter({ groupBy: g.id })}
-            className={cn("relative h-7 rounded-md px-2 font-sans text-base transition-colors", on ? "text-paper" : "text-taupe hover:text-paper")}>
+            className={cn("relative h-7 whitespace-nowrap rounded-md px-2 font-sans text-base transition-colors", on ? "text-paper" : "text-taupe hover:text-paper")}>
             {on && <m.span layoutId="lane-group" transition={spring.bouncy} className="absolute inset-0 rounded-md bg-ink-3" />}
             <span className="relative">{g.label}</span>
           </button>

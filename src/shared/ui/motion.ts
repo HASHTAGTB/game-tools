@@ -10,6 +10,8 @@ import type { TargetAndTransition, Transition } from "motion/react";
                                                         a plain one (Bloom; its items rise in: `bloomRef`)
      one thing opens, closes or shows something else    useMorph (./use-morph.ts): it morphs to its new size and what's
        (a card, a choice's route, a preset's tags)      below follows
+     a side panel collapses / opens                     ToolPage (./tool-page.tsx): the column's width slides, its
+                                                        contents keep their width and ride the edge
      a card on the board                                .board-move / .board-enter (src/index.css), `crumple` on delete
      a speaker / character changes                      SayTab (Tab swap) + useWash (Colour wash, name roll)
      a box shown as Ren'Py and back                     the scenes box view's shownAs: morph + wash, the name
