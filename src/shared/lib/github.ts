@@ -229,10 +229,46 @@ async function rawBlob(sha: string): Promise<Blob | null> {
 const LFS_POINTER = /^version https:\/\/git-lfs\.github\.com\/spec\/v1\n(?:.*\n)*?oid sha256:([0-9a-f]{64})\n/;
 const isLfsPointer = (b: Blob) => b.size < 1024 && b.size > 40;
 
-/** Downloaded LFS files, kept by content hash across reloads (each download counts against the repo's monthly LFS
- *  bandwidth). The Cache API needs a secure context; without one every page load downloads again. */
+/** Downloaded files, kept across reloads by git blob sha (a blob never changes). A hit needs no request at all: not
+ *  the pointer from the API (rate limit), not the LFS download (monthly LFS bandwidth). Older entries are kept by LFS
+ *  content hash; they move to their sha when read. Entries for blobs no longer on the branch are dropped once per page
+ *  load. The Cache API needs a secure context (localhost and GitHub Pages are); without one every load downloads again. */
 const LFS_CACHE = "game-tools-lfs";
 const lfsKey = (oid: string) => `https://lfs.invalid/${oid}`;
+const shaKey = (sha: string) => `https://blob.invalid/${sha}`;
+let cacheP: Promise<Cache | null> | null = null;
+const bytesCache = () => cacheP ??= typeof caches === "undefined" ? Promise.resolve(null) : caches.open(LFS_CACHE).catch(() => null);
+const cachePut = (key: string, b: Blob) =>
+  bytesCache().then(c => c?.put(key, new Response(b, { headers: { "Content-Type": b.type } }))).catch(() => {});
+
+/** Drops cached blobs the branch no longer has (replaced or deleted images), so the cache doesn't only grow. */
+let pruned = false;
+function pruneCache(t: Tree) {
+  if (pruned) return;
+  pruned = true;
+  const keep = new Set(t.files.values());
+  for (const p of pending?.values() ?? []) if (p.sha) keep.add(p.sha);
+  setTimeout(async () => {
+    const c = await bytesCache();
+    if (!c) return;
+    for (const r of await c.keys().catch(() => [])) {
+      const m = /^https:\/\/blob\.invalid\/([0-9a-f]+)$/.exec(r.url);
+      if (m && !keep.has(m[1])) c.delete(r).catch(() => {});
+    }
+  }, 5_000);
+}
+
+/** The bytes of blob `sha` (a file at `path` on commit `head`): from the cache, else from GitHub (and then cached). */
+async function blobBytes(sha: string, path: string, head: string): Promise<Blob | null> {
+  const c = await bytesCache();
+  const hit = await c?.match(shaKey(sha)).catch(() => undefined);
+  if (hit) return hit.blob();
+  const raw = await rawBlob(sha);
+  if (!raw) return null;
+  const b = isLfsPointer(raw) ? await lfsBytes(await raw.text(), path, head) : raw;
+  if (b) await cachePut(shaKey(sha), b);
+  return b;
+}
 
 /** Whether GitHub's media host takes the token directly. Some tokens (likely fine-grained ones) only get a 404
  *  there, so after the first miss every file goes the Contents API way (see lfsBytes). */
@@ -245,9 +281,12 @@ let mediaTakesToken = true;
 async function lfsBytes(pointer: string, path: string, commit: string): Promise<Blob | null> {
   const oid = LFS_POINTER.exec(pointer)?.[1];
   if (!oid) return new Blob([pointer]);     // a small file that merely isn't a pointer
-  const cache = typeof caches === "undefined" ? null : await caches.open(LFS_CACHE).catch(() => null);
-  const hit = await cache?.match(lfsKey(oid));
-  if (hit) return hit.blob();
+  const cache = await bytesCache();
+  const hit = await cache?.match(lfsKey(oid)).catch(() => undefined);
+  if (hit) {
+    cache!.delete(lfsKey(oid)).catch(() => {});    // the caller keeps it by blob sha from now on
+    return hit.blob();
+  }
   const c = await cfg();
   const enc = path.split("/").map(encodeURIComponent).join("/");
   const direct = async () => {
@@ -286,7 +325,6 @@ async function lfsBytes(pointer: string, path: string, commit: string): Promise<
     console.warn(`game-tools: couldn't download ${path} from Git LFS (tried the media host, the Contents API link and raw)`);
     return null;
   }
-  await cache?.put(lfsKey(oid), new Response(blob, { headers: { "Content-Type": blob.type } })).catch(() => {});
   return blob;
 }
 
@@ -307,11 +345,12 @@ export const github = {
     const p = (await pend()).get(path);
     if (p && !p.sha) return p.text === null ? null : new Blob([p.text]);
     const t = await currentTree();
+    pruneCache(t);
     const sha = p?.sha ?? t.files.get(path);
     if (!sha) return null;
     let b = bytesBySha.get(sha);
     if (!b) {
-      b = rawBlob(sha).then(raw => (raw && isLfsPointer(raw) ? raw.text().then(ptr => lfsBytes(ptr, path, t.head)) : raw));
+      b = blobBytes(sha, path, t.head);
       b.catch(() => bytesBySha.delete(sha));
       bytesBySha.set(sha, b);
     }
