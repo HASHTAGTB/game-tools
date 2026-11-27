@@ -12,6 +12,8 @@ import type { TargetAndTransition, Transition } from "motion/react";
        (a card, a choice's route, a preset's tags)      below follows
      a card on the board                                .board-move / .board-enter (src/index.css), `crumple` on delete
      a speaker / character changes                      SayTab (Tab swap) + useWash (Colour wash, name roll)
+     a box shown as Ren'Py and back                     the scenes box view's shownAs: morph + wash, the name
+                                                        flips (./flair.ts: flip), the text decodes into code
      text in an editor React doesn't own                ./flair.ts: decode, wave, glow, typeIn
      pointing at one thing                              ./flair.ts: spotlight; the board's ping
      a scene opens                                      ./flair.ts: cascade

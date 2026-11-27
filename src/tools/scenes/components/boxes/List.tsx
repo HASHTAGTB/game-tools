@@ -132,10 +132,10 @@ function RawToggle({ box }: { box: Box }) {
   const back = box.kind === "raw" ? box.as : null;
   if (box.kind === "raw" && !back) return null;
   const flip = () => {
+    shownAs(box.from, !back);   // takes the box as it is now, plays once it's drawn again
     markRaw(view, box.from, !back);
     useSceneUi.setState({ openCard: null });
     focusLine(box.from, "end");
-    shownAs(box.from, !back);
   };
   return back
     ? <IconButton icon={LayoutList} size="sm" label={`Show as ${AS[back] ?? "a box"}`} onClick={flip} />

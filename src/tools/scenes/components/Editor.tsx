@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 import { forceLinting, linter } from "@codemirror/lint";
-import { Compartment, type Extension } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
+import { Compartment, type EditorState, type Extension } from "@codemirror/state";
+import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 import { useGame } from "@/shared/lib/game";
 import { AnchoredMenuHost } from "@/shared/ui/anchored-menu";
 import { calm, unfold } from "@/shared/ui/flair";
@@ -56,6 +57,73 @@ const checks = linter(view => {
   return problems.map(p => toDiagnostic(view.state, p));
 }, { delay: 350 });
 
+// ---------------------------------------------------------------- the script, to the box view
+
+/** Hand the parsed script and the cursor's line to the box view, the preview and the header. */
+function showScript(s: EditorState) {
+  const line = s.doc.lineAt(s.selection.main.head).number;
+  const was = useSceneUi.getState();
+  useSceneUi.setState({ script: s.field(scriptField), line, moved: line !== was.line ? was.moved + 1 : was.moved });
+}
+
+/** Plain typing inside one line (the box you're in already shows it): no lines come or go, the cursor stays on it. */
+function typedInLine(u: ViewUpdate) {
+  if (!u.transactions.every(tr => tr.isUserEvent("input.type") || tr.isUserEvent("delete"))) return false;
+  const old = u.startState.doc, doc = u.state.doc;
+  if (old.lines !== doc.lines) return false;
+  let one = true, at = -1;
+  u.changes.iterChangedRanges((fromA, toA) => {
+    const n = old.lineAt(fromA).number;
+    if (old.lineAt(toA).number !== n || (at >= 0 && at !== n)) one = false;
+    at = n;
+  });
+  return one && doc.lineAt(u.state.selection.main.head).number === at;
+}
+
+/** While you type, the rest of the page (every other box, the preview) catches up once you pause: drawing all the
+ *  boxes again on every key is what made typing in a long scene stutter. Anything else (Enter, a join, undo, a click,
+ *  a menu) brings it up to date first, so what it reads is the file as it is now. */
+const showLater = (() => {
+  let timer = 0, view: EditorView | null = null;
+  const flush = () => {
+    if (!view) return;
+    const v = view;
+    cancel();
+    flushSync(() => showScript(v.state));
+  };
+  const cancel = () => { window.clearTimeout(timer); view = null; };
+  return {
+    schedule: (v: EditorView) => { window.clearTimeout(timer); view = v; timer = window.setTimeout(flush, TYPING_PAUSE); },
+    cancel,
+    flush,
+  };
+})();
+const TYPING_PAUSE = 300;
+
+/** A key that isn't plain text (Enter, Backspace, arrows, Tab, shortcuts) or any click: the boxes' handlers read their
+ *  box, so it has to be the current one. */
+function flushBeforeActing(e: Event) {
+  if (e instanceof KeyboardEvent) {
+    if (e.isComposing || e.key === "Shift" || e.key === "Dead") return;
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) return;
+    if ((e.key === "Backspace" || e.key === "Delete") && !e.ctrlKey && !e.metaKey && !e.altKey && !atBoxEdge(e)) return;
+  }
+  showLater.flush();
+}
+
+/** Backspace at the start of a box's text, Delete at its end: that joins or removes boxes. Elsewhere it only deletes
+ *  a letter (or a selection) inside the box. */
+function atBoxEdge(e: KeyboardEvent) {
+  const el = (e.target as Element | null)?.closest?.("[data-text][contenteditable]");
+  const sel = getSelection();
+  if (!el || !sel?.rangeCount) return true;
+  const r = sel.getRangeAt(0), rest = document.createRange();
+  rest.selectNodeContents(el);
+  if (e.key === "Backspace") rest.setEnd(r.startContainer, r.startOffset);
+  else rest.setStart(r.endContainer, r.endOffset);
+  return !rest.toString().replace(/[\u200b-\u200d\u2060\ufeff]/g, "");
+}
+
 // ---------------------------------------------------------------- the editor
 
 const MODES: Record<Mode, Extension> = {
@@ -91,14 +159,14 @@ export function Editor({ mode, labels, title }: Props) {
       lintTheme,
       checks,
       EditorView.updateListener.of(u => {
-        if (u.docChanged || u.selectionSet || u.focusChanged) {
-          const line = u.state.doc.lineAt(u.state.selection.main.head).number;
-          const was = useSceneUi.getState();
-          useSceneUi.setState({ script: u.state.field(scriptField), line, moved: line !== was.line ? was.moved + 1 : was.moved });
-        }
+        if (!u.docChanged && !u.selectionSet && !u.focusChanged) return;
+        if (u.docChanged && typedInLine(u)) return showLater.schedule(u.view);
+        showLater.cancel();
+        showScript(u.state);
       }),
     ],
     onLoad: (v, followed) => {
+      showLater.cancel();
       v.dispatch({ effects: [modeSlot.reconfigure(MODES[modeNow.current]), setManifest.of(useGame.getState().manifest), setCheckInput.of(checkInput.current)] });
       const s = v.state;
       // moved or renamed: still the scene that's open, so the box view stays where it is (no title card, no rebuild)
@@ -106,8 +174,13 @@ export function Editor({ mode, labels, title }: Props) {
       useSceneUi.setState(u => ({ view: v, opened: useScenes.getState().path, loaded: u.loaded + 1, script: s.field(scriptField), line: s.doc.lineAt(s.selection.main.head).number, menu: null, focus: null, openCard: null, tabs: {}, rawIds: new Set() }));
       if (modeNow.current === "source") v.focus();
     },
-    onClose: () => useSceneUi.setState({ view: null, script: null, menu: null, focus: null, openCard: null, problems: [] }),
+    onClose: () => { showLater.cancel(); useSceneUi.setState({ view: null, script: null, menu: null, focus: null, openCard: null, problems: [] }); },
   });
+  useEffect(() => {
+    window.addEventListener("keydown", flushBeforeActing, true);
+    window.addEventListener("pointerdown", flushBeforeActing, true);
+    return () => { window.removeEventListener("keydown", flushBeforeActing, true); window.removeEventListener("pointerdown", flushBeforeActing, true); };
+  }, []);
 
   // Switching views: the line your eyes were on (the cursor's, else the top one) is measured in the old view while it's
   // still there (this render, before React replaces it) and comes up at the same height in the new one, which unfolds

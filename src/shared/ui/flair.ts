@@ -201,6 +201,47 @@ export function roll(el: Element, dir: 1 | -1 = 1) {
   return play(el, [{ opacity: 0, transform: `translateY(${dir * 12}px)` }, { opacity: 1, transform: "none" }], { duration: 240, easing: SPRING });
 }
 
+/** Flip: a label turns over to show what it says now (a box shown as Ren'Py and back: the speaker's name ↔ "Ren'Py").
+ *  `old`: a copy of the label as it was and where it was, taken before the change. Both sides are drawn on top of the
+ *  page (the box under them may be clipped while it morphs); the real label shows again once it has turned. */
+export type Face = { el: HTMLElement; rect: DOMRect; opacity: string };
+export const faceOf = (el: HTMLElement | null | undefined): Face | null => {
+  if (!el) return null;
+  const cs = getComputedStyle(el);
+  if (cs.display === "none" || cs.visibility === "hidden" || +cs.opacity < 0.05) return null;
+  const copy = el.cloneNode(true) as HTMLElement;
+  // the label's look, copied from where it sits (its styles depend on the box around it)
+  for (const k of ["font", "color", "lineHeight", "padding", "gap", "display", "alignItems", "whiteSpace", "letterSpacing"] as const) copy.style[k] = cs[k];
+  copy.style.setProperty("--whoL", cs.getPropertyValue("--whoL"));
+  copy.removeAttribute("id");
+  return { el: copy, rect: el.getBoundingClientRect(), opacity: cs.opacity };
+};
+export function flip(old: Face | null, now: HTMLElement | null | undefined) {
+  if (calm()) return;
+  const next = faceOf(now);
+  if (!old && !next) return;
+  const half = 150;
+  const place = (f: Face) => {
+    f.el.style.cssText += `;position:fixed;left:${f.rect.left}px;top:${f.rect.top}px;width:${f.rect.width}px;height:${f.rect.height}px;` +
+      `margin:0;right:auto;max-width:none;box-sizing:border-box;overflow:hidden;text-overflow:ellipsis;pointer-events:none;z-index:40;` +
+      `opacity:${f.opacity};transform-origin:50% 50%;backface-visibility:hidden;transition:none;background:none`;
+    document.body.append(f.el);
+  };
+  if (old) {
+    place(old);
+    old.el.animate([{ transform: "perspective(300px) rotateX(0deg)" }, { transform: "perspective(300px) rotateX(90deg)", opacity: 0 }],
+      { duration: half, easing: "cubic-bezier(.5, 0, .9, .5)", fill: "forwards" }).finished.then(() => old.el.remove(), () => old.el.remove());
+  }
+  if (next && now) {
+    place(next);
+    now.style.visibility = "hidden";
+    const a = next.el.animate([{ transform: "perspective(300px) rotateX(-90deg)", opacity: 0 }, { transform: "perspective(300px) rotateX(0deg)", opacity: next.opacity }],
+      { duration: half * 2, delay: old ? half : 0, easing: SPRING, fill: "backwards" });
+    const end = () => { next.el.remove(); now.style.visibility = ""; };
+    a.finished.then(end, end);
+  }
+}
+
 /** Decode: `el` looks like its text scrambling into `text`, character by character. Draws on top of it (so it works
  *  on editors that own their DOM) and hides it meanwhile. */
 export function decode(el: HTMLElement, text: string, ms = 460) {
