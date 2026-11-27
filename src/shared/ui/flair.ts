@@ -17,6 +17,37 @@ function play(el: Element, kf: Keyframe[], o: Opts): Animation | null {
 }
 const finished = (a: Animation | null) => (a ? a.finished.then(() => {}, () => {}) : Promise.resolve());
 
+/** The part of the window `el` can be seen in: the window, cut down by every ancestor that clips (a scroller, a
+ *  popup with a max height). */
+function clipOf(el: Element, inWindow: boolean) {
+  let top = inWindow ? 0 : -Infinity, bottom = inWindow ? innerHeight : Infinity, left = inWindow ? 0 : -Infinity, right = inWindow ? innerWidth : Infinity;
+  for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+    const cs = getComputedStyle(p);
+    if (cs.overflowY === "visible" && cs.overflowX === "visible") continue;
+    const r = p.getBoundingClientRect();
+    top = Math.max(top, r.top); bottom = Math.min(bottom, r.bottom); left = Math.max(left, r.left); right = Math.min(right, r.right);
+  }
+  return { top, bottom, left, right };
+}
+
+/** Plays `kf` on each of `els` that can be seen, one after another. Every item on screen takes part however tall
+ *  the screen is: the gap between them shrinks so the whole run takes at most `spread` ms. Items out of sight are
+ *  left alone (they'd only be waiting there, invisible, to be scrolled to). `inWindow: false`: only what clips them
+ *  counts, not the window (a popup that isn't in its place yet). */
+function stagger(els: Iterable<Element>, kf: Keyframe[], o: Opts & { step: number; spread: number; inWindow?: boolean }) {
+  if (calm()) return;
+  const { step, spread, inWindow = true, delay = 0, ...rest } = o;
+  const list = [...els];
+  if (!list.length) return;
+  const clip = clipOf(list[0], inWindow);
+  const seen = list.filter(el => {
+    const r = el.getBoundingClientRect();
+    return (r.width || r.height) && r.bottom > clip.top && r.top < clip.bottom && r.right > clip.left && r.left < clip.right;
+  });
+  const gap = seen.length > 1 ? Math.min(step, spread / (seen.length - 1)) : 0;
+  seen.forEach((el, i) => play(el, kf, { fill: "backwards", ...rest, delay: (delay as number) + i * gap }));
+}
+
 // ---------------------------------------------------------------- coming and going
 
 /** Drop in: falls into place with a small bounce and squash (something new in a list). */
@@ -53,13 +84,9 @@ export function crumple(el: HTMLElement | null, remove: () => void) {
 export const fadeIn = (el: Element) => play(el, [{ opacity: 0 }, { opacity: 1 }], { duration: 200 });
 
 /** Cascade: a page of items falls into place one after another (a scene or a list opening). */
-export function cascade(els: Iterable<Element>, max = 14) {
-  let i = 0;
-  for (const el of els) {
-    if (i >= max) break;
-    // `translate`, not `transform`: list items' transform is Motion's (they slide)
-    play(el, [{ opacity: 0, translate: "0 -10px" }, { opacity: 1, translate: "0 0" }], { duration: 320, delay: i++ * 55, fill: "backwards" });
-  }
+export function cascade(els: Iterable<Element>) {
+  // `translate`, not `transform`: list items' transform is Motion's (they slide)
+  stagger(els, [{ opacity: 0, translate: "0 -10px" }, { opacity: 1, translate: "0 0" }], { duration: 320, step: 55, spread: 700 });
 }
 
 // ---------------------------------------------------------------- moving
@@ -105,18 +132,16 @@ export function morph(el: HTMLElement, from: Size, easing = SPRING) {
 
 /** Rise: items come up into an opened card one after another. */
 export function rise(els: Iterable<Element>, delay = 140) {
-  let i = 0;
-  for (const el of els) play(el, [{ opacity: 0, translate: "0 8px" }, { opacity: 1, translate: "0 0" }], { duration: 300, delay: delay + i++ * 55, fill: "backwards" });
+  stagger(els, [{ opacity: 0, translate: "0 8px" }, { opacity: 1, translate: "0 0" }], { duration: 300, delay, step: 55, spread: 400 });
 }
 
 /** Bloom: a popup's items rise in one after another (the popup itself grows from its trigger: `bloomCls` in ./motion.ts). */
 const BLOOM_ITEMS = "[role=menuitem], [role=option], [role=menuitemradio], [role=menuitemcheckbox], button, a[href], input, [data-bloom]";
 export function bloomItems(root: Element) {
   const all = [...root.querySelectorAll(BLOOM_ITEMS)];
-  const items = all.filter(el => !all.some(o => o !== el && o.contains(el))).slice(0, 16);
+  const items = all.filter(el => !all.some(o => o !== el && o.contains(el)));
   // they rise and fade, not scale: the popup around them is already growing
-  items.forEach((el, i) => play(el, [{ opacity: 0, translate: "0 6px" }, { opacity: 1, translate: "0 0" }],
-    { duration: 220, delay: 60 + i * 18, fill: "backwards" }));
+  stagger(items, [{ opacity: 0, translate: "0 6px" }, { opacity: 1, translate: "0 0" }], { duration: 220, delay: 60, step: 18, spread: 280, inWindow: false });
 }
 /** A stable ref callback (so it runs once, when the element appears) that blooms what's inside. */
 export const bloomRef = (el: HTMLElement | null) => { if (el) bloomItems(el); };
