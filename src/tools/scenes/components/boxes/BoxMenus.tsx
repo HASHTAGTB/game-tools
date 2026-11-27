@@ -1,13 +1,16 @@
 import {
   ArrowRight, Braces, CalendarDays, Clock, Eye, Hourglass, Image, MessageSquareText, Music, Smartphone, Smile, Split, StickyNote,
-  Text, UserRoundMinus, UserRoundPlus, UserRoundPen, VolumeX, type LucideIcon,
+  SmilePlus, Text, UserRoundMinus, UserRoundPlus, UserRoundPen, VolumeX, type LucideIcon,
 } from "lucide-react";
 import { useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { createCharacter, type Manifest } from "@/shared/lib/game";
 import { cn, errorMessage } from "@/shared/lib/utils";
 import { Popover } from "@/shared/ui/popover";
 import { insertAt, insertChoice, removeBox, setRaw, setSpeaker } from "../../lib/ops";
-import { chatHead, sayText } from "../../lib/script";
+import { sayText } from "../../lib/script";
+import { blockAt, chatCode, membersOf, parseChatHead } from "../../lib/phone";
+import { PhoneMenus, phoneMenuCls } from "./PhoneMenus";
+import { openPhoneMenu } from "./PhoneParts";
 import { formatStmt, type Stmt } from "../../lib/statements";
 import { EMPTY_STAGE } from "../../lib/stage";
 import { closeMenu, focusLine, idAt, markRaw, useSceneUi, type BoxMenu } from "../../lib/ui";
@@ -25,8 +28,8 @@ export function BoxMenus() {
   const menu = last.current;
   return (
     <Popover open={!!open} onOpenChange={o => { if (!o) closeMenu(); }} anchor={menu?.anchor} align={menu?.kind === "speaker" ? "start" : "center"}
-      className="w-[22rem] p-3 focus-visible:outline-none" finalFocus={false}>
-      {menu && (menu.kind === "add" ? <AddMenu menu={menu} /> : <SpeakerMenu menu={menu} />)}
+      className={cn(menu && menu.kind !== "add" && menu.kind !== "speaker" ? phoneMenuCls(menu) : "w-[22rem] p-3", "focus-visible:outline-none")} finalFocus={false}>
+      {menu && (menu.kind === "add" ? <AddMenu menu={menu} /> : menu.kind === "speaker" ? <SpeakerMenu menu={menu} /> : <PhoneMenus key={menu.kind + menu.line} menu={menu} />)}
     </Popover>
   );
 }
@@ -131,7 +134,7 @@ function AddMenu({ menu }: { menu: Extract<BoxMenu, { kind: "add" }> }) {
 
   const thread = useMemo(() => {
     const count = new Map<string, number>();
-    for (const l of script.lines) { const h = chatHead(l); if (h) count.set(h.thread, (count.get(h.thread) ?? 0) + 1); }
+    for (const l of script.lines) { const h = parseChatHead(l); if (h) { const k = chatCode(h.target); count.set(k, (count.get(k) ?? 0) + 1); } }
     return [...count].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "chat";
   }, [script]);
   const pov = stage.pov ?? cast[0] ?? "satoru";
@@ -142,11 +145,17 @@ function AddMenu({ menu }: { menu: Extract<BoxMenu, { kind: "add" }> }) {
   const create = newCharacter(manifest, id => line(id)());
 
   if (menu.chat) {
+    // the chat's members first; narration and every other statement work inside a chat too
+    const block = blockAt(c.phone, place.after);
+    const members = block ? membersOf(manifest, block.head.target) : null;
+    const inChat = members ? people.filter(p => members.includes(p.keys!)).concat(members.filter(id => !cast.includes(id)).map(id => { const w = look(manifest, id); return { label: w.name, color: w.legible, keys: id, run: line(id) }; })) : people;
     return <Picker placeholder="Who writes…" create={create} groups={[
-      { layout: "chips", items: people },
+      { layout: "chips", items: [...inChat, { icon: Text, label: "Narration", keys: "erzähler text", run: line(null) }] },
       ...everyone,
       { layout: "tiles", items: [
         { icon: Clock, label: "Clock", keys: "time", run: card(d.time) },
+        { icon: SmilePlus, label: "Reaction", keys: "react emoji", off: block ? undefined : "Not in a chat",
+          run: () => { if (menu.anchor.isConnected) openPhoneMenu({ kind: "pick", anchor: menu.anchor, line: place.after, for: "new", place }); } },
         { icon: Braces, label: "Ren'Py", keys: "raw code python renpy script", run: raw },
       ] },
     ]} />;

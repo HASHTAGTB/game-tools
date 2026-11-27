@@ -23,7 +23,7 @@ export type Span = { from: number; to: number; tok: Tok; color?: string };
 const STMT = new Set([
   "label", "jump", "call", "return", "pass", "menu", "scene", "show", "hide", "with", "play", "stop", "queue", "pause",
   "define", "default", "image", "init", "python", "screen", "transform", "style", "translate", "window", "nvl", "voice",
-  "camera", "if", "elif", "else", "while", "for", "time", "phone", "chat", "extend", "layeredimage", "testcase",
+  "camera", "if", "elif", "else", "while", "for", "time", "phone", "chat", "react", "extend", "layeredimage", "testcase",
   "use", "add", "text", "textbutton", "button", "imagebutton", "vbox", "hbox", "frame", "fixed", "grid", "key", "on",
   "action", "parallel", "block", "contains", "choice", "repeat", "linear", "ease", "easein", "easeout", "pause",
 ]);

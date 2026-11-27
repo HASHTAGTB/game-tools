@@ -9,7 +9,9 @@ import { focusLine, markRaw, useSceneUi } from "../../lib/ui";
 import { BoxProblems } from "../problems";
 import { ChatBox } from "./ChatBox";
 import { ChoiceBox } from "./ChoiceBox";
-import { problemsOf, stageBefore, useBox, type BoxCtx, type ListLayout } from "./context";
+import { phoneKey, problemsOf, stageBefore, useBox, type BoxCtx, type ListLayout } from "./context";
+import { parseArgs } from "../../lib/phone";
+import { ReactRow } from "./PhoneParts";
 import { liftAt, shownAs } from "./motion";
 import { NoteBox, RawBox } from "./NoteBox";
 import { SayBox } from "./SayBox";
@@ -53,7 +55,9 @@ function keyOf(c: BoxCtx, b: Box, prev: Box | null, next: Box | null, layout: st
   if (b.kind === "menu" || b.kind === "chat") return null;
   const probs = problemsOf(c, b).map(p => p.severity + p.message + (p.fix?.label ?? "")).join("|");
   const stage = b.kind === "say" ? `${stageBefore(c, b.from).pov}:${b.who === "extend" ? stageBefore(c, b.from).speaker : ""}` : b.kind === "stmt" ? JSON.stringify(stageBefore(c, b.from)) : "";
-  return [JSON.stringify(b), near(prev), near(next), layout, probs, stage, c.epoch].join("\u0000");
+  // in a chat: the message it replies or reacts to, the reactions on it
+  const phone = b.kind === "say" && b.who ? phoneKey(c, b.from, parseArgs(b.tail).reply) : b.kind === "stmt" && b.stmt.kind === "react" ? phoneKey(c, b.from, b.stmt.ref) : "";
+  return [JSON.stringify(b), near(prev), near(next), layout, probs, stage, phone, c.epoch].join("\u0000");
 }
 
 const Item = memo(function Item(p: ItemProps & { k: string | null }) {
@@ -65,7 +69,7 @@ export type ItemProps = { box: Box; prev: Box | null; next: Box | null; layout: 
 export function BoxItem(p: ItemProps) {
   switch (p.box.kind) {
     case "say": return <SayBox {...p} box={p.box} />;
-    case "stmt": return <StageCard {...p} box={p.box} />;
+    case "stmt": return p.box.stmt.kind === "react" && p.layout.chat ? <ReactRow {...p} box={p.box} /> : <StageCard {...p} box={p.box} />;
     case "note": return <NoteBox {...p} box={p.box} />;
     case "raw": return <RawBox {...p} box={p.box} />;
     case "menu": return <ChoiceBox {...p} box={p.box} />;

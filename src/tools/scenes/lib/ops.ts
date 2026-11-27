@@ -6,6 +6,7 @@ import { freeLabel, jumpsTo, labelLines, labelName } from "./labels";
 import { escapeText } from "./renpyText";
 import { indentOf, pad, parseLine, sayText } from "./script";
 import { formatStmt, type Stmt } from "./statements";
+import { formatChatHead, withArgs, type ChatHead, type MsgArgs } from "./phone";
 
 /** What the box view does to the file. Each edit rewrites only the lines of the boxes involved, through the (hidden)
  *  CodeMirror view that holds the document, so Ctrl+Z, the checks and the source view all keep working. Functions
@@ -275,4 +276,28 @@ export function setLabel(view: EditorView, name: string) {
   const L = view.state.doc.line(at + 1);
   const m = /^(\s*label\s+)(\w+)/.exec(L.text)!;
   if (m[2] !== name) ev(view, { from: L.from + m[1].length, to: L.from + m[0].length, insert: name }, "input.info");
+}
+
+// ---------------------------------------------------------------- the phone
+
+/** A message's tail (what follows its text: `(reply="x", photos=[…])`), changed by `f` (see `withArgs`). */
+export function setMsgArgs(view: EditorView, line: number, f: (a: MsgArgs) => Partial<MsgArgs>) {
+  const L = view.state.doc.line(line);
+  const p = parseLine(L.text);
+  if (p.kind !== "say") return;
+  const tail = withArgs(p.tail, f);
+  const next = L.text.slice(0, p.to + 1) + (tail ? " " + tail : "");
+  if (next !== L.text) ev(view, { from: L.from, to: L.to, insert: next }, "input.args");
+}
+
+export function setChatHead(view: EditorView, line: number, head: ChatHead) {
+  const L = view.state.doc.line(line);
+  const next = pad(indentOf(L.text)) + formatChatHead(head);
+  if (next !== L.text) ev(view, { from: L.from, to: L.to, insert: next }, "input.stmt");
+}
+
+/** A `react` line right after line `after` (same indent). Returns its line. */
+export function insertReact(view: EditorView, after: number, react: Extract<Stmt, { kind: "react" }>) {
+  const indent = indentOf(view.state.doc.line(after).text);
+  return insertAt(view, { after, indent, tight: true, level: false, chat: true }, [formatStmt(react)]);
 }

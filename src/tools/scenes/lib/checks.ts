@@ -1,7 +1,8 @@
 import type { Manifest } from "@/shared/lib/game";
 import { labelOf, labelsIn } from "./labels";
 import { PAIRED, tokenize } from "./renpyText";
-import { chatHead, inScript, suggestLabel, type Script } from "./script";
+import { inScript, suggestLabel, type Script } from "./script";
+import { chatKey, groupOf, membersOf, parseArgs, parseChatHead, phoneIndex, priorAt, resolveRef, type ChatHead, type ChatMsg, type PhoneIndex } from "./phone";
 import { EMPTY_STAGE, playScript } from "./stage";
 import { formatStmt } from "./statements";
 
@@ -29,6 +30,8 @@ export type CheckContext = {
   labels: Set<string> | null;
   /** the scene's title (its file name if it has none), for label suggestions */
   title: string;
+  /** the chat messages of the scenes before this one, for replies and reactions; null while they're read */
+  history?: ChatMsg[] | null;
 };
 
 /** Tags Ren'Py knows (renpy.org/doc/html/text.html). */
@@ -71,8 +74,11 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
   const transitions = new Set(m?.transitions ?? []);
   const ownLabels = labelsIn(s);
   let povWarned = false, seenLabel = false;
-  /** indent of the `chat …:` block we're in, if any */
+  /** indent of the `chat …:` block we're in, if any, and its head */
   let chatIndent: number | null = null;
+  let chat: ChatHead | null = null;
+  const phone: PhoneIndex = phoneIndex(s, cx.history === undefined ? [] : cx.history);
+  const chatName = (h: ChatHead) => ("group" in h.target ? groupOf(m, h.target.group)?.title ?? h.target.group : h.target.dm.map(id => chars.get(id)?.name ?? id).join(" & "));
 
   parsed.forEach((p, i) => {
     const n = i + 1, text = lines[i];
@@ -80,8 +86,12 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
     const before = i > 0 ? stages[i - 1] : EMPTY_STAGE;
     const ind = "indent" in p ? p.indent : null;
 
-    if (p.kind !== "blank" && chatIndent !== null && ind !== null && ind <= chatIndent) chatIndent = null;
-    if (p.kind === "code" && chatHead(text)) chatIndent = p.indent;
+    if (p.kind !== "blank" && chatIndent !== null && ind !== null && ind <= chatIndent) { chatIndent = null; chat = null; }
+    if (p.kind === "code" && /^\s*chat\b/.test(text)) {
+      const h = parseChatHead(text);
+      if (h) { chatIndent = p.indent; chat = h; checkChatHead(out, n, h, m, chars); }
+      else if (/:\s*$/.test(text)) out.push({ line: n, severity: "error", message: "The game can't read this chat line. Write it like chat sakari: or chat log rin & satoru yesterday:" });
+    }
 
     if (p.kind === "label") { seenLabel = true; return; }
     if (p.kind !== "blank" && p.kind !== "comment" && seenLabel && ind === 0) {
@@ -108,6 +118,7 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
           out.push({ line: n, severity: "warning", message: "No point of view is set yet, so the narration has no textbox colour. Add a POV card before it." });
         }
         checkTags(out, n, p.from, text.slice(p.from, p.to));
+        if (chat && p.who && p.who !== "extend") checkMessage(out, n, p.tail, p.who, chat, chatName(chat), m, chars, phone, cx.history !== null);
         return;
       }
       case "choice":
@@ -169,6 +180,16 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
       case "pov":
         if (m && !chars.get(x.who)?.pov) out.push({ line: n, severity: "error", message: `${x.who} has no narrator variant (${x.who}_n), so the scene can't be told from their view.` });
         break;
+      case "react": {
+        if (!chat) { out.push({ line: n, severity: "error", message: "A reaction only works inside a chat block." }); break; }
+        const who = x.by ? chars.get(x.by)?.name ?? x.by : null;
+        const members = membersOf(m, chat.target);
+        if (x.by && members && !members.includes(x.by)) out.push({ line: n, severity: "error", message: `${who} isn't in ${chatName(chat)}.` });
+        if (cx.history !== null && !resolveRef(x.ref, priorAt(phone, chatKey(chat.target), n))) {
+          out.push({ line: n, severity: "error", message: `The reaction finds no message: nothing in ${chatName(chat)} before this ${x.byText ? `says „${x.ref}“` : `is called ${x.ref}`}.` });
+        }
+        break;
+      }
       case "jump": case "call":
         if (chatIndent !== null) out.push({ line: n, severity: "error", message: "A chat block can't jump away: end the chat first (un-indent the jump)." });
         if (!x.target) { out.push({ line: n, severity: "error", message: "Pick the scene this continues at." }); break; }
@@ -180,6 +201,43 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
   });
   for (const p of out) if (p.fix && p.fix.at !== "end") p.fix.was = lines[p.line - 1];
   return out;
+}
+
+/** A chat's head: a group the game declares, or two people. */
+function checkChatHead(out: Problem[], line: number, h: ChatHead, m: Manifest | null, chars: Map<string, unknown>) {
+  if (!m) return;
+  if ("dm" in h.target) {
+    for (const id of h.target.dm) if (!chars.has(id)) out.push({ line, severity: "error", message: `The game has no character called "${id}".` });
+    return;
+  }
+  if (!m.chats?.length || groupOf(m, h.target.group)) return;   // no groups read (chats.rpy missing): nothing to check against
+  out.push({ line, severity: "error", message: chars.has(h.target.group)
+    ? `${h.target.group} is a person, not a group: a chat with them is written as two people (${h.target.group} & …).`
+    : `The phone has no group chat "${h.target.group}" (groups are declared in features/phone/content/chats/chats.rpy).` });
+}
+
+/** A message in a chat: from someone in it, with arguments the game takes, and a reply that finds its message. */
+function checkMessage(out: Problem[], line: number, tail: string, who: string, h: ChatHead, name: string, m: Manifest | null,
+  chars: Map<string, { name: string }>, phone: PhoneIndex, historyKnown: boolean) {
+  const members = membersOf(m, h.target);
+  if (members && !members.includes(who)) out.push({ line, severity: "error", message: `${chars.get(who)?.name ?? who} isn't in ${name}. End the chat block for spoken lines.` });
+  const a = parseArgs(tail);
+  if (a.typing && h.log) out.push({ line, severity: "warning", message: "Typing only shows in a live chat. A chat that arrived earlier ignores it." });
+  const takes: Record<string, string> = { reply: "a text in quotes", id: "a name in quotes", typing: "seconds (typing=1.5)" };
+  for (const o of a.other) {
+    const k = /^(\w+)/.exec(o)?.[1];
+    if (k && takes[k]) out.push({ line, severity: "warning", message: `The editor can't read ${o}: ${k} takes ${takes[k]}.` });
+    else out.push({ line, severity: "error", message: `A message doesn't take ${k ?? o}: only reply, id, photos and typing.` });
+  }
+  // a comment after the line is fine
+  const rest = a.rest.replace(/^#.*$|\s+#.*$/, "");
+  if (rest) out.push({ line, severity: "error", message: `A message can't have "${rest}" after it.` });
+  if (a.reply !== null && historyKnown && !resolveRef(a.reply, priorAt(phone, chatKey(h.target), line))) {
+    out.push({ line, severity: "error", message: `The reply finds no message: nothing in ${name} before this says „${a.reply}“ or is called that.` });
+  }
+  if (a.photos && m?.photos && Object.keys(m.photos).length) {
+    for (const ph of a.photos) if (!m.photos[ph] && !m.imageFiles[ph]) out.push({ line, severity: "info", message: `The phone has no photo "${ph}" yet.` });
+  }
 }
 
 /** Unknown text tags, and paired ones left open. */

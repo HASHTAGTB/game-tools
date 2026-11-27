@@ -13,18 +13,15 @@ import { MotionItem, MotionList } from "@/shared/ui/motion-list";
 import { DeleteDialog } from "@/shared/vault/FileTree";
 import { DropRing, GroupRule, InlineRename, RowActions, useHoverOpen } from "@/shared/vault/tree-parts";
 import { GAME_DIR, NEW_SCENE_DIR } from "@/shared/vault/places";
-import { readInfo, type SceneInfo } from "../lib/header";
-import { createScene, duplicateScene, moveScene, retitleScene, titleOf, useChapters, useSceneIndex, useScenes } from "../state";
+import { readInfo } from "../lib/header";
+import { createScene, duplicateScene, groupScenes, moveScene, retitleScene, useChapters, useSceneIndex, useScenes, type SceneRow } from "../state";
 
 const DEV_DIR = `${GAME_DIR}/dev`;
 
-type Row = { path: string; title: string };
-type Group = { id: string; name: string; rows: Row[] };
+type Row = SceneRow;
 
 /** The chapter group a drag event is over. */
 const groupAt = (target: EventTarget | null) => (target as HTMLElement | null)?.closest<HTMLElement>("[data-group]")?.dataset.group ?? null;
-
-const byTitle = (a: Row, b: Row) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" });
 
 /** The scenes as one flat list, grouped by their timeline chapter (in the timeline's order); scenes without one go
  *  under "No chapter", dev/ files without one under "dev". Right-click or hover for the actions; drag a scene onto
@@ -48,21 +45,7 @@ export function SceneList() {
 
   const groups = useMemo(() => {
     if (!files) return null;
-    const infoOf = (p: string): SceneInfo | undefined => (p === open && openInfo ? openInfo : files[p]?.info);
-    const byChapter = new Map<string, Row[]>();
-    for (const p of Object.keys(files)) {
-      const info = infoOf(p);
-      const id = info?.chapter || (isUnder(p, DEV_DIR) ? ":dev" : ":none");
-      byChapter.set(id, [...(byChapter.get(id) ?? []), { path: p, title: titleOf(p, info) }]);
-    }
-    const out: Group[] = [];
-    const take = (id: string, name: string) => { const rows = byChapter.get(id); if (rows) { out.push({ id, name, rows: rows.sort(byTitle) }); byChapter.delete(id); } };
-    for (const c of chapters ?? []) take(c.id, c.name);
-    // chapter ids the timeline doesn't have (yet): by their id
-    for (const id of [...byChapter.keys()].filter(k => !k.startsWith(":")).sort()) take(id, id);
-    take(":none", "No chapter");
-    take(":dev", "dev");
-    return out;
+    return groupScenes(Object.keys(files), p => (p === open && openInfo ? openInfo : files[p]?.info), chapters);
   }, [files, chapters, open, openInfo]);
 
   if (!ready) return null;

@@ -12,10 +12,19 @@ import type { Script } from "./script";
 
 export type Caret = "start" | "end" | number;
 
-/** The one popup the box view has open: the Add menu at a slot, or who says a line. */
+/** The one popup the box view has open: the Add menu at a slot, who says a line, or one of a chat's popups. */
 export type BoxMenu =
   | { kind: "add"; anchor: Element; place: Place; /** an empty box this replaces */ replace?: Box; level: boolean; chat: boolean }
-  | { kind: "speaker"; anchor: Element; line: number; chat: boolean };
+  | { kind: "speaker"; anchor: Element; line: number; chat: boolean }
+  | PhoneMenu;
+
+/** A chat's popups (components/boxes/PhoneMenus.tsx). `line`: the message, reaction or chat head they're about.
+ *  pick: the earlier message a reply (`reply`), a reaction (`react`) or a new reaction at `place` (`new`) points at.
+ *  emoji: a reaction's emoji and who reacts (`new`: a new reaction to the message at `line`). */
+export type PhoneMenu =
+  | { kind: "pick"; anchor: Element; line: number; for: "reply" | "react" | "new"; place?: Place }
+  | { kind: "emoji"; anchor: Element; line: number; new?: boolean }
+  | { kind: "photos" | "typing" | "chat" | "date"; anchor: Element; line: number };
 
 type SceneUi = {
   view: EditorView | null;

@@ -1,3 +1,4 @@
+import type { ChatMsg } from "./phone";
 import { MapMode, StateEffect, StateField } from "@codemirror/state";
 import { useGame, type Manifest } from "@/shared/lib/game";
 import { parseScript, type Script } from "./script";
@@ -51,9 +52,11 @@ export type CheckInput = {
   labels: Set<string> | null;
   /** the scene's title (for the label it suggests) */
   title: string;
+  /** the chat messages of the scenes before this one (replies, reactions); null while they're read */
+  history: ChatMsg[] | null;
 };
 export const setCheckInput = StateEffect.define<CheckInput>();
 export const checkInputField = StateField.define<CheckInput>({
-  create: () => ({ labels: null, title: "" }),
+  create: () => ({ labels: null, title: "", history: null }),
   update: (v, tr) => { for (const e of tr.effects) if (e.is(setCheckInput)) return e.value; return v; },
 });

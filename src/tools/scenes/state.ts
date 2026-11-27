@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { create } from "zustand";
+import { useShallow } from "zustand/shallow";
 import { useGame } from "@/shared/lib/game";
 import { errorMessage, freeName, isUnder } from "@/shared/lib/utils";
 import { joinPath, listFiles, readFile, readJson, writeText } from "@/shared/lib/workspace";
@@ -8,6 +9,7 @@ import { baseName, createVaultStore, parentOf } from "@/shared/vault/store";
 import { CHAPTERS_DIR, chapterIdOf } from "@/tools/timeline/lib/store";
 import { readInfo, setInfo, withInfo, type SceneInfo } from "./lib/header";
 import { labelsIn } from "./lib/labels";
+import { chatsIn, type ChatMsg } from "./lib/phone";
 import { parseScript, sceneTemplate, suggestLabel } from "./lib/script";
 import { useSceneUi } from "./lib/ui";
 
@@ -27,9 +29,12 @@ useScenes.setState({ expanded: new Set(SCENE_DIRS) });
 /** Which story folder the scenes come from (another one: the index is read again). */
 const locKey = () => { const l = useScenes.getState().loc; return l ? `${l.kind}:${l.label}:${l.name ?? ""}` : ""; };
 
-/** What the list and the jump checks need of a scene. */
-export type SceneEntry = { labels: string[]; info: SceneInfo };
-export const entryOf = (text: string): SceneEntry => ({ labels: [...labelsIn(parseScript(text))], info: readInfo(text) });
+/** What the list, the jump checks and the chats need of a scene: its labels, its header, its chat messages. */
+export type SceneEntry = { labels: string[]; info: SceneInfo; chats: ChatMsg[] };
+export const entryOf = (text: string): SceneEntry => {
+  const s = parseScript(text);
+  return { labels: [...labelsIn(s)], info: readInfo(text), chats: chatsIn(s).msgs };
+};
 /** What the list calls a scene: its title, else its file name. */
 export const titleOf = (path: string, info: SceneInfo | undefined) => info?.title || baseName(path);
 
@@ -52,7 +57,7 @@ type SceneIndex = {
 };
 
 const same = (a: SceneEntry | undefined, b: SceneEntry) =>
-  !!a && a.labels.join() === b.labels.join() && JSON.stringify(a.info) === JSON.stringify(b.info);
+  !!a && a.labels.join() === b.labels.join() && JSON.stringify(a.info) === JSON.stringify(b.info) && JSON.stringify(a.chats) === JSON.stringify(b.chats);
 
 export const useSceneIndex = create<SceneIndex>()((set, get) => ({
   files: null, readFor: null, reading: null, pending: {},
@@ -118,6 +123,51 @@ export function useKnownLabels(): Set<string> | null {
   const files = useSceneIndex(i => i.files);
   const manifest = useGame(g => g.manifest);
   return useMemo(() => (files ? new Set([...Object.values(files).flatMap(f => f.labels), ...(manifest?.labels ?? [])]) : null), [files, manifest]);
+}
+
+// ---------------------------------------------------------------- story order
+
+export type SceneRow = { path: string; title: string };
+export type SceneGroup = { id: string; name: string; rows: SceneRow[] };
+const DEV_DIR = `${GAME_DIR}/dev`;
+const byTitle = (a: SceneRow, b: SceneRow) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" });
+
+/** The scenes grouped by their timeline chapter, in the timeline's order, each chapter's by title (dates sort right:
+ *  "07.04.2025 Mo"); then chapter ids the timeline doesn't have, "No chapter" and "dev". The scene list shows this,
+ *  and it is the story's order (which scenes come before which: the chats' history). */
+export function groupScenes(paths: string[], infoOf: (p: string) => SceneInfo | undefined, chapters: ChapterRef[] | null): SceneGroup[] {
+  const byChapter = new Map<string, SceneRow[]>();
+  for (const p of paths) {
+    const info = infoOf(p);
+    const id = info?.chapter || (isUnder(p, DEV_DIR) ? ":dev" : ":none");
+    byChapter.set(id, [...(byChapter.get(id) ?? []), { path: p, title: titleOf(p, info) }]);
+  }
+  const out: SceneGroup[] = [];
+  const take = (id: string, name: string) => { const rows = byChapter.get(id); if (rows) { out.push({ id, name, rows: rows.sort(byTitle) }); byChapter.delete(id); } };
+  for (const c of chapters ?? []) take(c.id, c.name);
+  for (const id of [...byChapter.keys()].filter(k => !k.startsWith(":")).sort()) take(id, id);
+  take(":none", "No chapter");
+  take(":dev", "dev");
+  return out;
+}
+
+/** The chat messages of every scene before `path` in the story, oldest first (null while the scenes or the chapters
+ *  are read). The open scene is placed by its live header, as the scene list does, and the result keeps its identity
+ *  while its content stays the same (saving the open scene doesn't change the scenes before it). */
+export function useChatHistory(path: string | null): ChatMsg[] | null {
+  const files = useSceneIndex(i => i.files);
+  const chapters = useChapters(c => c.list);
+  const openInfo = useScenes(useShallow(s => (s.path && s.path === path ? readInfo(s.text) : null)));
+  const last = useRef<{ key: string; value: ChatMsg[] | null }>({ key: "", value: null });
+  return useMemo(() => {
+    if (!files || !path || !chapters) return null;
+    const order = groupScenes(Object.keys(files), p => (p === path && openInfo ? openInfo : files[p]?.info), chapters).flatMap(g => g.rows);
+    const at = order.findIndex(r => r.path === path);
+    const value = (at < 0 ? [] : order.slice(0, at)).flatMap(r => files[r.path].chats.map(msg => ({ ...msg, scene: { path: r.path, title: r.title } })));
+    const key = JSON.stringify(value);
+    if (key !== last.current.key || !last.current.value) last.current = { key, value };
+    return last.current.value;
+  }, [files, chapters, path, openInfo]);
 }
 
 // ---------------------------------------------------------------- chapters (from the timeline)

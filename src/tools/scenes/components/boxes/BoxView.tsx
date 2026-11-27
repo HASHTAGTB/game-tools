@@ -14,6 +14,7 @@ import { playScript } from "../../lib/stage";
 import { idAt, useSceneUi } from "../../lib/ui";
 import { boxFor, type Swap } from "../../lib/viewSwap";
 import { useChapters, useScenes } from "../../state";
+import { phoneIndex, type ChatMsg } from "../../lib/phone";
 import { baseName } from "@/shared/vault/store";
 import { FixButton } from "../problems";
 import { BoxMenus } from "./BoxMenus";
@@ -25,7 +26,7 @@ import "./boxes.css";
 /** The script as boxes: what people say, narration, notes, stage changes, choices and chats, with a slot between
  *  every two of them where new things are added. There's nowhere else to type, so the Ren'Py stays valid. The file
  *  lives in the (hidden) CodeMirror `view`; every box edits its own lines there. */
-export function BoxView({ view, swap }: { view: EditorView; swap: Swap | null }) {
+export function BoxView({ view, swap, history }: { view: EditorView; swap: Swap | null; history: ChatMsg[] | null }) {
   const script = useSceneUi(s => s.script);
   const problems = useSceneUi(s => s.problems);
   const focus = useSceneUi(s => s.focus);
@@ -63,10 +64,11 @@ export function BoxView({ view, swap }: { view: EditorView; swap: Swap | null })
       view, manifest, stages: playScript(script), cast, problems: byLine,
       base: label.replace(/^(sc|scene)_/, ""), labels: labelsIn(script), epoch, ids: view.state.field(lineIds),
       structure: tree ? structureOf(tree, view.state.field(lineIds)) : "",
+      phone: phoneIndex(script, history),
     };
     shared.current = prev ? Object.assign(prev, next) : next;
     return shared.current;
-  }, [view, script, manifest, problems, tree]);
+  }, [view, script, manifest, problems, tree, history]);
 
   /* A scene opens: first only its title card is drawn (and shown), then all its boxes in one go, which keeps the page
      busy for a moment while the card goes on playing (see ./TitleCard.tsx). Once the card has been up long enough it

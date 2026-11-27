@@ -1,7 +1,8 @@
 import {
-  ArrowRight, CalendarDays, Clock, CornerDownLeft, Eye, Hourglass, Image, Music, Smartphone, Sparkles, Split, UserRound, UserRoundMinus,
+  ArrowRight, CalendarDays, Clock, CornerDownLeft, Eye, Hourglass, Image, Music, Smartphone, SmilePlus, Sparkles, Split, UserRound, UserRoundMinus,
   VolumeX, type LucideIcon,
 } from "lucide-react";
+import { formatReact, parseReact } from "./phone";
 import type { Manifest } from "@/shared/lib/game";
 import { look } from "./look";
 import type { Stage } from "./stage";
@@ -24,6 +25,9 @@ export type Stmt =
   | { kind: "pause"; seconds?: string }
   /** the game's phone: `phone on` (with a chat: shown on it), `phone off`, `phone open sakari` */
   | { kind: "phone"; action: "on" | "off" | "open"; thread?: string }
+  /** a reaction in a chat: `react rin_luck "👌"`, `react "viel Glück" "❤️" by kaishi` (`byText`: the ref is a piece of
+   *  the message's text, not its id; emoji "" takes it back) */
+  | { kind: "react"; ref: string; byText: boolean; emoji: string; by: string | null }
   | { kind: "return" }
   | { kind: "menu" };
 
@@ -194,6 +198,12 @@ const STATEMENTS: { [K in StmtKind]: Spec<Extract<Stmt, { kind: K }>> } = {
     card: x => plainCard(Smartphone, "Phone", x.action === "open" ? `opens ${x.thread ?? ""}`.trim() : x.action === "on" ? join("comes out", x.thread) : "goes away"),
     editable: true,
     hint: () => "name the chat.",
+  },
+  react: {
+    parse: b => { const r = parseReact(b); return r && { kind: "react", ...r }; },
+    format: x => formatReact(x),
+    card: (x, _, m) => ({ ico: SmilePlus, title: "Reaction", detail: join(x.emoji || "taken back", x.by && `by ${look(m, x.by).name}`), color: null }),
+    editable: false,
   },
   return: {
     parse: b => (/^return\s*$/.test(b) ? { kind: "return" } : null),

@@ -1,5 +1,6 @@
 import { jumpsTo } from "./labels";
-import { chatHead, inScript, type Line, type Script } from "./script";
+import { parseChatHead, type ChatHead } from "./phone";
+import { inScript, type Line, type Script } from "./script";
 import type { Stmt } from "./statements";
 
 /** The script as boxes, for the box view. Pure: reads the parsed lines, writes nothing.
@@ -19,7 +20,7 @@ export type Box =
   | { kind: "menu"; from: number; to: number; indent: number; caption: Box[]; options: MenuOption[];
       /** the label line all routes continue at (its lines follow the choice), or null */
       cont: number | null }
-  | { kind: "chat"; from: number; to: number; indent: number; thread: string; log: boolean; items: Box[]; body: Place }
+  | { kind: "chat"; from: number; to: number; indent: number; head: ChatHead; items: Box[]; body: Place }
   /** anything else, with its indented lines: shown and edited as Ren'Py. `as`: what the editor would draw instead,
    *  when it's Ren'Py only because it was asked to be (see `buildTree`'s `raw`) */
   | { kind: "raw"; from: number; to: number; indent: number; bad: string | null; /** its lines, as in the file */ src: string;
@@ -132,11 +133,11 @@ function drawn(node: N, s: Script, r: Raw): Box {
       if (kids.length) return raw();
       return { kind: "stmt", from: n, to: n, indent, stmt: p.stmt };
     case "code": {
-      const head = chatHead(text);
+      const head = parseChatHead(text);
       if (head && kids.length) {
         const items = toBoxes(kids, s, r);
         const ind = lineIndent(kids[0].p);
-        return { kind: "chat", from: n, to: last, indent, thread: head.thread, log: head.log, items,
+        return { kind: "chat", from: n, to: last, indent, head, items,
           body: { after: n, indent: ind, tight: true, level: false, chat: true } };
       }
       return raw();

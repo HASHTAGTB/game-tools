@@ -58,14 +58,6 @@ function stringEnd(s: string, at: number): number {
 export const indentOf = (s: string) => s.length - s.trimStart().length;
 export const pad = (n: number) => " ".repeat(n);
 
-/** A chat on the phone: `chat sakari:` (written live) or `chat log sakari:` (already there when the phone opens). */
-const CHAT_HEAD = /^\s*chat\s+(log\s+)?(.+?)\s*:\s*$/;
-export function chatHead(line: string): { thread: string; log: boolean } | null {
-  const m = CHAT_HEAD.exec(line);
-  return m && { thread: m[2], log: !!m[1] };
-}
-export const formatChatHead = (thread: string, log: boolean) => `chat ${log ? "log " : ""}${thread}:`;
-
 export function parseLine(text: string): Line {
   const t = text.trim();
   if (!t) return { kind: "blank" };
@@ -76,7 +68,7 @@ export function parseLine(text: string): Line {
 
   // `who "text" tail`, `"text" tail` or a choice `"text":`
   m = /^(?:([A-Za-z_]\w*)\s+)?"/.exec(t);
-  if (m && !["scene", "show", "hide", "play", "jump", "call", "with", "menu", "label", "if", "elif", "while", "python", "init", "define", "default", "voice"].includes(m[1] ?? "")) {
+  if (m && !["scene", "show", "hide", "play", "jump", "call", "with", "menu", "label", "if", "elif", "while", "python", "init", "define", "default", "voice", "react"].includes(m[1] ?? "")) {
     const q = indent + m[0].length - 1;
     const end = stringEnd(text, q);
     if (end < 0) return { kind: "bad", indent, reason: "This line's text has no closing quote." };

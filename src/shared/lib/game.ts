@@ -42,6 +42,10 @@ export type Manifest = {
   transitionDefs?: Record<string, string>;
   positions: { name: string; params?: Record<string, number> }[];
   labels: string[];
+  /** the phone's group chats (features/phone/content/chats/chats.rpy); DMs need no declaration */
+  chats?: { id: string; title: string; members: string[] }[];
+  /** photos for the phone (assets/features/photos/): name → file in assets/ ("incident_01" → "features/photos/incident/incident_01.webp") */
+  photos?: Record<string, string>;
 };
 
 export type GameState = {

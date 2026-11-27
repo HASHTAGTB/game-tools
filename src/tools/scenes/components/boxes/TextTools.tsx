@@ -237,7 +237,7 @@ export function MarkPopup() {
 }
 
 /** A row of fixed values, the current one lit (none when it's in between, e.g. scrolled to 0.85). */
-function Choices<T extends number>({ title, value, options, at, label, onPick, dim }: {
+export function Choices<T extends number>({ title, value, options, at, label, onPick, dim }: {
   title: string; value: string; options: readonly T[]; at: number | null; label: (v: T) => string; onPick: (v: T) => void; dim?: boolean;
 }) {
   return (
@@ -296,7 +296,7 @@ function PauseChoices({ edit }: { edit: MarkEdit }) {
   );
 }
 
-const Foot = ({ children }: { children: React.ReactNode }) => <div className="mt-2.5 flex items-center gap-1 border-t border-ink-line pt-2">{children}</div>;
+export const Foot = ({ children }: { children: React.ReactNode }) => <div className="mt-2.5 flex items-center gap-1 border-t border-ink-line pt-2">{children}</div>;
 const Toggle = ({ icon, label, pressed, onClick }: { icon: LucideIcon; label: string; pressed: boolean; onClick: () => void }) => (
   <IconButton icon={icon} size="sm" label={label} pressed={pressed} onClick={onClick} />
 );

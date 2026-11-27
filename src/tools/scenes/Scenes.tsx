@@ -20,7 +20,7 @@ import { SceneHeader } from "./components/SceneHeader";
 import { SceneList } from "./components/SceneList";
 import { TextBar } from "./components/boxes/TextTools";
 import { readInfo } from "./lib/header";
-import { createScene, useChapters, useKnownLabels, useSceneIndex, useScenes } from "./state";
+import { createScene, useChapters, useChatHistory, useKnownLabels, useSceneIndex, useScenes } from "./state";
 
 const HELP: Gesture[] = [
   ["Click the scene's name", "Find a scene by name"],
@@ -58,6 +58,7 @@ export default function Scenes() {
   }, [ready, loc]);
 
   const labels = useKnownLabels();
+  const history = useChatHistory(path);
 
   // the script view or the Ren'Py source
   useHotkeys({ "mod+e": () => s.setMode(useScenes.getState().mode === "live" ? "source" : "live") });
@@ -102,7 +103,7 @@ export default function Scenes() {
         {path && <SceneHeader title={title} />}
         {path ? (
           <div className="min-h-0 flex-1">
-            <Editor mode={mode} labels={labels} title={title} />
+            <Editor mode={mode} labels={labels} title={title} history={history} />
           </div>
         ) : !ready ? <NotReady loc={loc} /> : (
           <EmptyState title="No scene open.">

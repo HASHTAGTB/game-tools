@@ -1,4 +1,4 @@
-import { Trash2 } from "lucide-react";
+import { Image, Keyboard, Reply, SmilePlus, Trash2 } from "lucide-react";
 import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { cn } from "@/shared/lib/utils";
 import { openAnchoredMenu } from "@/shared/ui/anchored-menu";
@@ -8,15 +8,21 @@ import { fileHistoryKey } from "../../lib/codeEditor";
 import { insertAt, joinSays, removeBox, setRaw, setSayRaw, setSpeaker, splitSay } from "../../lib/ops";
 import { atEdge, caretCount, chip, fromDOM, insertAtCaret, isEmpty, markBeforeCaret, marksAt, onEdgeLine, onSpeedLabel, padMarks, pauseOf, plainCount, setCaret, splitAtCaret, stepOutOfWrap, stepToText, toDOM, zwAtCaret } from "../../lib/richtext";
 import { focusLine, idAt, useSceneUi } from "../../lib/ui";
-import { follow, problemsOf, stageBefore, useBox, useHot, type ListLayout } from "./context";
+import { follow, phoneLook, problemsOf, stageBefore, useBox, useHot, type ListLayout } from "./context";
 import { Acts, addAfter, addInstead, Problems, useMoves } from "./List";
 import { BraceMenu, braceAtCaret, braceMatches, bracePick, braceUpdate, nudgeMark, openMark, sameMarks, type Brace, type BraceItem } from "./TextTools";
 import { look } from "../../lib/look";
 import { useWash } from "@/shared/ui/use-wash";
+import { useMorph } from "@/shared/ui/use-morph";
+import { IconButton } from "@/shared/ui/icon-button";
+import { membersOf, parseArgs } from "../../lib/phone";
+import { openPhoneMenu, Photos, Pills, Quote, TypingChip } from "./PhoneParts";
 
 type Say = Extract<Box, { kind: "say" }>;
 
-/** A line someone says (a tinted box, their name in the margin) or narration (an outlined box). In a chat: a bubble. */
+/** A line someone says (a tinted box, their name in the margin) or narration (an outlined box). In a chat, a message
+ *  is a bubble (the POV character's on the right), its name still in the margin, with what the phone shows of it: the
+ *  message it replies to, its photos, "typing…" first, the reactions it gets. */
 export const SayBox = memo(function SayBox({ box: b, prev, next, layout }: { box: Say; prev: Box | null; next: Box | null; layout: ListLayout }) {
   const c = useBox();
   const { view, manifest } = c;
@@ -55,13 +61,22 @@ export const SayBox = memo(function SayBox({ box: b, prev, next, layout }: { box
   const pov = stage.pov ? look(c.manifest, stage.pov) : null;
   const cont = prev?.kind === "say" && (ext || prev.who === b.who);
   const mine = chat && !!b.who && b.who === stage.pov;
+  // a message on the phone (not narration in a chat)
+  const msg = chat && !!b.who && !ext;
+  const args = msg ? parseArgs(b.tail) : null;
+  const phone = msg ? phoneLook(c, b.from, args!.reply) : null;
+  const more = msg && next?.kind === "say" && next.who === b.who;
+  const live = !phone?.block.head.log;
   const tint = w ?? (chat ? null : pov);
   const style = { "--who": w?.color ?? "transparent", "--whoL": tint?.legible } as CSSProperties;
 
   // someone else says it now: their colour washes over the box, their name rolls in
   const boxRef = useRef<HTMLDivElement>(null);
+  const bubRef = useRef<HTMLDivElement>(null);
   const whoRef = useRef<HTMLButtonElement>(null);
-  useWash(said, boxRef, whoRef);
+  useWash(said, msg ? bubRef : boxRef, whoRef);
+  // a quote, photos or "typing…" comes or goes: the bubble morphs to its new size
+  useMorph(bubRef, msg ? JSON.stringify([args!.reply, phone?.target?.line, args!.photos, args!.typing]) : null);
 
   // Ctrl+scroll on a pause's or a speed's number: 0.05 steps (up: longer / faster). Not React's onWheel: that one is
   // passive, and Ctrl+scroll would zoom the page too.
@@ -95,7 +110,7 @@ export const SayBox = memo(function SayBox({ box: b, prev, next, layout }: { box
     setSayRaw(view, b.from, fromDOM(el));
   };
   commitNow.current = commit;
-  const castHere = chat ? c.cast : [null, ...c.cast];
+  const castHere = chat ? (phone && membersOf(c.manifest, phone.block.head.target)) || c.cast : [null, ...c.cast];
   const speakerMenu = (anchor: Element) => useSceneUi.setState({ menu: { kind: "speaker", anchor, line: b.from, chat } });
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -215,22 +230,55 @@ export const SayBox = memo(function SayBox({ box: b, prev, next, layout }: { box
   };
   const known = !b.who || !manifest || w?.known;
 
-  return (
-    <div ref={boxRef} className={cn("bx-box bx-say", said ? "bx-dlg" : "bx-narr", cont && "bx-cont", chat && (mine ? "bx-mine" : "bx-theirs"))}
-      style={style} data-line={b.from} data-from={b.from} data-to={b.to} {...bind}>
-      {(b.who || !chat) && (
-        <button ref={whoRef} type="button" className={cn("bx-who", !said && "bx-narr-who", !known && "bx-unknown")} tabIndex={-1}
-          title={ext ? `Goes on from the line before${w ? ` (${w.name})` : ""}` : b.who ? `${w!.name} · click to change who says it (Tab)` : `${pov ? pov.name + "'s narration" : "Narration"} · click to give it a speaker (Tab)`}
-          onMouseDown={e => e.preventDefault()} onClick={e => speakerMenu(e.currentTarget)}>
-          {!b.who && <span className="bx-dot" />}
-          {ext ? "…" : b.who ? w!.name : "Narration"}
-        </button>
-      )}
+  const name = (
+    <button ref={whoRef} type="button" className={cn("bx-who", !said && "bx-narr-who", !known && "bx-unknown")} tabIndex={-1}
+      title={ext ? `Goes on from the line before${w ? ` (${w.name})` : ""}` : b.who ? `${w!.name} · click to change who ${msg ? "writes" : "says"} it (Tab)` : `${pov ? pov.name + "'s narration" : "Narration"} · click to give it a speaker (Tab)`}
+      onMouseDown={e => e.preventDefault()} onClick={e => speakerMenu(e.currentTarget)}>
+      {!b.who && <span className="bx-dot" />}
+      {ext ? "…" : b.who ? w!.name : "Narration"}
+    </button>
+  );
+  const text = (
+    <>
       <div ref={ref} className="bx-text" contentEditable suppressContentEditableWarning spellCheck data-text
-        data-ph={ext ? "Goes on…" : b.who ? (chat ? "Message…" : `${w!.name} says…`) : "Narration…  ( / to add something else)"}
+        data-ph={ext ? "Goes on…" : b.who ? (chat ? (args?.photos?.length ? "Caption (optional)" : "Message…") : `${w!.name} says…`) : "Narration…  ( / to add something else)"}
         onInput={onInput} onKeyDown={onKey} onPaste={onPaste} onClick={onClick}
         onFocus={() => follow(view, b.from)} onBlur={() => setBrace(null)} />
       {brace && <BraceMenu brace={brace} onPick={pick} />}
+    </>
+  );
+
+  if (msg) {
+    const a = args!;
+    const menu = (kind: "photos" | "typing", anchor: Element) => openPhoneMenu({ kind, anchor, line: b.from });
+    const pickReply = (anchor: Element) => openPhoneMenu({ kind: "pick", anchor, line: b.from, for: "reply" });
+    return (
+      <div ref={boxRef} className={cn("bx-box bx-msg", mine ? "bx-mine" : "bx-theirs", cont && "bx-cont", more && "bx-more")}
+        style={style} data-line={b.from} data-from={b.from} data-to={b.to} {...bind}>
+        {name}
+        <div ref={bubRef} className={cn("bx-bub", !!a.photos?.length && "bx-has-ph", problemsOf(c, b).some(p => p.severity === "error") && "bx-bad")}>
+          {a.reply !== null && <Quote target={phone?.target ?? null} reply={a.reply} onRepick={pickReply} pending={!c.phone.known} />}
+          {!!a.photos?.length && <Photos names={a.photos} />}
+          {a.typing ? <TypingChip secs={a.typing} live={live} onClick={el => menu("typing", el)} /> : null}
+          {text}
+        </div>
+        <Pills reacts={phone?.reacts ?? []} />
+        <Problems list={problemsOf(c, b)} />
+        <Acts box={b} prev={prev} next={next}>
+          <IconButton icon={Reply} size="sm" label={a.reply !== null ? "Reply: another message, or none" : "Reply to an earlier message"} pressed={a.reply !== null} onClick={e => pickReply(e.currentTarget)} />
+          <IconButton icon={SmilePlus} size="sm" label="React to it" onClick={e => openPhoneMenu({ kind: "emoji", anchor: e.currentTarget, line: b.from, new: true })} />
+          <IconButton icon={Image} size="sm" label="Photos" pressed={!!a.photos?.length} onClick={e => menu("photos", e.currentTarget)} />
+          <IconButton icon={Keyboard} size="sm" label={live ? "“Typing…” first" : "Typing only shows in a live chat"} pressed={!!a.typing} disabled={!live} onClick={e => menu("typing", e.currentTarget)} />
+        </Acts>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={boxRef} className={cn("bx-box bx-say", said ? "bx-dlg" : "bx-narr", cont && "bx-cont")}
+      style={style} data-line={b.from} data-from={b.from} data-to={b.to} {...bind}>
+      {name}
+      {text}
       {b.tail && !b.tail.startsWith("#") && <span className="bx-tail" title="Ren'Py options for this line (edit them in the source view, Ctrl+E)">{b.tail}</span>}
       <Problems list={problemsOf(c, b)} />
       <Acts box={b} prev={prev} next={next} />

@@ -11,6 +11,10 @@
   .bx-box:not(.bx-card) > .bx-acts, .bx-stage.bx-open > .bx-card > .bx-acts { left: auto !important; right: .35rem !important; top: .3rem !important; translate: none !important; }
   .bx-say > .bx-who, .bx-raw > .bx-who { position: static !important; display: inline-flex !important; opacity: 1 !important; margin: 0 0 .1rem -.25rem; }
   .bx-say.bx-cont > .bx-who { display: none !important; }
+  .bx-msg > .bx-who { position: static !important; display: flex !important; opacity: 1 !important; width: max-content; margin: 0 0 .1rem -.25rem; }
+  .bx-mine > .bx-who { margin-left: auto !important; }
+  .bx-msg.bx-cont > .bx-who { display: none !important; }
+  .bx-bub { max-width: 90%; }
 }
 
 /* --ay: how far down the box's first line is centred (its buttons sit level with it); a one-line pill: its middle */
@@ -151,32 +155,101 @@
 .bx-choice-foot { padding: .15rem 0 .25rem; text-align: center; font-family: var(--font-sans); font-size: 13px; color: var(--color-taupe); }
 .bx-cond { font-family: ui-monospace, monospace; font-size: 12px; color: var(--color-taupe); background: var(--color-ink-2); border-radius: 4px; padding: 0 .4rem; }
 
-/* ---------- chat */
-.bx-chat { --ay: calc(1px + .45rem + 11px); display: flex; justify-content: center; }
-.bx-phone { width: min(100%, 26rem); border: 1px solid var(--color-ink-line); border-radius: 18px; background: #211e1c; overflow: hidden; }
-.bx-phone-head { display: flex; align-items: center; gap: .5rem; padding: .45rem .7rem .45rem .85rem; border-bottom: 1px solid var(--color-ink-line); background: var(--color-ink-2); }
-.bx-phone-head > svg { width: 14px; height: 14px; color: var(--color-taupe); flex: none; }
-.bx-phone-head input { all: unset; min-width: 0; flex: 1; padding: 0 .3rem; border-radius: 4px; font-family: var(--font-sans); font-weight: 600; font-size: 14px; color: var(--color-paper); }
-.bx-phone-head input:hover, .bx-phone-head input:focus { background: var(--color-ink); }
-.bx-log { all: unset; cursor: pointer; padding: .05rem .5rem; border: 1px solid var(--color-ink-line); border-radius: 999px; font-family: var(--font-talk); font-size: 12px; color: var(--color-taupe); white-space: nowrap; }
-.bx-log:hover, .bx-log:focus-visible { color: var(--color-paper); border-color: var(--color-taupe); }
-.bx-phone-body { padding: .55rem .55rem .45rem; }
+/* ---------- chat: a phone frame exactly as wide as the dialogue boxes. Names stay in the left margin, buttons in the
+   right one (past the frame's padding); messages are bubbles, the POV character's on the right. */
+.bx-chat { --ay: calc(1px + 1.2rem); }
+/* the chat's own buttons only for its head (its messages have theirs) */
+.bx-chat > .bx-acts { opacity: 0 !important; }
+.bx-chat:has(> .bx-phone > .bx-phone-head:is(:hover, :focus-within)) > .bx-acts, .bx-chat > .bx-acts:is(:hover, :focus-within, :has([data-popup-open])) { opacity: 1 !important; }
+.bx-phone { position: relative; border: 1px solid var(--color-ink-line); border-radius: var(--radius-lg); background: #211e1c; }
+.bx-phone-head { position: relative; isolation: isolate; display: flex; align-items: center; gap: .45rem; min-height: 2.4rem; padding: .3rem .6rem .3rem .8rem; border-bottom: 1px solid var(--color-ink-line); border-radius: var(--radius-lg) var(--radius-lg) 0 0; background: var(--color-ink-2); }
+.bx-phone-ico { width: 15px; height: 15px; flex: none; color: var(--color-taupe); }
+.bx-target { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: .45rem; min-width: 0; padding: .05rem .4rem; border-radius: 4px; font-family: var(--font-sans); font-weight: 600; font-size: 15px; line-height: 22px; color: var(--color-paper); }
+.bx-target:hover, .bx-target:focus-visible { background: var(--color-ink); }
+.bx-target-name { display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bx-dots { display: inline-flex; flex: none; }
+.bx-dots i { width: 9px; height: 9px; margin-left: -3px; border: 1.5px solid var(--color-ink-2); border-radius: 999px; background: var(--c); }
+.bx-dots i:first-child { margin-left: 0; }
+.bx-mode { display: inline-flex; flex: none; margin-left: auto; padding: 2px; border: 1px solid var(--color-ink-line); border-radius: 999px; background: var(--color-ink); }
+.bx-mode button { all: unset; cursor: pointer; position: relative; isolation: isolate; padding: 0 .6rem; border-radius: 999px; font-family: var(--font-sans); font-size: 12px; line-height: 20px; color: var(--color-taupe); }
+.bx-mode button[aria-pressed="true"] { color: var(--color-paper); }
+.bx-mode button:focus-visible { outline: 2px solid var(--color-periwinkle); }
+.bx-mode-thumb { position: absolute; inset: 0; z-index: -1; border-radius: 999px; background: var(--color-ink-3); box-shadow: inset 0 0 0 1px var(--color-ink-line); }
+.bx-date { all: unset; cursor: pointer; display: inline-flex; flex: none; align-items: center; gap: .3rem; padding: 0 .5rem; border: 1px solid var(--color-ink-line); border-radius: 999px; font-family: var(--font-sans); font-size: 12px; line-height: 20px; color: var(--color-bone); }
+.bx-date svg { width: 12px; height: 12px; color: var(--color-taupe); }
+.bx-date:hover, .bx-date:focus-visible { border-color: var(--color-taupe); color: var(--color-paper); }
+
+.bx-phone-body { --pp: .7rem; padding: .5rem var(--pp) .4rem; }
 .bx-phone-body .bx-slot::before { left: .35rem; right: .35rem; }
-/* narrow enough that a bubble's buttons fit beside it inside the phone */
-.bx-phone-body .bx-say { max-width: 76%; padding: .3rem .75rem .4rem; border-radius: 14px; --ay: calc(1px + .3rem + 12px); }
-.bx-phone-body .bx-say.bx-theirs:not(.bx-cont):has(> .bx-who) { --ay: calc(1px + .3rem + 16px + 12px); }
-.bx-phone-body .bx-say > .bx-who { position: static; display: inline-flex; max-width: 100%; margin-left: -.3rem; font-size: 12px; line-height: 16px; opacity: 1; }
-.bx-phone-body .bx-say.bx-cont > .bx-who { display: none; }
-.bx-phone-body .bx-say.bx-mine { margin-left: auto; border-bottom-right-radius: 4px; background: color-mix(in srgb, var(--who) 16%, var(--color-ink-2)); border-color: color-mix(in srgb, var(--who) 30%, transparent); }
-.bx-phone-body .bx-say.bx-mine > .bx-who { display: none; }
-.bx-phone-body .bx-say.bx-theirs { border-bottom-left-radius: 4px; background: var(--color-ink-2); border-color: var(--color-ink-line); }
-.bx-phone-body .bx-text { font-size: 15px; line-height: 1.55; }
-/* the phone clips what sticks out: your own bubbles (right side) get their buttons on their left */
-.bx-phone-body .bx-mine > .bx-acts { left: auto; right: calc(100% + .4rem); flex-direction: row-reverse; }
-.bx-phone-body .bx-mine > .bx-acts::before { right: auto; left: 100%; }
-.bx-phone-body .bx-stage .bx-card { background: transparent; border-color: transparent; }
+.bx-phone-body .bx-slot { height: 9px; }
+/* a message's names and buttons go past the frame into the margins, level with the dialogue boxes' */
+.bx-phone-body :is(.bx-msg, .bx-say, .bx-raw, .bx-note) > .bx-who { right: calc(100% + var(--pp) + 1px + .9rem); }
+.bx-phone-body :is(.bx-msg, .bx-say, .bx-raw, .bx-note, .bx-react) > .bx-acts { left: calc(100% + var(--pp) + 1px + .4rem); }
+.bx-phone-body :is(.bx-msg, .bx-say, .bx-raw, .bx-note, .bx-react) > .bx-acts::before { width: calc(var(--pp) + 1px + .5rem); }
+.bx-phone-body .bx-say { padding: .4rem .85rem .45rem; --ay: calc(1px + .4rem + 12px); }
+.bx-phone-body .bx-text { font-size: 15px; line-height: 1.55; min-height: 1.55em; }
+
+/* a message: the row is as wide as the chat (its name and buttons line up), only the bubble and the buttons count as
+   hovering it */
+.bx-msg { pointer-events: none; --ay: calc(1px + .35rem + 12px); }
+.bx-msg > * { pointer-events: auto; }
+.bx-msg > .bx-who { top: .3rem; }
+.bx-msg.bx-cont > .bx-who { opacity: 0; }
+.bx-msg.bx-cont:is(:hover, :focus-within) > .bx-who { opacity: .55; }
+.bx-bub { position: relative; width: fit-content; max-width: 78%; padding: .35rem .75rem .42rem; border: 1px solid; border-radius: 16px; }
+.bx-theirs .bx-bub { background: color-mix(in srgb, var(--who) 8%, var(--color-ink-2)); border-color: color-mix(in srgb, var(--who) 26%, transparent); }
+.bx-mine .bx-bub { margin-left: auto; background: color-mix(in srgb, var(--who) 18%, var(--color-ink-2)); border-color: color-mix(in srgb, var(--who) 34%, transparent); }
+/* a sender's run: tight corners on their side */
+.bx-theirs.bx-cont .bx-bub { border-top-left-radius: 5px; } .bx-theirs.bx-more .bx-bub { border-bottom-left-radius: 5px; }
+.bx-mine.bx-cont .bx-bub { border-top-right-radius: 5px; } .bx-mine.bx-more .bx-bub { border-bottom-right-radius: 5px; }
+.bx-bub:focus-within { border-color: color-mix(in srgb, var(--whoL) 62%, transparent); }
+.bx-bub.bx-bad { border-color: color-mix(in srgb, var(--color-coral) 70%, transparent); }
+/* a photo without caption: the caption shows when you point at it */
+.bx-bub.bx-has-ph .bx-text:empty:not(:focus) { display: none; }
+.bx-bub.bx-has-ph:is(:hover, :focus-within) .bx-text:empty { display: block; }
+.bx-mine .bx-probs { justify-items: end; }
+
+.bx-quote { all: unset; cursor: pointer; box-sizing: border-box; display: flex; align-items: center; gap: .5rem; min-width: 9rem; max-width: calc(100% + .7rem); margin: .2rem -.35rem .3rem; padding: .3rem .5rem; border-radius: 9px; background: color-mix(in srgb, var(--qc) 12%, rgba(0, 0, 0, .22)); }
+.bx-quote:hover, .bx-quote:focus-visible { background: color-mix(in srgb, var(--qc) 18%, rgba(0, 0, 0, .22)); }
+.bx-qb { display: grid; min-width: 0; flex: 1; }
+.bx-qn { display: flex; align-items: center; gap: .4rem; font-family: var(--font-sans); font-weight: 600; font-size: 12px; line-height: 16px; color: var(--qc); }
+.bx-qtag { padding: 0 .3rem; border: 1px solid var(--color-ink-line); border-radius: 999px; font-weight: 400; font-size: 11px; line-height: 14px; color: var(--color-taupe); white-space: nowrap; }
+.bx-qs { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-talk); font-size: 13px; line-height: 18px; color: var(--color-bone); }
+.bx-quote .bx-qth { width: 30px; height: 30px; flex: none; border-radius: 5px; }
+.bx-quote.bx-miss { --qc: var(--color-coral); background: transparent; border: 1px dashed color-mix(in srgb, var(--color-coral) 60%, transparent); }
+.bx-photos { display: grid; gap: 3px; margin: .2rem -.5rem .25rem; overflow: hidden; border-radius: 11px; }
+.bx-photos.bx-n1 { grid-template-columns: 1fr; } .bx-photos.bx-n2, .bx-photos.bx-n4 { grid-template-columns: 1fr 1fr; } .bx-photos.bx-n3 { grid-template-columns: 1fr 1fr 1fr; }
+.bx-photos .bx-photo { aspect-ratio: 1; min-width: 4.4rem; }
+.bx-photos.bx-n1 .bx-photo { aspect-ratio: 4 / 3; min-width: 12rem; }
+.bx-photo { position: relative; display: flex; align-items: flex-end; padding: .2rem .3rem; background-size: cover; background-position: center; }
+.bx-photo > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, monospace; font-size: 10px; color: rgba(255, 255, 255, .85); text-shadow: 0 1px 2px rgba(0, 0, 0, .6); }
+.bx-quote .bx-photo > span { display: none; }
+.bx-photo.bx-fill { position: absolute; inset: 0; }
+.bx-typing { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: .25rem; margin: .15rem 0 .1rem; padding: 0 .35rem 0 .25rem; border-radius: 4px; font-family: var(--font-sans); font-size: 13px; font-weight: 700; color: var(--color-periwinkle); font-variant-numeric: tabular-nums; }
+.bx-typing svg { width: 14px; height: 14px; }
+.bx-typing:hover, .bx-typing:focus-visible { background: var(--color-ink-3); }
+.bx-typing.bx-off { cursor: default; color: var(--color-taupe); text-decoration: line-through; }
+.bx-tdots { display: inline-flex; gap: 2px; margin-left: 1px; }
+.bx-tdots b { width: 3px; height: 3px; border-radius: 999px; background: currentColor; opacity: .7; }
+.bx-pills { position: relative; z-index: 1; display: flex; gap: 4px; margin-top: -7px; padding: 0 .6rem; }
+.bx-mine .bx-pills { justify-content: flex-end; }
+.bx-pill { all: unset; cursor: pointer; display: inline-flex; align-items: center; height: 20px; padding: 0 .35rem; border-radius: 999px; background: var(--color-ink-3); box-shadow: 0 0 0 1px color-mix(in srgb, var(--rc) 70%, transparent); font-size: 12px; }
+
+/* times (the stage card's pill), reactions: centred rows */
+.bx-phone-body .bx-stage .bx-card:not(.bx-open .bx-card) { background: transparent; }
 .bx-phone-body .bx-stage .bx-card-head { font-size: 12px; padding: 0 .6rem; }
 .bx-phone-body .bx-stage.bx-open .bx-card { background: var(--color-ink-3); border-color: var(--color-ink-line); }
+.bx-react { display: flex; flex-direction: column; align-items: center; --ay: 12px; }
+.bx-rx { display: inline-flex; align-items: center; gap: .4rem; max-width: 100%; padding: .1rem .3rem .1rem .55rem; border: 1px solid var(--color-ink-line); border-radius: 999px; background: var(--color-ink-2); font-family: var(--font-sans); font-size: 13px; line-height: 22px; color: var(--color-bone); }
+.bx-rx .bx-dot { width: 7px; height: 7px; flex: none; border-radius: 999px; background: var(--whoL, var(--color-taupe)); }
+.bx-rx b { font-weight: 600; color: var(--whoL, var(--color-bone)); white-space: nowrap; }
+.bx-rx.bx-bad { border-color: color-mix(in srgb, var(--color-coral) 70%, transparent); }
+.bx-rx-emoji { all: unset; cursor: pointer; padding: 0 .25rem; border-radius: 4px; font-size: 15px; }
+.bx-rx-emoji:hover, .bx-rx-emoji:focus-visible { background: var(--color-ink-3); }
+.bx-rx-on { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: .3rem; min-width: 0; padding: 0 .4rem; border-radius: 999px; color: var(--color-taupe); white-space: nowrap; overflow: hidden; }
+.bx-rx-on:hover, .bx-rx-on:focus-visible { background: var(--color-ink-3); color: var(--color-bone); }
+.bx-rx-on svg { width: 12px; height: 12px; flex: none; }
+.bx-rx-on q { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-talk); color: var(--color-bone); }
 
 /* ---------- problems under a box, sections */
 .bx-probs { display: grid; gap: .15rem; margin: .3rem .2rem 0; font-family: var(--font-talk); font-size: 13px; line-height: 18px; }

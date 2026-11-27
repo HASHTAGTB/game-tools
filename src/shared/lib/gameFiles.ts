@@ -14,6 +14,8 @@ import type { GameCharacter, Manifest } from "./game";
  *    transitions   Ren'Py's own plus the `define`s in core/transitions.rpy
  *    positions     the `transform`s in core/transitions.rpy
  *    labels        every label outside scenes/ and dev/ (the Scenes tool reads those itself)
+ *    chats         the phone's group chats: `phone_group(id, title, [members])` in features/phone/content/chats/chats.rpy
+ *    photos        assets/features/photos (named after the file, like the game declares them)
  *
  *  Only file names are needed from assets/, so it works on GitHub too (LFS only changes the contents). The images
  *  themselves are read on demand (assetUrl.ts). */
@@ -140,8 +142,8 @@ export function parseMedia(files: string[]) {
 
 /** Everything the tools want to know about the game; null if the vault has no game (no core/characters.rpy). */
 export async function readGame(): Promise<Manifest | null> {
-  const [charactersRpy, sayRpy, transitionsRpy, media, code] = await Promise.all([
-    gameText("core/characters.rpy"), gameText("core/gui/say.rpy"), gameText("core/transitions.rpy"),
+  const [charactersRpy, sayRpy, transitionsRpy, chatsRpy, media, code] = await Promise.all([
+    gameText("core/characters.rpy"), gameText("core/gui/say.rpy"), gameText("core/transitions.rpy"), gameText("features/phone/content/chats/chats.rpy"),
     walk(ASSETS), walk(GAME_DIR, SKIP_CODE).then(fs => fs.filter(f => f.endsWith(".rpy"))),
   ]);
   if (!charactersRpy) return null;
@@ -155,7 +157,23 @@ export async function readGame(): Promise<Manifest | null> {
     ...parseMedia(media),
     ...parseTransitions(transitionsRpy),
     labels: [...labels].sort(),
+    chats: chatsRpy ? parseChats(chatsRpy) : undefined,   // undefined: no chats.rpy, the groups aren't known
+    photos: parsePhotos(media),
   };
+}
+
+/** `phone_group("sakari", "SaKaRi", ["satoru", "kaishi", "rin"])` */
+export function parseChats(rpy: string) {
+  return [...stripLines(rpy).matchAll(/phone_group\(\s*"(\w+)"\s*,\s*"([^"]*)"\s*,\s*\[([^\]]*)\]/g)]
+    .map(m => ({ id: m[1], title: m[2], members: [...m[3].matchAll(/"(\w+)"|(\w+)/g)].map(x => x[1] ?? x[2]) }));
+}
+const stripLines = (rpy: string) => rpy.split("\n").map(stripComment).join("\n");
+
+/** The phone's photos: every image in assets/features/photos, by its name (file name without extension). */
+export function parsePhotos(files: string[]) {
+  const out: Record<string, string> = {};
+  for (const f of files) if (f.startsWith("features/photos/") && IMAGE_EXT.has(ext(f))) out[stem(baseName(f))] ??= f;
+  return out;
 }
 
 // ---------------------------------------------------------------- new characters

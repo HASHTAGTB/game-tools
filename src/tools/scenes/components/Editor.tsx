@@ -10,6 +10,7 @@ import { MONO } from "@/shared/vault/editorTheme";
 import { useDocEditor } from "@/shared/vault/useDocEditor";
 import type { Mode } from "@/shared/vault/store";
 import { checkScene } from "../lib/checks";
+import type { ChatMsg } from "../lib/phone";
 import { tabKeys } from "../lib/codeEditor";
 import { checkInputField, lineIds, manifestField, scriptField, setCheckInput, setManifest } from "../lib/editorState";
 import { toDiagnostic } from "../lib/fixes";
@@ -139,13 +140,15 @@ type Props = {
   labels: Set<string> | null;
   /** the scene's title, for the label the checks suggest */
   title: string;
+  /** the chat messages of the scenes before this one, for checking replies (null while they're read) */
+  history: ChatMsg[] | null;
 };
 
-export function Editor({ mode, labels, title }: Props) {
+export function Editor({ mode, labels, title, history }: Props) {
   const modeNow = useRef(mode);
   modeNow.current = mode;
-  const checkInput = useRef({ labels, title });
-  checkInput.current = { labels, title };
+  const checkInput = useRef({ labels, title, history });
+  checkInput.current = { labels, title, history };
   const manifest = useGame(s => s.manifest);
 
   const { host, view } = useDocEditor({
@@ -216,15 +219,15 @@ export function Editor({ mode, labels, title }: Props) {
   useEffect(() => {
     const v = view.current;
     if (!v) return;
-    v.dispatch({ effects: setCheckInput.of({ labels, title }) });
+    v.dispatch({ effects: setCheckInput.of({ labels, title, history }) });
     forceLinting(v);
-  }, [labels, manifest, title, view]);
+  }, [labels, manifest, title, history, view]);
 
   const shown = useSceneUi(s => s.view);
   return (
     <>
       <div ref={host} className="h-full min-h-0" hidden={mode === "live"} />
-      {mode === "live" && shown && <BoxView view={shown} swap={swap.current} />}
+      {mode === "live" && shown && <BoxView view={shown} swap={swap.current} history={history} />}
       <AnchoredMenuHost />
       <MarkPopup />
     </>

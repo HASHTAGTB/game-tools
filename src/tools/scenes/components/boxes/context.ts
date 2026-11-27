@@ -3,6 +3,7 @@ import { createContext, useContext, useState } from "react";
 import type { Manifest } from "@/shared/lib/game";
 import type { Box, Place } from "../../lib/blocks";
 import type { Problem } from "../../lib/checks";
+import { blockAt, msgAt, priorAt, reactsOn, resolveRef, snippet, type PhoneIndex } from "../../lib/phone";
 import { EMPTY_STAGE, type Stage } from "../../lib/stage";
 
 /** What every box needs: the view that holds the file, the game's data, what's on stage at each line, who's in the
@@ -24,6 +25,8 @@ export type BoxCtx = {
   structure: string;
   /** changes when what every box shows changes (the game's data, the cast): all boxes draw again */
   epoch: number;
+  /** the scene's chats, and the messages of the scenes before it */
+  phone: PhoneIndex;
 };
 
 /** One object for the whole view, updated in place on every edit: boxes don't all draw again because the file changed.
@@ -64,6 +67,20 @@ export function useDraft(fileValue: string) {
     onBlur: () => setDraft(null),
   };
 }
+
+/** What a message or reaction at `line` shows of other lines: the message it replies or reacts to, and the reactions
+ *  on it. For the box keys: it draws again when one of those changes. */
+export function phoneLook(c: BoxCtx, line: number, ref: string | null) {
+  const block = blockAt(c.phone, line);
+  if (!block) return null;
+  const target = ref !== null ? resolveRef(ref, priorAt(c.phone, block.key, line)) : null;
+  const msg = msgAt(c.phone, line);
+  return { block, target, reacts: msg ? reactsOn(c.phone, msg) : [] };
+}
+export const phoneKey = (c: BoxCtx, line: number, ref: string | null) => {
+  const l = phoneLook(c, line, ref);
+  return l ? JSON.stringify([c.phone.known, l.block.head, l.target && [l.target.who, snippet(l.target), l.target.line, l.target.scene?.title, l.target.photos[0]], l.reacts]) : "";
+};
 
 /** The problems on a box's lines (for nested boxes: only the lines the box itself draws). */
 export function problemsOf(c: BoxCtx, b: Box): Problem[] {
