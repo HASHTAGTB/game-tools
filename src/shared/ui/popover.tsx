@@ -1,8 +1,9 @@
 import { Popover as P } from "@base-ui/react/popover";
-import type { ReactElement, ReactNode } from "react";
+import { useRef, type ReactElement, type ReactNode } from "react";
 import { cn } from "@/shared/lib/utils";
 import { Rule } from "./heading";
-import { AnimatePresence, m, pop } from "./motion";
+import { bloomRef } from "./flair";
+import { bloomCls } from "./motion";
 import { DEFAULT_COLOR } from "@/shared/lib/colors";
 
 /** The raised surface every popup uses (popovers, menus, dialogs, suggestion lists, toasts): one step lighter than the
@@ -23,8 +24,10 @@ export function PopoverTitle({ children, color = DEFAULT_COLOR, className }: { c
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The trigger element; Base UI adds its props to it. */
-  trigger: ReactElement;
+  /** The trigger element; Base UI adds its props to it. Or, for a popup opened from elsewhere, `anchor`. */
+  trigger?: ReactElement;
+  /** What it opens next to when it has no trigger (an element CodeMirror or a box drew). */
+  anchor?: Element | null;
   side?: P.Positioner.Props["side"];
   align?: P.Positioner.Props["align"];
   className?: string;
@@ -33,23 +36,22 @@ type Props = {
   children: ReactNode;
 };
 
-/** Controlled popover that springs open and fades out on close.
-    The Portal is kept mounted so AnimatePresence, not Base UI, removes it after the exit animation. */
-export function Popover({ open, onOpenChange, trigger, side = "bottom", align = "center", className, finalFocus, children }: Props) {
+/** Controlled popover that blooms out of its trigger (see `bloomCls`) and fades on close. While it closes it keeps
+ *  showing what it showed last, so a caller can clear its state at once. */
+export function Popover({ open, onOpenChange, trigger, anchor, side = "bottom", align = "center", className, finalFocus, children }: Props) {
+  const last = useRef(children);
+  if (open) last.current = children;
   return (
     <P.Root open={open} onOpenChange={v => onOpenChange(v)}>
-      <P.Trigger render={trigger} />
-      <AnimatePresence>
-        {open && (
-          <P.Portal keepMounted>
-            <P.Positioner side={side} align={align} sideOffset={6} className="z-50">
-              <P.Popup className={cn(popoverCls, className)} finalFocus={finalFocus} render={<m.div {...pop} />}>
-                {children}
-              </P.Popup>
-            </P.Positioner>
-          </P.Portal>
-        )}
-      </AnimatePresence>
+      {trigger && <P.Trigger render={trigger} />}
+      <P.Portal>
+        <P.Positioner anchor={anchor ?? undefined} side={side} align={align} sideOffset={6} collisionPadding={12} className="z-50">
+          <P.Popup className={cn(popoverCls, bloomCls, className)} finalFocus={finalFocus}>
+            {/* its items pop in after it */}
+            <div className="contents" ref={bloomRef}>{last.current}</div>
+          </P.Popup>
+        </P.Positioner>
+      </P.Portal>
     </P.Root>
   );
 }

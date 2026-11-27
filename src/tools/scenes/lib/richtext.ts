@@ -370,16 +370,54 @@ export function stepOutOfWrap(el: HTMLElement, dir: "backward" | "forward"): boo
   return true;
 }
 
-/** Up from the start of a box's text (or Down from its end): the caret goes to the box above (or below). */
+/** Where the text just before and just after the caret is on screen (a collapsed caret often has no rect of its
+ *  own): the neighbouring character in its text node, or the neighbouring node. */
+function caretNeighbours(r: Range): DOMRect[] {
+  const out: DOMRect[] = [];
+  const side = (n: Node | null, last: boolean) => {
+    const rs = n instanceof Element ? n.getClientRects() : n ? (() => { const x = document.createRange(); x.selectNodeContents(n); return x.getClientRects(); })() : null;
+    if (rs?.length) out.push(rs[last ? rs.length - 1 : 0]);
+  };
+  const n = r.startContainer, o = r.startOffset;
+  if (n.nodeType === Node.TEXT_NODE) {
+    const t = n as Text;
+    for (const [a, b] of [[o - 1, o], [o, o + 1]] as const) {
+      if (a < 0 || b > t.length) { side(a < 0 ? t.previousSibling : t.nextSibling, a < 0); continue; }
+      const x = document.createRange();
+      x.setStart(t, a); x.setEnd(t, b);
+      const rs = x.getClientRects();
+      if (rs.length) out.push(rs[0]);
+    }
+  } else {
+    side(n.childNodes[o - 1] ?? null, true);
+    side(n.childNodes[o] ?? null, false);
+  }
+  return out.filter(c => c.height > 0);
+}
+
+/** The caret is on the first (or last) line `el` shows, wrapped lines counted. */
+export function onEdgeLine(el: HTMLElement, line: "first" | "last") {
+  if (atEdge(el, line === "first" ? "start" : "end")) return true;
+  const r = selRange();
+  if (!r || !r.collapsed || !el.contains(r.startContainer)) return false;
+  const near = caretNeighbours(r);
+  if (!near.length) return false;
+  const cs = getComputedStyle(el), box = el.getBoundingClientRect();
+  const lh = parseFloat(cs.lineHeight) || near[0].height;
+  const top = box.top + parseFloat(cs.paddingTop), bottom = box.bottom - parseFloat(cs.paddingBottom);
+  // both sides on that line (at a wrap, one of them is on the next line)
+  return near.every(c => { const mid = (c.top + c.bottom) / 2; return line === "first" ? mid < top + lh : mid > bottom - lh; });
+}
+
+/** The caret to the end of the box above (or below). */
 export function stepToText(from: HTMLElement, dir: "up" | "down"): boolean {
   const all = [...document.querySelectorAll<HTMLElement>(".bx-page [data-text]")];
   const to = all[all.indexOf(from) + (dir === "up" ? -1 : 1)];
   if (!to) return false;
+  to.scrollIntoView({ block: "nearest" });
   if (to instanceof HTMLTextAreaElement) {
     to.focus({ preventScroll: true });
-    const at = dir === "up" ? to.value.length : 0;
-    to.setSelectionRange(at, at);
-  } else setCaret(to, dir === "up" ? "end" : "start");
-  to.scrollIntoView({ block: "nearest" });
+    to.setSelectionRange(to.value.length, to.value.length);
+  } else setCaret(to, "end");
   return true;
 }

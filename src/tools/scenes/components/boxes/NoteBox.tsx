@@ -39,6 +39,14 @@ export function NoteBox({ box: b, prev, next, layout }: Props<"note">) {
           if ((up || down) && !e.shiftKey && el.selectionStart === el.selectionEnd
             && !(up ? el.value.slice(0, el.selectionStart) : el.value.slice(el.selectionEnd)).includes("\n")
             && stepToText(el, up ? "up" : "down")) e.preventDefault();
+          // Left at the start (Right at the end): round to the other end of the same note
+          const left = e.key === "ArrowLeft", right = e.key === "ArrowRight";
+          if ((left || right) && !e.shiftKey && !e.ctrlKey && !e.metaKey && el.selectionStart === el.selectionEnd
+            && el.selectionStart === (left ? 0 : el.value.length)) {
+            e.preventDefault();
+            const at = left ? el.value.length : 0;
+            el.setSelectionRange(at, at);
+          }
         }} />
       <Acts box={b} prev={prev} next={next} />
     </div>

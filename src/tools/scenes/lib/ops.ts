@@ -1,7 +1,7 @@
 import type { ChangeSpec } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import type { Box, Place } from "./blocks";
-import { scriptField } from "./editorState";
+import { lineIds, moveLineIds, scriptField } from "./editorState";
 import { freeLabel, jumpsTo, labelLines, labelName } from "./labels";
 import { escapeText } from "./renpyText";
 import { indentOf, pad, parseLine, sayText } from "./script";
@@ -166,7 +166,13 @@ export function swapBoxes(view: EditorView, a: Box, b: Box) {
   const firstText = doc.sliceString(doc.line(first.from).from, doc.line(first.to).to);
   const between = doc.sliceString(doc.line(first.to).to, doc.line(second.from).from);
   const secondText = doc.sliceString(doc.line(second.from).from, doc.line(second.to).to);
-  ev(view, { from: doc.line(first.from).from, to: doc.line(second.to).to, insert: secondText + between + firstText }, "move.box");
+  // the lines keep their names where they go
+  const ids = view.state.field(lineIds), names = (from: number, to: number) => ids.slice(from - 1, to);
+  const moved = [...names(second.from, second.to), ...names(first.to + 1, second.from - 1), ...names(first.from, first.to)];
+  view.dispatch({
+    changes: { from: doc.line(first.from).from, to: doc.line(second.to).to, insert: secondText + between + firstText },
+    effects: moveLineIds.of({ at: first.from, ids: moved }), userEvent: "move.box",
+  });
 }
 
 // ---------------------------------------------------------------- choices

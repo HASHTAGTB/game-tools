@@ -6,12 +6,13 @@ import type { Box } from "../../lib/blocks";
 import { pastedLines } from "../../lib/cast";
 import { fileHistoryKey } from "../../lib/codeEditor";
 import { insertAt, joinSays, removeBox, setRaw, setSayRaw, setSpeaker, splitSay } from "../../lib/ops";
-import { atEdge, caretCount, chip, fromDOM, insertAtCaret, isEmpty, markBeforeCaret, marksAt, onSpeedLabel, padMarks, pauseOf, plainCount, setCaret, splitAtCaret, stepOutOfWrap, stepToText, toDOM, zwAtCaret } from "../../lib/richtext";
-import { focusLine, useSceneUi } from "../../lib/ui";
+import { atEdge, caretCount, chip, fromDOM, insertAtCaret, isEmpty, markBeforeCaret, marksAt, onEdgeLine, onSpeedLabel, padMarks, pauseOf, plainCount, setCaret, splitAtCaret, stepOutOfWrap, stepToText, toDOM, zwAtCaret } from "../../lib/richtext";
+import { focusLine, idAt, useSceneUi } from "../../lib/ui";
 import { follow, problemsOf, stageBefore, useBox, useHot, type ListLayout } from "./context";
 import { Acts, addAfter, addInstead, Problems, useMoves } from "./List";
 import { BraceMenu, braceAtCaret, braceMatches, bracePick, braceUpdate, nudgeMark, openMark, sameMarks, type Brace, type BraceItem } from "./TextTools";
 import { look } from "../../lib/look";
+import { useWash } from "@/shared/ui/use-wash";
 
 type Say = Extract<Box, { kind: "say" }>;
 
@@ -47,12 +48,20 @@ export const SayBox = memo(function SayBox({ box: b, prev, next, layout }: { box
   }, [hot]);
   const stage = stageBefore(c, b.from);
   const chat = layout.chat;
-  const w = b.who ? look(c.manifest, b.who) : null;
+  const ext = b.who === "extend";
+  // `extend` goes on in the voice of the line before: their colours (or narration's), "…" for a name
+  const said = ext ? stage.speaker : b.who;
+  const w = said ? look(c.manifest, said) : null;
   const pov = stage.pov ? look(c.manifest, stage.pov) : null;
-  const cont = prev?.kind === "say" && prev.who === b.who;
+  const cont = prev?.kind === "say" && (ext || prev.who === b.who);
   const mine = chat && !!b.who && b.who === stage.pov;
   const tint = w ?? (chat ? null : pov);
   const style = { "--who": w?.color ?? "transparent", "--whoL": tint?.legible } as CSSProperties;
+
+  // someone else says it now: their colour washes over the box, their name rolls in
+  const boxRef = useRef<HTMLDivElement>(null);
+  const whoRef = useRef<HTMLButtonElement>(null);
+  useWash(said, boxRef, whoRef);
 
   // Ctrl+scroll on a pause's or a speed's number: 0.05 steps (up: longer / faster). Not React's onWheel: that one is
   // passive, and Ctrl+scroll would zoom the page too.
@@ -105,7 +114,10 @@ export const SayBox = memo(function SayBox({ box: b, prev, next, layout }: { box
     if (k === "Enter") {
       e.preventDefault();
       const [before, after] = splitAtCaret(el);
-      focusLine(splitSay(view, b, before, after, layout.tight), "start");
+      // the new box peels out of this one
+      const at = splitSay(view, b, before, after, layout.tight);
+      useSceneUi.setState({ entering: idAt(view, at) });
+      focusLine(at, "start");
       return;
     }
     if (k === "Tab") {
@@ -124,6 +136,8 @@ export const SayBox = memo(function SayBox({ box: b, prev, next, layout }: { box
     if ((k === "ArrowLeft" || k === "ArrowRight") && !e.shiftKey && !mod) {
       const dir = k === "ArrowLeft" ? "backward" : "forward";
       if (stepOutOfWrap(el, dir)) { e.preventDefault(); return; }
+      // Left at the start (Right at the end): round to the other end of the same box
+      if (atEdge(el, dir === "backward" ? "start" : "end")) { e.preventDefault(); setCaret(el, dir === "backward" ? "end" : "start"); return; }
       if (zwAtCaret(dir)) getSelection()!.modify("move", dir, "character");
     }
     if (k === "Backspace" && atEdge(el, "start")) {
@@ -152,7 +166,8 @@ export const SayBox = memo(function SayBox({ box: b, prev, next, layout }: { box
       (k === "ArrowUp" ? moves.up : moves.down)?.();
       return;
     }
-    if ((k === "ArrowUp" && atEdge(el, "start")) || (k === "ArrowDown" && atEdge(el, "end"))) {
+    // Up on the first line (Down on the last): straight to the end of the box above (below)
+    if ((k === "ArrowUp" || k === "ArrowDown") && !e.shiftKey && !mod && onEdgeLine(el, k === "ArrowUp" ? "first" : "last")) {
       if (stepToText(el, k === "ArrowUp" ? "up" : "down")) e.preventDefault();
       return;
     }
@@ -201,18 +216,18 @@ export const SayBox = memo(function SayBox({ box: b, prev, next, layout }: { box
   const known = !b.who || !manifest || w?.known;
 
   return (
-    <div className={cn("bx-box bx-say", b.who ? "bx-dlg" : "bx-narr", cont && "bx-cont", chat && (mine ? "bx-mine" : "bx-theirs"))}
+    <div ref={boxRef} className={cn("bx-box bx-say", said ? "bx-dlg" : "bx-narr", cont && "bx-cont", chat && (mine ? "bx-mine" : "bx-theirs"))}
       style={style} data-line={b.from} data-from={b.from} data-to={b.to} {...bind}>
       {(b.who || !chat) && (
-        <button type="button" className={cn("bx-who", !b.who && "bx-narr-who", !known && "bx-unknown")} tabIndex={-1}
-          title={b.who === "extend" ? "Goes on from the line before" : b.who ? `${w!.name} · click to change who says it (Tab)` : `${pov ? pov.name + "'s narration" : "Narration"} · click to give it a speaker (Tab)`}
+        <button ref={whoRef} type="button" className={cn("bx-who", !said && "bx-narr-who", !known && "bx-unknown")} tabIndex={-1}
+          title={ext ? `Goes on from the line before${w ? ` (${w.name})` : ""}` : b.who ? `${w!.name} · click to change who says it (Tab)` : `${pov ? pov.name + "'s narration" : "Narration"} · click to give it a speaker (Tab)`}
           onMouseDown={e => e.preventDefault()} onClick={e => speakerMenu(e.currentTarget)}>
           {!b.who && <span className="bx-dot" />}
-          {b.who ? w!.name : "Narration"}
+          {ext ? "…" : b.who ? w!.name : "Narration"}
         </button>
       )}
       <div ref={ref} className="bx-text" contentEditable suppressContentEditableWarning spellCheck data-text
-        data-ph={b.who ? (chat ? "Message…" : `${w!.name} says…`) : "Narration…  ( / to add something else)"}
+        data-ph={ext ? "Goes on…" : b.who ? (chat ? "Message…" : `${w!.name} says…`) : "Narration…  ( / to add something else)"}
         onInput={onInput} onKeyDown={onKey} onPaste={onPaste} onClick={onClick}
         onFocus={() => follow(view, b.from)} onBlur={() => setBrace(null)} />
       {brace && <BraceMenu brace={brace} onPick={pick} />}

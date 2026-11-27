@@ -1,4 +1,6 @@
 import { Menu } from "@base-ui/react/menu";
+import { bloomRef } from "@/shared/ui/flair";
+import { bloomCls } from "@/shared/ui/motion";
 import type { LucideIcon } from "lucide-react";
 import { create } from "zustand";
 import { cn } from "@/shared/lib/utils";
@@ -22,7 +24,8 @@ export function AnchoredMenuHost() {
     <Menu.Root open={!!anchor} onOpenChange={open => { if (!open) close(); }}>
       <Menu.Portal>
         <Menu.Positioner anchor={anchor} side="bottom" align="start" sideOffset={4} className="z-50">
-          <Menu.Popup className={cn(popoverCls, "min-w-52 p-1.5 transition-[opacity,scale] duration-100 data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0")}>
+          <Menu.Popup className={cn(popoverCls, "min-w-52 p-1.5", bloomCls)}>
+<div className="contents" ref={bloomRef}>
             {items.map((it, i) => it === "-"
               ? <Menu.Separator key={i} className="my-1 h-px bg-ink-line" />
               : (
@@ -33,7 +36,8 @@ export function AnchoredMenuHost() {
                   <span className={cn("truncate", it.checked && "text-paper")}>{it.label}</span>
                 </Menu.Item>
               ))}
-          </Menu.Popup>
+          </div>
+</Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>
     </Menu.Root>

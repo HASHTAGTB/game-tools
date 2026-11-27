@@ -1,3 +1,5 @@
+import { crumpleAll } from "@/shared/ui/flair";
+import { cardsOf } from "./BoardCard";
 import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Eye, Trash2, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
@@ -86,7 +88,7 @@ function EventPanel({ id }: { id: string }) {
   return (
     <div className="space-y-5">
       <Section title="Event" actions={<>
-        <Confirm message="Delete this event and the arrows to and from it?" onConfirm={() => { edit(d => deleteEvent(d.chapters, id)); select(null); }}>
+        <Confirm message="Delete this event and the arrows to and from it?" onConfirm={() => { select(null); crumpleAll(cardsOf(id), () => edit(d => deleteEvent(d.chapters, id))); }}>
           <IconButton icon={Trash2} label="Delete event" kbd="Del" tone="danger" />
         </Confirm>
         <Close />
@@ -169,7 +171,7 @@ function ChapterPanel({ id }: { id: string }) {
         <IconButton icon={ChevronLeft} label="Move earlier" disabled={i === 0} onClick={() => move(-1)} />
         <IconButton icon={ChevronRight} label="Move later" disabled={i === doc.chapters.length - 1} onClick={() => move(1)} />
         <Confirm message={ch.events.length ? `Delete "${ch.name}" and its ${ch.events.length} events?` : `Delete "${ch.name}"?`}
-          onConfirm={() => { edit(d => { for (const e of ch.events) deleteEvent(d.chapters, e.id); d.chapters = d.chapters.filter(c => c.id !== id); }); select(null); }}>
+          onConfirm={() => { select(null); edit(d => { for (const e of ch.events) deleteEvent(d.chapters, e.id); d.chapters = d.chapters.filter(c => c.id !== id); }); }}>
           <IconButton icon={Trash2} label="Delete chapter" tone="danger" />
         </Confirm>
         <Close />
@@ -205,7 +207,7 @@ function ThreadPanel({ id }: { id: string }) {
   return (
     <div className="space-y-5">
       <Section title="Thread" color={visible(t.color)} actions={<>
-        <Confirm message={`Delete the thread "${t.name}"? Its ${count} events stay, they just lose the thread.`} onConfirm={() => { strip(); select(null); }}>
+        <Confirm message={`Delete the thread "${t.name}"? Its ${count} events stay, they just lose the thread.`} onConfirm={() => { select(null); strip(); }}>
           <IconButton icon={Trash2} label="Delete thread" tone="danger" />
         </Confirm>
         <Close />
@@ -226,7 +228,7 @@ function ThreadPanel({ id }: { id: string }) {
 
 function CharPanel({ id }: { id: string }) {
   const { doc, edit, select, setFilter } = useTimelinePick("doc", "edit", "select", "setFilter");
-  const c = doc.roster.find(x => x.id === id);
+  const c = castOf(doc.roster, []).find(x => x.id === id);
   const count = allEvents(doc.chapters).filter(x => x.event.chars.includes(id)).length;
   if (!c) return (
     <div className="space-y-4">
@@ -235,18 +237,28 @@ function CharPanel({ id }: { id: string }) {
       <Button size="sm" onClick={() => edit(d => { d.roster.push({ id, name: id, color: DEFAULT_COLOR }); })}>Add it to the list</Button>
     </div>
   );
-  const set = (fn: (x: NonNullable<typeof c>) => void, key?: string) => edit(d => { const x = d.roster.find(y => y.id === id); if (x) fn(x); }, key);
+  // a game character the list doesn't have yet gets its entry on the first edit
+  const set = (fn: (x: NonNullable<typeof c>) => void, key?: string) => edit(d => {
+    let x = d.roster.find(y => y.id === id);
+    if (!x) d.roster.push(x = { id, name: c.name, color: c.color });
+    fn(x);
+  }, key);
   return (
     <div className="space-y-5">
       <Section title="Character" color={visible(c.color)} actions={<>
-        <Confirm label="Remove" message={`Remove ${c.name} from the character list (shared by all tools)? Events keep the id.`}
-          onConfirm={() => { edit(d => { d.roster = d.roster.filter(r => r.id !== id); }); select(null); }}>
-          <IconButton icon={Trash2} label="Remove character" tone="danger" />
-        </Confirm>
+        {/* the game's characters stay: they come back from the game anyway */}
+        {!c.game && (
+          <Confirm label="Remove" message={`Remove ${c.name} from the character list (shared by all tools)? Events keep the id.`}
+            onConfirm={() => { select(null); edit(d => { d.roster = d.roster.filter(r => r.id !== id); }); }}>
+            <IconButton icon={Trash2} label="Remove character" tone="danger" />
+          </Confirm>
+        )}
         <Close />
       </>} />
       <Field label="Name"><TextInput value={c.name} onChange={v => set(x => { x.name = v; }, `cname:${id}`)} /></Field>
-      <Field label="Color"><ColorInput value={c.color} onChange={v => set(x => { x.color = v; }, `ccolor:${id}`)} /></Field>
+      {c.game
+        ? <Field label="Color"><p className="font-talk text-sm text-taupe">The game's textbox colour (core/gui/say.rpy).</p></Field>
+        : <Field label="Color"><ColorInput value={c.color} onChange={v => set(x => { x.color = v; }, `ccolor:${id}`)} /></Field>}
       <div className="flex items-center gap-3 font-talk text-sm text-taupe">
         <span>{count} events</span>
         <Button size="sm" onClick={() => setFilter({ chars: [id], threads: [] }, null)}><Eye className="h-4 w-4" />Focus on {c.name}</Button>
@@ -265,7 +277,7 @@ function ViewPanel({ id }: { id: string }) {
   return (
     <div className="space-y-5">
       <Section title="Saved view" actions={<>
-        <Confirm message={`Delete the view "${v.name}" for everyone?`} onConfirm={() => { edit(d => { d.views = d.views.filter(x => x.id !== id); }); select(null); }}>
+        <Confirm message={`Delete the view "${v.name}" for everyone?`} onConfirm={() => { select(null); edit(d => { d.views = d.views.filter(x => x.id !== id); }); }}>
           <IconButton icon={Trash2} label="Delete view" tone="danger" />
         </Confirm>
         <Close />

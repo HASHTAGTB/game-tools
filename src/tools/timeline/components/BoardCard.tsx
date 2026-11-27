@@ -1,11 +1,15 @@
 import { StickyNote } from "lucide-react";
-import type { PointerEvent as RPointerEvent } from "react";
+import { useLayoutEffect, useRef, type PointerEvent as RPointerEvent } from "react";
+import { dropIn } from "@/shared/ui/flair";
+import { at } from "./boardMotion";
 import { cn } from "@/shared/lib/utils";
 import type { Card } from "../lib/layout";
 import type { GroupBy } from "../lib/types";
 
 type Props = {
   card: Card;
+  /** the user just added this event (it drops in) */
+  added: boolean;
   color: string;
   groupBy: GroupBy;
   /** the main copy of an event on several lanes (arrows start and end there) */
@@ -31,7 +35,7 @@ type Props = {
 
 /** An event on its lane: its title, the characters and threads the lane doesn't already say, a note mark, and a
  *  problem mark. Drag it to move it, its right edge to span more columns, its dot to draw an arrow. */
-export function BoardCard({ card: c, color, groupBy, primary, selected, focused, lifted, problem, arrive, threadColor, charColor, charName, onDown, onMove, onUp, onHover }: Props) {
+export function BoardCard({ card: c, added, color, groupBy, primary, selected, focused, lifted, problem, arrive, threadColor, charColor, charName, onDown, onMove, onUp, onHover }: Props) {
   const { event, box } = c;
   // what the lane doesn't already say
   const others = groupBy === "chars" ? event.chars.filter(x => x !== c.lane.id) : event.chars;
@@ -39,19 +43,22 @@ export function BoardCard({ card: c, color, groupBy, primary, selected, focused,
   // squashed cards (crowded lane) drop the chips first, then title lines
   const chips = (others.length > 0 || dots.length > 0) && box.h >= 44;
   const lines = Math.max(1, Math.floor((box.h - 6 - (chips ? 14 : 0)) / 15));
+  // an event just added drops in
+  const self = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => { if (added && self.current) dropIn(self.current); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const part = (p: "resize" | "connect") => ({ onPointerDown: (e: RPointerEvent) => onDown(p, e), onPointerMove: onMove, onPointerUp: onUp });
   return (
-    <div data-event={event.id} data-primary={primary || undefined}
+    <div ref={self} data-event={event.id} data-primary={primary || undefined}
       onPointerDown={e => onDown("move", e)} onPointerMove={onMove} onPointerUp={onUp}
       onPointerEnter={() => onHover(true)} onPointerLeave={() => onHover(false)}
       title={[event.title || "(untitled)", event.note].filter(Boolean).join("\n\n")}
-      className={cn("board-move board-enter group/card absolute cursor-grab overflow-hidden rounded-md border-[1.5px] text-left active:cursor-grabbing",
+      className={cn("board-move group/card absolute cursor-grab overflow-hidden rounded-md border-[1.5px] text-left active:cursor-grabbing",
         "border-[color-mix(in_srgb,var(--c)_50%,transparent)]",
         selected ? "z-10 bg-[color-mix(in_srgb,var(--c)_34%,var(--color-ink-2))] shadow-lift ring-2 ring-paper"
           : cn("bg-[color-mix(in_srgb,var(--c)_20%,var(--color-ink-2))] hover:z-10 hover:border-[color-mix(in_srgb,var(--c)_70%,transparent)] hover:bg-[color-mix(in_srgb,var(--c)_27%,var(--color-ink-2))]",
             focused && "z-10 ring-1 ring-paper/60"),
         c.dim && !selected && "opacity-25", lifted && "opacity-30", arrive !== undefined && "link-arrive")}
-      style={{ left: box.x, top: box.y, width: box.w, height: box.h, "--c": color, "--d": `${arrive ?? 0}ms` } as React.CSSProperties}>
+      style={{ ...at(box.x, box.y), width: box.w, height: box.h, "--c": color, "--d": `${arrive ?? 0}ms` } as React.CSSProperties}>
       <p className={cn("overflow-hidden px-1.5 font-talk text-xs leading-[15px] text-paper", box.h < 30 ? "pt-0.5" : "pt-1", event.note && "pr-5")}
         style={{ display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: lines }}>
         {event.title || <span className="italic text-taupe">untitled</span>}
@@ -71,3 +78,6 @@ export function BoardCard({ card: c, color, groupBy, primary, selected, focused,
     </div>
   );
 }
+
+/** Every copy of an event's card on the board (an event shared by lanes shows once per lane). */
+export const cardsOf = (id: string) => document.querySelectorAll<HTMLElement>(`[data-event="${CSS.escape(id)}"]`);

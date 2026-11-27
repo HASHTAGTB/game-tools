@@ -36,6 +36,9 @@ type SceneUi = {
   /** a line to scroll to and point at (from the checks list) */
   reveal: { line: number; at: number } | null;
   menu: BoxMenu | null;
+  /** the box Enter just split off the one above (its first line's `lineIds` name): it peels out of it instead of
+   *  dropping in */
+  entering: number | null;
   /** boxes shown as Ren'Py though the editor could draw them (by their first line's `lineIds` name). Only for this
    *  session: the file doesn't say, and anything the editor can't draw is Ren'Py anyway. */
   rawIds: ReadonlySet<number>;
@@ -47,7 +50,7 @@ type SceneUi = {
 
 export const useSceneUi = create<SceneUi>(() => ({
   view: null, script: null, line: 1, moved: 0, problems: [],
-  focus: null, openCard: null, tabs: {}, reveal: null, menu: null, rawIds: new Set(),
+  focus: null, openCard: null, tabs: {}, reveal: null, menu: null, entering: null, rawIds: new Set(),
   typing: null, speedOpen: false,
 }));
 

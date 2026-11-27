@@ -1,9 +1,12 @@
+import { crumpleAll } from "@/shared/ui/flair";
+import { cardsOf } from "./components/BoardCard";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BookmarkPlus, Minus, Plus, Redo2, SquarePlus, Undo2, X } from "lucide-react";
 import { cn, uniqueId } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { IconButton } from "@/shared/ui/icon-button";
-import { AnimatePresence, m, pop, spring } from "@/shared/ui/motion";
+import { AnimatePresence, m, spring } from "@/shared/ui/motion";
+import { MotionItem, MotionList } from "@/shared/ui/motion-list";
 import { Popover, PopoverTitle } from "@/shared/ui/popover";
 import { fieldCls } from "@/shared/ui/field";
 import { Switch } from "@/shared/ui/switch";
@@ -20,6 +23,7 @@ import { FindButton } from "./components/Find";
 import { Inspector } from "./components/Inspector";
 import { Sidebar } from "./components/Sidebar";
 import { UNKNOWN_COLOR } from "@/shared/lib/colors";
+import { useGame } from "@/shared/lib/game";
 
 const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
 
@@ -29,6 +33,9 @@ export default function Timeline() {
   const { loc, loaded, doc, error, notice, conflicts, zoom, canUndo, canRedo } = s;
 
   useEffect(() => useTimeline.getState().init(), []);
+  // the game's characters and colours join the roster (castOf); re-read whenever the timeline (re)loads
+  const game = useGame(g => g.manifest);
+  useEffect(() => { if (loaded) useGame.getState().load(); }, [loaded, loc]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -42,8 +49,8 @@ export default function Timeline() {
       // Backspace: too easy to hit right after leaving a text field. Ctrl/Cmd+Backspace for keyboards without Delete.
       if ((e.key === "Delete" || (mod && e.key === "Backspace")) && st.selection?.kind === "event") {
         const id = st.selection.id;
-        st.edit(d => deleteEvent(d.chapters, id));
         st.select(null);
+        crumpleAll(cardsOf(id), () => st.edit(d => deleteEvent(d.chapters, id)));
       }
     };
     window.addEventListener("keydown", onKey);
@@ -72,7 +79,7 @@ export default function Timeline() {
     }
   };
 
-  const checks = useMemo(() => runChecks(doc.chapters, doc.roster, doc.threads), [doc]);
+  const checks = useMemo(() => runChecks(doc.chapters, castOf(doc.roster, []), doc.threads), [doc, game]);
   /** Worst problem per event, for the marks on cards. */
   const flagged = useMemo(() => {
     const m = new Map<string, Check["level"]>();
@@ -188,16 +195,16 @@ function FocusBar() {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-ink-line/60 bg-ink-2/50 px-4 py-1.5">
       <span className="font-sans text-base text-taupe">{view ? view.name : "Focus"}</span>
-      <div className="flex flex-wrap gap-1">
-        <AnimatePresence mode="popLayout" initial={false}>
+      <div className="relative flex flex-wrap gap-1">
+        <MotionList>
         {chips.map(c => (
-          <m.span key={`${c.key}:${c.id}`} layout {...pop} className="flex items-center gap-1 rounded-full border-2 py-px pl-2 pr-0.5 font-sans text-sm text-paper" style={{ borderColor: visible(c.color) }}>
+          <MotionItem as="span" key={`${c.key}:${c.id}`} className="flex items-center gap-1 rounded-full border-2 py-px pl-2 pr-0.5 font-sans text-sm text-paper" style={{ borderColor: visible(c.color) }}>
             {c.name}
             <button aria-label={`Drop ${c.name}`} onClick={() => setFilter({ [c.key]: filter[c.key].filter(x => x !== c.id) }, null)}
               className="grid h-4 w-4 place-items-center rounded-full text-taupe hover:text-paper"><X className="h-3 w-3" /></button>
-          </m.span>
+          </MotionItem>
         ))}
-        </AnimatePresence>
+        </MotionList>
       </div>
       <label className="flex items-center gap-2 font-talk text-sm text-bone">
         <Switch checked={shown.hideOthers} onCheckedChange={v => setFilter({ hideOthers: v })} />

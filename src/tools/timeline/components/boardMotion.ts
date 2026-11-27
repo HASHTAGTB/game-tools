@@ -1,9 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { calm } from "@/shared/ui/flair";
 import { BASE_COL_W, type Layout } from "../lib/layout";
 import { useTimeline } from "../state";
 
-/** The board's two pieces of motion that need the DOM: zooming around the pointer, and a dropped card flying into
- *  its new place. */
+/** The board's motion that needs the DOM: zooming around the pointer, and a dropped card flying into its new place.
+ *  Everything else moves with `.board-move` (src/index.css). */
+
+/** Where a board element sits: moved there by `translate`, which `.board-move` animates (it costs no layout, so
+ *  hundreds of cards can glide at once), not by left/top. */
+export const at = (x: number, y = 0) => ({ left: 0, top: 0, translate: `${x}px ${y}px` });
+/** Where `at` put an element. */
+const placeOf = (el: HTMLElement) => { const [x = 0, y = 0] = el.style.translate.split(" ").map(parseFloat); return { x, y }; };
 
 /** Ctrl+wheel zooms the columns and keeps the spot under the pointer where it is. Returns false while a zoom is
  *  being applied (cards shouldn't slide then). `labelW`: the lane labels' width, left of the track. */
@@ -43,20 +50,21 @@ export function useLanding(track: RefObject<HTMLDivElement | null>, lay: Layout)
   useLayoutEffect(() => {
     const l = landing.current, root = track.current;
     landing.current = null;
-    if (!l || !root || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!l || !root || calm()) return;
     let el: HTMLElement | null = null, best = Infinity;
     for (const c of root.querySelectorAll<HTMLElement>(`[data-event="${CSS.escape(l.id)}"]`)) {
-      const d = Math.hypot(c.offsetLeft - l.x, c.offsetTop - l.y);
+      const p = placeOf(c), d = Math.hypot(p.x - l.x, p.y - l.y);
       if (d < best) { best = d; el = c; }
     }
     if (!el) return;
     // jump to the new place without the usual slide, then play the flight from the drop point
+    const to = placeOf(el);
     el.style.transition = "none";
     void el.offsetWidth;
     el.style.transition = "";
     el.animate(
-      [{ translate: `${l.x - el.offsetLeft}px ${l.y - el.offsetTop}px`, rotate: "-1.5deg", boxShadow: "0 10px 30px rgba(0,0,0,.5)" },
-       { translate: "0 0", rotate: "0deg", boxShadow: "0 0 0 rgba(0,0,0,0)" }],
+      [{ translate: `${l.x}px ${l.y}px`, rotate: "-1.5deg", boxShadow: "0 10px 30px rgba(0,0,0,.5)" },
+       { translate: `${to.x}px ${to.y}px`, rotate: "0deg", boxShadow: "0 0 0 rgba(0,0,0,0)" }],
       { duration: 280, easing: "cubic-bezier(.22,.8,.24,1)" },
     );
   }, [track, lay, tick]);

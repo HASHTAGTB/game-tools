@@ -1,37 +1,45 @@
 import { Braces, ChevronDown, ChevronUp, LayoutList, Plus, Trash2 } from "lucide-react";
 import { memo, type ReactNode } from "react";
 import { IconButton } from "@/shared/ui/icon-button";
+import { MotionItem, MotionList } from "@/shared/ui/motion-list";
 import { placeAfter, type Box, type Place } from "../../lib/blocks";
 import type { Problem } from "../../lib/checks";
 import { removeBox, swapBoxes } from "../../lib/ops";
-import { focusLine, isRaw, markRaw, useSceneUi } from "../../lib/ui";
+import { focusLine, markRaw, useSceneUi } from "../../lib/ui";
 import { BoxProblems } from "../problems";
 import { ChatBox } from "./ChatBox";
 import { ChoiceBox } from "./ChoiceBox";
 import { problemsOf, stageBefore, useBox, type BoxCtx, type ListLayout } from "./context";
+import { liftAt, shownAs } from "./motion";
 import { NoteBox, RawBox } from "./NoteBox";
 import { SayBox } from "./SayBox";
 import { StageCard } from "./StageCard";
 
 /** A list of boxes with a slot before, between and after them. `start`: where a box at the very top goes;
  *  `layout`: where one goes after a box. */
+/** A new box drops in (or peels out of the one above, when Enter split it), a deleted one crumples, and the boxes
+ *  around slide: when boxes come, go or move anywhere in the scene, not while a line you type in wraps. Boxes are
+ *  keyed by their first line's lasting name, so a box keeps its place (and its motion) while lines above change. */
 export function List({ boxes, start, layout, empty }: { boxes: Box[]; start: Place; layout: ListLayout; empty?: string }) {
   const c = useBox();
-  if (!boxes.length) return <FirstSlot place={start} label={empty ?? "Add the first line"} />;
+  const entering = useSceneUi(s => s.entering);
   const lay = JSON.stringify(layout);
   return (
-    <>
-      <Slot place={start} />
-      {boxes.map((b, i) => {
-        const prev = boxes[i - 1] ?? null, next = boxes[i + 1] ?? null;
-        return (
-          <div key={`${b.kind}:${c.ids[b.from - 1] ?? b.from}`}>
-            <Item box={b} prev={prev} next={next} layout={layout} k={keyOf(c, b, prev, next, lay)} />
-            <Slot place={placeAfter(b, layout)} />
-          </div>
-        );
-      })}
-    </>
+    <div className="bx-list relative">
+      {boxes.length ? <Slot place={start} /> : <FirstSlot place={start} label={empty ?? "Add the first line"} />}
+      <MotionList slideWhen={c.structure}>
+        {boxes.map((b, i) => {
+          const prev = boxes[i - 1] ?? null, next = boxes[i + 1] ?? null;
+          const id = c.ids[b.from - 1] ?? -b.from;
+          return (
+            <MotionItem as="div" key={id} data-at={b.from} enter={id === entering ? "peel" : "drop"}>
+              <Item box={b} prev={prev} next={next} layout={layout} k={keyOf(c, b, prev, next, lay)} />
+              <Slot place={placeAfter(b, layout)} />
+            </MotionItem>
+          );
+        })}
+      </MotionList>
+    </div>
   );
 }
 
@@ -42,7 +50,7 @@ const near = (b: Box | null) => (b ? `${b.kind}:${b.from}-${b.to}:${b.kind === "
 function keyOf(c: BoxCtx, b: Box, prev: Box | null, next: Box | null, layout: string) {
   if (b.kind === "menu" || b.kind === "chat") return null;
   const probs = problemsOf(c, b).map(p => p.severity + p.message + (p.fix?.label ?? "")).join("|");
-  const stage = b.kind === "say" ? stageBefore(c, b.from).pov : b.kind === "stmt" ? JSON.stringify(stageBefore(c, b.from)) : "";
+  const stage = b.kind === "say" ? `${stageBefore(c, b.from).pov}:${b.who === "extend" ? stageBefore(c, b.from).speaker : ""}` : b.kind === "stmt" ? JSON.stringify(stageBefore(c, b.from)) : "";
   return [JSON.stringify(b), near(prev), near(next), layout, probs, stage, c.epoch].join("\u0000");
 }
 
@@ -104,20 +112,13 @@ export const movable = (a: Box | null, b: Box | null): a is Box => !!a && !!b &&
 
 export function useMoves(box: Box, prev: Box | null, next: Box | null) {
   const { view } = useBox();
-  /** swap `a` and `b` (a above b); boxes shown as Ren'Py stay so at their new place. Returns where `b` starts now
-   *  (`a` now starts at b's old place … shifted). */
-  const swap = (a: Box, b: Box) => {
-    const ra = isRaw(view, a.from), rb = isRaw(view, b.from);
-    markRaw(view, a.from, false); markRaw(view, b.from, false);
-    swapBoxes(view, a, b);
-    const aAt = a.from + (b.to - b.from + 1) + (b.from - a.to - 1);
-    if (rb) markRaw(view, a.from, true);
-    if (ra) markRaw(view, aAt, true);
-    return aAt;
-  };
-  const up = movable(prev, box) ? () => { swap(prev!, box); focusLine(prev!.from); } : null;
-  const down = movable(next, box) ? () => focusLine(swap(box, next!)) : null;
-  const remove = () => { markRaw(view, box.from, false); const n = removeBox(view, box); if (prev) focusLine(prev.from); else focusLine(n); };
+  /** where `a` starts once it's below `b` */
+  const below = (a: Box, b: Box) => a.from + (b.to - b.from + 1) + (b.from - a.to - 1);
+  // the moved box lifts while its list slides both to their new places (the lines keep their names, see swapBoxes)
+  const up = movable(prev, box) ? () => { liftAt(box.from); swapBoxes(view, prev!, box); focusLine(prev!.from); } : null;
+  const down = movable(next, box) ? () => { liftAt(box.from); swapBoxes(view, box, next!); focusLine(below(box, next!)); } : null;
+  // it crumples on its own once it's gone from the list
+  const remove = () => { markRaw(view, box.from, false); const n = removeBox(view, box); focusLine(prev ? prev.from : n); };
   return { up, down, remove };
 }
 
@@ -132,6 +133,7 @@ function RawToggle({ box }: { box: Box }) {
     markRaw(view, box.from, !back);
     useSceneUi.setState({ openCard: null });
     focusLine(box.from, "end");
+    shownAs(box.from, !back);
   };
   return back
     ? <IconButton icon={LayoutList} size="sm" label={`Show as ${AS[back] ?? "a box"}`} onClick={flip} />

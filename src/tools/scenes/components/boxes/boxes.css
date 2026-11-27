@@ -15,8 +15,6 @@
 
 /* --ay: how far down the box's first line is centred (its buttons sit level with it); a one-line pill: its middle */
 .bx-box { position: relative; border-radius: var(--radius-lg); --ay: 50%; }
-.bx-box[data-ping] { animation: bx-ping .9s ease-out; }
-@keyframes bx-ping { from { box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-caramel) 55%, transparent); } }
 
 /* ---------- who speaks: in the margin */
 .bx-who {
@@ -115,6 +113,7 @@
 .bx-stage.bx-open .bx-card-head { padding-top: .5rem; }
 .bx-stage.bx-open > .bx-card > .bx-acts { opacity: 1; }
 
+
 /* ---------- notes */
 .bx-note { --ay: calc(1px + .4rem + 11px); display: flex; gap: .55rem; align-items: flex-start; padding: .4rem .8rem; background: color-mix(in srgb, var(--color-butter) 6%, transparent); border: 1px solid color-mix(in srgb, var(--color-butter) 22%, transparent); }
 .bx-note > svg { width: 14px; height: 14px; margin-top: .3rem; flex: none; color: var(--color-butter); opacity: .8; }
@@ -135,7 +134,11 @@
 .bx-choice-name { display: flex; align-items: center; gap: .4rem; margin: 0 .5rem .3rem .25rem; font-family: var(--font-sans); font-weight: 600; font-size: 14px; color: var(--color-butter); }
 .bx-tab { all: unset; cursor: pointer; position: relative; top: 1px; max-width: 16rem; padding: .3rem .75rem; border: 1px solid transparent; border-bottom: 0; border-radius: var(--radius-md) var(--radius-md) 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-talk); font-size: 14px; color: var(--color-bone); }
 .bx-tab:hover { color: var(--color-paper); }
-.bx-tab[aria-selected="true"] { background: var(--color-ink); border-color: color-mix(in srgb, var(--color-butter) 35%, var(--color-ink-line)); color: var(--color-paper); }
+.bx-tab[aria-selected="true"] { color: var(--color-paper); }
+/* the selected tab's folder shape: one per choice (layoutId), so it glides from tab to tab */
+.bx-tab { isolation: isolate; overflow: visible; }
+.bx-tab-label { display: block; overflow: hidden; text-overflow: ellipsis; }
+.bx-tab-bg { position: absolute; inset: 0 0 -1px; z-index: -1; background: var(--color-ink); border: 1px solid color-mix(in srgb, var(--color-butter) 35%, var(--color-ink-line)); border-bottom: 0; border-radius: var(--radius-md) var(--radius-md) 0 0; }
 .bx-tab:focus-visible { outline: 2px solid var(--color-periwinkle); }
 .bx-choice-body { padding: .7rem .75rem .45rem; border-top: 1px solid color-mix(in srgb, var(--color-butter) 35%, var(--color-ink-line)); border-radius: 0 0 var(--radius-lg) var(--radius-lg); background: var(--color-ink); }
 .bx-choice-body .bx-who { right: calc(100% + 1.85rem); }
@@ -178,6 +181,5 @@
 .bx-section code { font-family: ui-monospace, monospace; font-size: 13px; color: var(--color-bone); }
 
 @media (prefers-reduced-motion: reduce) {
-  .bx-box[data-ping] { animation: none; }
   .bx-slot::before, .bx-slot-plus, .bx-acts, .bx-who, .bx-card { transition: none; }
 }

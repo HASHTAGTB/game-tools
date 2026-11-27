@@ -20,6 +20,8 @@ export type BoxCtx = {
   labels: Set<string>;
   /** each line's lasting name (`lineIds`), for keys */
   ids: number[];
+  /** what boxes there are, in order, at every level: changes when boxes come, go or move (then they slide) */
+  structure: string;
   /** changes when what every box shows changes (the game's data, the cast): all boxes draw again */
   epoch: number;
 };

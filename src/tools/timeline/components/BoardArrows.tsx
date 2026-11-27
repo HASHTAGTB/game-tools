@@ -25,8 +25,10 @@ export function BoardArrows({ lay, arrows, stubs, focus, selected, hoverLink, se
   const hot = (key: string, ...ids: string[]) => hoverLink === key || ids.includes(focus ?? "");
   const hoverable = (key: string) => ({ onPointerEnter: () => setHoverLink(key), onPointerLeave: () => setHoverLink(null) });
   const start = connecting && lay.primary.get(connecting.from);
+  // where the arrows run: when that changes (the board moved) they're drawn again, after the cards got there
+  const runs = arrows.map(a => arrowPath(a.from, a.to).d).join() + stubs.map(st => stubPath(st).d).join();
   return (
-    <>
+    <div key={runs} className="board-arrows pointer-events-none absolute inset-0">
       <svg className="pointer-events-none absolute inset-0 overflow-visible" width={lay.width} height={lay.height}>
         {siblingLines(lay, focus).map((s, i) => <line key={i} x1={s.x} x2={s.x} y1={s.y0} y2={s.y1} stroke="var(--color-paper)" strokeOpacity={0.5} strokeWidth={2} strokeDasharray="2 4" />)}
         {arrows.map(({ key, from, to }) => {
@@ -87,6 +89,6 @@ export function BoardArrows({ lay, arrows, stubs, focus, selected, hoverLink, se
           </div>
         );
       })}
-    </>
+    </div>
   );
 }

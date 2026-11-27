@@ -47,7 +47,7 @@ export function Fields({ x, set, cast, m, stage, script, line }: {
       return <>
         <Row label="Background">
           <Chips value={x.image} onChange={image => set({ image })} other
-            options={uniq(["black", ...(m?.backgrounds ?? []), ...used.backgrounds]).map(b => ({ value: b, missing: !!m && !m.backgrounds.includes(b) }))} />
+            options={uniq(["black", ...(m?.backgrounds ?? []), ...used.backgrounds]).map(b => ({ value: b, missing: !!m?.media && !m.backgrounds.includes(b) }))} />
         </Row>
         <TransitionRow value={x.with} onChange={w => set({ with: w })} m={m} />
       </>;
@@ -94,7 +94,7 @@ export function Fields({ x, set, cast, m, stage, script, line }: {
     case "play":
       return <>
         <Row label="Track">
-          <Chips value={x.name} onChange={name => set({ name })} other options={uniq([...(m?.music ?? []), ...used.music, x.name]).map(v => ({ value: v, missing: !!m && !m.music.includes(v) }))} />
+          <Chips value={x.name} onChange={name => set({ name })} other options={uniq([...(m?.music ?? []), ...used.music, x.name]).map(v => ({ value: v, missing: !!m?.media && !m.music.includes(v) }))} />
         </Row>
         <Row label="Fade in">
           <Chips value={x.fadein ?? ""} onChange={f => set({ fadein: f || undefined })} options={[{ value: "", label: "no" }, ...["1.0", "2.0", "4.0"].map(v => ({ value: v, label: `${+v}s` }))]} />

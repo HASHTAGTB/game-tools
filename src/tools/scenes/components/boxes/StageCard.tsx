@@ -1,4 +1,7 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { rise } from "@/shared/ui/flair";
+import { AnimatePresence, m } from "@/shared/ui/motion";
+import { useMorph } from "@/shared/ui/use-morph";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import type { Box } from "../../lib/blocks";
@@ -28,10 +31,13 @@ export function StageCard({ box: b, prev, next }: { box: StmtBox; prev: Box | nu
   const tint = b.stmt.kind === "show" || b.stmt.kind === "hide" ? b.stmt.tag : b.stmt.kind === "pov" ? b.stmt.who : null;
   const style = tint ? ({ "--whoL": look(c.manifest, tint).legible } as CSSProperties) : undefined;
   const close = () => useSceneUi.setState({ openCard: null });
+  // opening and closing: the pill morphs into the card and back (the form fades out while it shrinks)
+  const cardRef = useRef<HTMLDivElement>(null);
+  useMorph(cardRef, open);
 
   return (
     <div className={cn("bx-stage", open && "bx-open")} data-line={b.from} data-from={b.from} data-to={b.to}>
-      <div className={cn("bx-box bx-card", bad === "info" && "bx-missing", bad === "error" && "bx-error", bad === "warning" && "bx-warning")} style={style}
+      <div ref={cardRef} className={cn("bx-box bx-card", bad === "info" && "bx-missing", bad === "error" && "bx-error", bad === "warning" && "bx-warning")} style={style}
         title={bad === "info" ? probs.map(p => p.message).join("\n") : undefined}>
         <button type="button" className="bx-card-head" data-card
           onFocus={() => follow(c.view, b.from)}
@@ -44,7 +50,13 @@ export function StageCard({ box: b, prev, next }: { box: StmtBox; prev: Box | nu
           <span className="bx-card-title">{d.title}</span>
           {d.detail && <span className="bx-card-detail">{d.detail}</span>}
         </button>
-        {open && <CardForm key={b.from} box={b} onDone={close} />}
+        <AnimatePresence mode="popLayout" initial={false}>
+          {open && (
+            <m.div key="form" exit={{ opacity: 0, transition: { duration: 0.12 } }}>
+              <CardForm key={b.from} box={b} onDone={close} />
+            </m.div>
+          )}
+        </AnimatePresence>
         <Acts box={b} prev={prev} next={next} />
       </div>
       {!open && <Problems list={probs} />}
@@ -57,12 +69,14 @@ function CardForm({ box: b, onDone }: { box: StmtBox; onDone: () => void }) {
   const script = useSceneUi(s => s.script)!;
   const [x, setX] = useState<Stmt>(b.stmt);
   const set = (patch: Partial<Stmt>) => setX(v => ({ ...v, ...patch }) as Stmt);
+  const form = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => { if (form.current) rise(form.current.children); }, []);
   // written as soon as it's valid Ren'Py
   useEffect(() => {
     if (validStmt(x) && formatStmt(x) !== formatStmt(b.stmt)) setStmt(c.view, b.from, x);
   }, [x]);   // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <div className="space-y-3.5 px-4 pb-3.5 pt-1.5" onKeyDown={e => { if (e.key === "Escape") { e.stopPropagation(); onDone(); } }}>
+    <div ref={form} className="bx-card-form space-y-3.5 px-4 pb-3.5 pt-1.5" onKeyDown={e => { if (e.key === "Escape") { e.stopPropagation(); onDone(); } }}>
       <Fields x={x} set={set} cast={c.cast} m={c.manifest} stage={stageBefore(c, b.from)} script={script} line={b.from} />
       <div className="flex items-center justify-end gap-3">
         {!validStmt(x) && formatStmt(x) !== formatStmt(b.stmt) && <span className="mr-auto font-talk text-sm text-coral">Not written yet: {stmtHint(x)}</span>}

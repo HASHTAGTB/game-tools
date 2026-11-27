@@ -24,6 +24,9 @@ export const scriptField = StateField.define<Script>({
  *  boxes below an edit keep their place instead of being built again). A line that's new, or that an edit
  *  replaced from its start, gets a new name. */
 let nextLineId = 0;
+/** Lines that moved (two boxes swapped places): from line `at` on, the lines now carry these names, so the boxes keep
+ *  theirs (they slide to their new place, and stay open or shown as Ren'Py). */
+export const moveLineIds = StateEffect.define<{ at: number; ids: number[] }>();
 export const lineIds = StateField.define<number[]>({
   create: s => Array.from({ length: s.doc.lines }, () => ++nextLineId),
   update: (ids, tr) => {
@@ -36,6 +39,7 @@ export const lineIds = StateField.define<number[]>({
       const m = doc.lineAt(at);
       if (m.from === at && !out[m.number - 1]) out[m.number - 1] = ids[n - 1];
     }
+    for (const e of tr.effects) if (e.is(moveLineIds)) out.splice(e.value.at - 1, e.value.ids.length, ...e.value.ids);
     for (let i = 0; i < out.length; i++) if (!out[i]) out[i] = ++nextLineId;
     return out;
   },
@@ -45,11 +49,11 @@ export const lineIds = StateField.define<number[]>({
 export type CheckInput = {
   /** labels of the other scenes and the game's own; null while they're being read */
   labels: Set<string> | null;
-  /** the file name, without .md (for the label it suggests) */
-  fileName: string;
+  /** the scene's title (for the label it suggests) */
+  title: string;
 };
 export const setCheckInput = StateEffect.define<CheckInput>();
 export const checkInputField = StateField.define<CheckInput>({
-  create: () => ({ labels: null, fileName: "" }),
+  create: () => ({ labels: null, title: "" }),
   update: (v, tr) => { for (const e of tr.effects) if (e.is(setCheckInput)) return e.value; return v; },
 });

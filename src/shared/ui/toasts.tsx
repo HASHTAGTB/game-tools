@@ -1,6 +1,6 @@
 import { CircleAlert, Check, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { AnimatePresence, m, pop } from "./motion";
+import { MotionItem, MotionList } from "./motion-list";
 import { surfaceCls } from "./popover";
 
 type Toast = { id: string; kind: "error" | "notice"; text: string; onDismiss?: () => void };
@@ -10,15 +10,13 @@ type Toast = { id: string; kind: "error" | "notice"; text: string; onDismiss?: (
 export function Toasts({ items, className }: { items: Toast[]; className?: string }) {
   return (
     <div aria-live="polite" className={cn("pointer-events-none absolute inset-x-0 z-40 flex flex-col items-center gap-2 px-6", className)}>
-      <AnimatePresence initial={false}>
+      {/* a list like any other: a new message drops in, a dismissed one crumples, the others slide */}
+      <MotionList>
         {items.map(t => (
-          <m.div
+          <MotionItem
+            as="div"
             key={t.id + t.text}
-            layout="position"
             role={t.kind === "error" ? "alert" : "status"}
-            {...pop}
-            initial={{ ...pop.initial, y: 8 }}
-            animate={{ ...pop.animate, y: 0 }}
             className={cn(
               surfaceCls, "pointer-events-auto flex max-w-xl items-center gap-3 py-2 pl-3 pr-2",
               t.kind === "error" && "border-coral/70",
@@ -31,9 +29,9 @@ export function Toasts({ items, className }: { items: Toast[]; className?: strin
                 <X className="h-4 w-4" />
               </button>
             )}
-          </m.div>
+          </MotionItem>
         ))}
-      </AnimatePresence>
+      </MotionList>
     </div>
   );
 }

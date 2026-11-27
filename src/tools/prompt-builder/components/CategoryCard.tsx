@@ -1,6 +1,7 @@
 import { Tabs } from "@base-ui/react/tabs";
 import { ArrowDown, ArrowUp, Copy, PencilLine, Plus, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
+import { MotionFollow, MotionItem, MotionList, liftItem } from "@/shared/ui/motion-list";
 import type { Category, ListKey } from "../lib/types";
 import { segColor, sameKey } from "../lib/prompt";
 import type { TagDb } from "../lib/tags";
@@ -8,7 +9,9 @@ import { uniqueId } from "@/shared/lib/utils";
 import { Confirm } from "@/shared/ui/confirm";
 import { IconButton } from "@/shared/ui/icon-button";
 import { HoverActions, Section } from "@/shared/ui/section";
+import { EASE } from "@/shared/ui/flair";
 import { AnimatePresence, fade, LayoutGroup, m, spring } from "@/shared/ui/motion";
+import { useMorph } from "@/shared/ui/use-morph";
 import { TagList } from "./TagList";
 import { useDropTarget } from "../lib/dnd";
 
@@ -48,8 +51,13 @@ export function CategoryCard({ cat, color, db, activeKey, setActive, onChange, o
     setRenaming(id);
   };
 
+  // another preset: its tags fade in while the box morphs to their height (no gap, nothing below jumps)
+  const tagBox = useRef<HTMLDivElement>(null);
+  useMorph(tagBox, sel?.id ?? NONE, EASE);
+
   const move = (dir: -1 | 1) => {
     if (dir === -1 ? !canUp : !canDown) return;
+    liftItem(nameRef.current);
     onMove(dir);
   };
 
@@ -90,13 +98,13 @@ export function CategoryCard({ cat, color, db, activeKey, setActive, onChange, o
         <div className="mt-3 flex items-start gap-2">
           {/* One LayoutGroup per card, so each card's underline slides only between its own tabs. */}
           <LayoutGroup id={`cat-${cat.id}`}>
-            <Tabs.List activateOnFocus className="flex min-w-0 flex-1 flex-wrap items-center gap-x-0.5 gap-y-1">
+            <Tabs.List activateOnFocus className="relative flex min-w-0 flex-1 flex-wrap items-center gap-x-0.5 gap-y-1">
               <Tabs.Tab value={NONE} title="Leave this category out of the prompt" className={tabCls}>
                 None
                 {!sel && <Underline color={hex} />}
               </Tabs.Tab>
-              {cat.presets.map(p => renaming === p.id ? (
-                <span key={p.id} className="relative inline-flex h-8 items-center px-2">
+              <MotionList>{cat.presets.map(p => <MotionItem as="span" key={p.id} className="inline-flex">{renaming === p.id ? (
+                <span className="relative inline-flex h-8 items-center px-2">
                   <input
                     autoFocus
                     onFocus={e => e.currentTarget.select()}
@@ -111,7 +119,7 @@ export function CategoryCard({ cat, color, db, activeKey, setActive, onChange, o
                   {sel?.id === p.id && <Underline color={hex} />}
                 </span>
               ) : (
-                <Tabs.Tab key={p.id} value={p.id} className={tabCls}
+                <Tabs.Tab value={p.id} className={tabCls}
                   onDoubleClick={() => setRenaming(p.id)}
                   title="Double-click to rename"
                   {...dropTarget({ kind: "preset", cat: cat.id, preset: p.id })}>
@@ -119,8 +127,10 @@ export function CategoryCard({ cat, color, db, activeKey, setActive, onChange, o
                   <small className="ml-1.5 font-talk text-xs tabular-nums text-taupe">{p.tags.length}</small>
                   {sel?.id === p.id && <Underline color={hex} />}
                 </Tabs.Tab>
-              ))}
-              <IconButton icon={Plus} size="sm" label={`New ${cat.name.toLowerCase() || "preset"}`} onClick={() => addPreset()} />
+              )}</MotionItem>)}</MotionList>
+              <MotionFollow className="inline-flex">
+                <IconButton icon={Plus} size="sm" label={`New ${cat.name.toLowerCase() || "preset"}`} onClick={() => addPreset()} />
+              </MotionFollow>
             </Tabs.List>
           </LayoutGroup>
 
@@ -139,14 +149,12 @@ export function CategoryCard({ cat, color, db, activeKey, setActive, onChange, o
           )}
         </div>
 
-        {/* Switching presets crossfades the tag box. */}
-        <AnimatePresence mode="wait" initial={false}>
+        <div ref={tagBox} className="relative mt-2">
+          <AnimatePresence initial={false} mode="popLayout">
           <m.div
             key={sel?.id ?? NONE}
-            className="mt-2"
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0, transition: { ...spring.smooth, opacity: fade.in } }}
-            exit={{ opacity: 0, transition: { duration: 0.08 } }}
           >
             {!sel ? (
               <p className="flex min-h-11 items-center rounded-lg border-2 border-dashed border-ink-3 px-3 font-talk text-base text-taupe">
@@ -164,7 +172,8 @@ export function CategoryCard({ cat, color, db, activeKey, setActive, onChange, o
               />
             )}
           </m.div>
-        </AnimatePresence>
+          </AnimatePresence>
+        </div>
       </Tabs.Root>
     </Section>
   );

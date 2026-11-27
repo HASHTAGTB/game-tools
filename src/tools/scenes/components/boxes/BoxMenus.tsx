@@ -1,12 +1,11 @@
-import { Popover as P } from "@base-ui/react/popover";
 import {
   ArrowRight, Braces, CalendarDays, Clock, Eye, Hourglass, Image, MessageSquareText, Music, Smartphone, Smile, Split, StickyNote,
-  Text, UserRoundMinus, UserRoundPlus, VolumeX, type LucideIcon,
+  Text, UserRoundMinus, UserRoundPlus, UserRoundPen, VolumeX, type LucideIcon,
 } from "lucide-react";
-import { useMemo, useState, type CSSProperties, type KeyboardEvent } from "react";
-import { cn } from "@/shared/lib/utils";
-import { AnimatePresence, m as motion, pop } from "@/shared/ui/motion";
-import { popoverCls } from "@/shared/ui/popover";
+import { useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { createCharacter, type Manifest } from "@/shared/lib/game";
+import { cn, errorMessage } from "@/shared/lib/utils";
+import { Popover } from "@/shared/ui/popover";
 import { insertAt, insertChoice, removeBox, setRaw, setSpeaker } from "../../lib/ops";
 import { chatHead, sayText } from "../../lib/script";
 import { formatStmt, type Stmt } from "../../lib/statements";
@@ -15,24 +14,20 @@ import { closeMenu, focusLine, idAt, markRaw, useSceneUi, type BoxMenu } from ".
 import { useBox } from "./context";
 import { defaults } from "./fields";
 import { look } from "../../lib/look";
+import { useScenes } from "../../state";
 
 /** The box view's one popup: the Add menu at a slot, or who says a line. */
 export function BoxMenus() {
-  const menu = useSceneUi(s => s.menu);
+  const open = useSceneUi(s => s.menu);
+  // while it closes it stays where and what it was
+  const last = useRef(open);
+  if (open) last.current = open;
+  const menu = last.current;
   return (
-    <P.Root open={!!menu} onOpenChange={o => { if (!o) closeMenu(); }}>
-      <AnimatePresence>
-        {menu && (
-          <P.Portal keepMounted>
-            <P.Positioner anchor={menu.anchor} side="bottom" align={menu.kind === "speaker" ? "start" : "center"} sideOffset={6} collisionPadding={12} className="z-50">
-              <P.Popup className={cn(popoverCls, "w-[22rem] p-3 focus-visible:outline-none")} finalFocus={false} render={<motion.div {...pop} />}>
-                {menu.kind === "add" ? <AddMenu menu={menu} /> : <SpeakerMenu menu={menu} />}
-              </P.Popup>
-            </P.Positioner>
-          </P.Portal>
-        )}
-      </AnimatePresence>
-    </P.Root>
+    <Popover open={!!open} onOpenChange={o => { if (!o) closeMenu(); }} anchor={menu?.anchor} align={menu?.kind === "speaker" ? "start" : "center"}
+      className="w-[22rem] p-3 focus-visible:outline-none" finalFocus={false}>
+      {menu && (menu.kind === "add" ? <AddMenu menu={menu} /> : <SpeakerMenu menu={menu} />)}
+    </Popover>
   );
 }
 
@@ -50,12 +45,15 @@ type Item = {
 };
 type Group = { title?: string; layout: "chips" | "tiles" | "list"; items: Item[]; /** only while typing */ search?: boolean };
 
-/** A find field over groups of items: typing filters, the arrow keys move, Enter picks. */
-function Picker({ groups, placeholder }: { groups: Group[]; placeholder: string }) {
+/** A find field over groups of items: typing filters, the arrow keys move, Enter picks. With `create`, a search that
+ *  names nobody exactly also offers to make what was typed. */
+function Picker({ groups, placeholder, create }: { groups: Group[]; placeholder: string; create?: (name: string) => Item }) {
   const [q, setQ] = useState("");
   const query = q.trim().toLowerCase();
-  const shown = groups.filter(g => !g.search || query).map(g => ({ ...g, items: g.items.filter(it => !query || it.label.toLowerCase().includes(query) || (it.keys ?? "").includes(query)) }))
+  const found = groups.filter(g => !g.search || query).map(g => ({ ...g, items: g.items.filter(it => !query || it.label.toLowerCase().includes(query) || (it.keys ?? "").includes(query)) }))
     .filter(g => g.items.length);
+  const exact = groups.some(g => g.items.some(it => it.label.toLowerCase() === query));
+  const shown = create && query && !exact ? [...found, { layout: "list" as const, items: [create(q.trim())] }] : found;
   const flat = shown.flatMap(g => g.items).filter(it => !it.off);
   const [active, setActive] = useState(0);
   const at = Math.min(active, flat.length - 1);
@@ -102,6 +100,15 @@ function Picker({ groups, placeholder }: { groups: Group[]; placeholder: string 
   );
 }
 
+/** The Picker row that makes a new character from what was typed (core/characters.rpy), then uses them. */
+function newCharacter(manifest: Manifest | null, use: (id: string) => void) {
+  if (!manifest) return undefined;
+  return (name: string): Item => ({
+    icon: UserRoundPen, label: `New character "${name}"`,
+    run: () => void createCharacter(name).then(use, e => useScenes.getState().setError("Could not add the character: " + errorMessage(e))),
+  });
+}
+
 // ---------------------------------------------------------------- Add
 
 function AddMenu({ menu }: { menu: Extract<BoxMenu, { kind: "add" }> }) {
@@ -129,10 +136,15 @@ function AddMenu({ menu }: { menu: Extract<BoxMenu, { kind: "add" }> }) {
   }, [script]);
   const pov = stage.pov ?? cast[0] ?? "satoru";
   const people = cast.map(id => { const w = look(c.manifest, id); return { label: w.name, color: w.legible, keys: id, run: line(id) } as Item; });
+  const others = (manifest?.characters ?? []).filter(x => !cast.includes(x.id))
+    .map(x => ({ label: x.name, color: look(manifest, x.id).legible, keys: x.id, run: line(x.id) }) as Item);
+  const everyone: Group[] = others.length ? [{ title: "Everyone else", layout: "chips", search: true, items: others }] : [];
+  const create = newCharacter(manifest, id => line(id)());
 
   if (menu.chat) {
-    return <Picker placeholder="Who writes…" groups={[
+    return <Picker placeholder="Who writes…" create={create} groups={[
       { layout: "chips", items: people },
+      ...everyone,
       { layout: "tiles", items: [
         { icon: Clock, label: "Clock", keys: "time", run: card(d.time) },
         { icon: Braces, label: "Ren'Py", keys: "raw code python renpy script", run: raw },
@@ -141,12 +153,13 @@ function AddMenu({ menu }: { menu: Extract<BoxMenu, { kind: "add" }> }) {
   }
 
   const none = "Nobody is on stage here";
-  return <Picker placeholder="Type to find…" groups={[
+  return <Picker placeholder="Type to find…" create={create} groups={[
     { layout: "chips", items: [
       ...people,
       { icon: Text, label: "Narration", keys: "erzähler text", run: line(null) },
       { icon: StickyNote, label: "Note", keys: "comment kommentar", run: () => focusLine(put(["# "]), "end") },
     ] },
+    ...everyone,
     { title: "Stage", layout: "tiles", items: [
       { icon: Image, label: "Background", keys: "scene bg ort", run: card(d.scene) },
       { icon: UserRoundPlus, label: "Comes in", keys: "show sprite character", run: card(d.enter) },
@@ -178,7 +191,7 @@ function SpeakerMenu({ menu }: { menu: Extract<BoxMenu, { kind: "speaker" }> }) 
   const set = (id: string | null) => () => { setSpeaker(c.view, menu.line, id); focusLine(menu.line, "end"); };
   const pov = c.stages[menu.line - 1]?.pov;
   const others = (c.manifest?.characters ?? []).filter(x => !c.cast.includes(x.id));
-  return <Picker placeholder="Who says it…" groups={[
+  return <Picker placeholder="Who says it…" create={newCharacter(c.manifest, id => set(id)())} groups={[
     { layout: "list", items: [
       ...(menu.chat ? [] : [{ icon: Text, label: "Narration", keys: pov ? look(c.manifest, pov).name.toLowerCase() : "", current: current === null, run: set(null) }]),
       ...c.cast.map(id => { const w = look(c.manifest, id); return { label: w.name, color: w.legible, keys: id, current: current === id, run: set(id) }; }),

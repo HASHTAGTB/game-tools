@@ -14,6 +14,8 @@ export const BASE: ListKey = { kind: "base" };
 
 type State = {
   chars: Character[];
+  /** The characters have been read from the save location (until then `chars` is empty, not "none yet"). */
+  loaded: boolean;
   curId: string | null;
   /** The tag list the tag browser adds to (the one last clicked). */
   activeKey: ListKey;
@@ -106,6 +108,7 @@ export const usePromptBuilder = create<State & Actions>()((set, get) => {
 
   return {
   chars: [],
+  loaded: false,
   curId: null,
   activeKey: BASE,
   db: null,
@@ -125,10 +128,10 @@ export const usePromptBuilder = create<State & Actions>()((set, get) => {
     try {
       const loc = await getLocation();
       set({ loc });
-      if (!loc.ready) { sync.reset(); set({ chars: [] }); return; }   // folder waits for "Allow folder access"
+      if (!loc.ready) { sync.reset(); set({ chars: [], loaded: false }); return; }   // folder waits for "Allow folder access"
       await migrateLegacy();
       const broken = await sync.load();
-      set({ error: broken.length ? `These files don't look like characters and are left alone: ${broken.join(", ")}` : null });
+      set({ loaded: true, error: broken.length ? `These files don't look like characters and are left alone: ${broken.join(", ")}` : null });
     } catch (e) {
       if (e instanceof NeedsPermission) return set(s => ({ loc: s.loc && { ...s.loc, ready: false } }));
       const hint = STATIC ? "" : ' (is this running through "pnpm dev"?)';

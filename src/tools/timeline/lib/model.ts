@@ -1,4 +1,5 @@
-import type { RosterCharacter } from "@/shared/lib/roster";
+import { useGame } from "@/shared/lib/game";
+import { withGame, type RosterCharacter } from "@/shared/lib/roster";
 import type { Chapter, Filter, StoryEvent, Thread, View } from "./types";
 import { UNKNOWN_COLOR } from "@/shared/lib/colors";
 
@@ -16,8 +17,11 @@ export function findEvent(chapters: Chapter[], id: string): { chapter: Chapter; 
 
 export const allEvents = (chapters: Chapter[]) => chapters.flatMap(chapter => chapter.events.map(event => ({ chapter, event })));
 
-/** Characters used by events but missing from the roster still get a (grey) lane, at the end. */
-export function castOf(roster: RosterCharacter[], chapters: Chapter[]): RosterCharacter[] {
+/** The roster with the game's characters merged in (shared/lib/roster `withGame`, from the game data loaded right now:
+ *  components that use it also subscribe to `useGame`). Characters used by events but missing from both still get a
+ *  (grey) lane, at the end. */
+export function castOf(file: RosterCharacter[], chapters: Chapter[]): (RosterCharacter & { game?: boolean })[] {
+  const roster = withGame(file, useGame.getState().manifest?.characters);
   const known = new Set(roster.map(c => c.id));
   const extra: RosterCharacter[] = [];
   for (const { event } of allEvents(chapters)) for (const c of event.chars) {

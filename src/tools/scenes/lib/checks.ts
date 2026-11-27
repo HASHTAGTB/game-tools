@@ -16,17 +16,19 @@ export type Problem = {
   to?: number;
   severity: "error" | "warning" | "info";
   message: string;
-  fix?: { label: string; /** the line's new text (may hold several lines), or for `at: "end"` text added at the end of the file */ text: string; at?: "line" | "end" | "after";
+  fix?: { label: string; /** the line's new text (may hold several lines), or for `at: "end"` text added at the end of the file */ text: string; at?: "line" | "end" | "after" | "start";
     /** the line's text when it was checked: the fix only applies while the line still reads so */
-    was?: string };
+    was?: string;
+    /** instead: define a new character with this name in the game, then use their variable for the speaker at from–to */
+    create?: string };
 };
 
 export type CheckContext = {
   manifest: Manifest | null;
   /** labels of the other scenes (and the game's own, from the manifest); null while they're being read */
   labels: Set<string> | null;
-  /** the file name, without .md */
-  fileName: string;
+  /** the scene's title (its file name if it has none), for label suggestions */
+  title: string;
 };
 
 /** Tags Ren'Py knows (renpy.org/doc/html/text.html). */
@@ -47,27 +49,19 @@ function closest(x: string, options: string[]) {
   return best && bd <= Math.max(1, Math.floor(x.length / 4)) ? best : null;
 }
 
+/** A display name for a speaker typed as a variable: "frau_tanaka" → "Frau tanaka", "Test" stays. */
+const speakerName = (who: string) => { const n = who.replace(/_+/g, " ").trim(); return n.charAt(0).toUpperCase() + n.slice(1); };
+
 export function checkScene(s: Script, cx: CheckContext): Problem[] {
   const out: Problem[] = [];
   const { lines, layout, parsed } = s;
   const m = cx.manifest;
 
-  if (!layout.code) {
-    out.push({
-      line: Math.max(1, (layout.front?.to ?? 0) + 1), severity: "error",
-      message: "This scene has no Ren'Py block yet, so the game can't use it.",
-      fix: { label: "Add one", at: "end", text: "```python\nlabel " + suggestLabel(cx.fileName) + ":\n    \"\"\n```\n" },
-    });
-    return out;
-  }
-  if (layout.code.close === null) {
-    out.push({ line: layout.code.open, severity: "error", message: "The Ren'Py block never ends (the closing ``` is missing).", fix: { label: "Close it", at: "end", text: "```\n" } });
-  }
   const label = labelOf(s);
   if (!label) {
     out.push({
-      line: layout.code.open, severity: "error", message: "The scene has no label, so nothing can jump to it.",
-      fix: { label: `Add label ${suggestLabel(cx.fileName)}`, at: "after", text: `label ${suggestLabel(cx.fileName)}:` },
+      line: Math.max(1, layout.first - 1), severity: "error", message: "The scene has no label, so nothing can jump to it.",
+      fix: { label: `Add label ${suggestLabel(cx.title)}`, at: layout.front ? "after" : "start", text: `label ${suggestLabel(cx.title)}:` },
     });
   }
 
@@ -104,8 +98,9 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
           const guess = byName?.id ?? closest(p.who, [...chars.keys()]);
           out.push({
             line: n, from: p.indent, to: p.indent + p.who.length, severity: "error",
-            message: `The game has no character called "${p.who}".` + (guess ? ` Did you mean ${guess}?` : " Add them to core/characters.rpy first."),
-            ...(guess && { fix: { label: `Use ${guess}`, text: text.slice(0, p.indent) + guess + text.slice(p.indent + p.who.length) } }),
+            message: `The game has no character called "${p.who}".` + (guess ? ` Did you mean ${guess}?` : ""),
+            fix: guess ? { label: `Use ${guess}`, text: text.slice(0, p.indent) + guess + text.slice(p.indent + p.who.length) }
+              : { label: `Add ${speakerName(p.who)} to the game`, text, create: speakerName(p.who) },
           });
         }
         if (!p.who && !before.pov && !povWarned && chatIndent === null) {
@@ -134,7 +129,7 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
     }
     switch (x.kind) {
       case "scene":
-        if (m && !m.backgrounds.includes(x.image)) out.push({ line: n, ...at(x.image), severity: "info", message: `The game has no background "${x.image}" yet.` });
+        if (m?.media && !m.backgrounds.includes(x.image)) out.push({ line: n, ...at(x.image), severity: "info", message: `The game has no background "${x.image}" yet.` });
         break;
       case "show": {
         const shown = before.sprites.some(sp => sp.tag === x.tag);
@@ -155,7 +150,7 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
             });
           }
         }
-        if (m) {
+        if (m?.media) {
           const outfits = m.sprites[x.tag];
           const attrs = x.attrs.length ? x.attrs : before.sprites.find(sp => sp.tag === x.tag)?.attrs ?? [];
           if (!outfits) out.push({ line: n, ...at(x.tag), severity: "info", message: `The game has no sprites for ${chars.get(x.tag)?.name ?? x.tag} yet.` });
@@ -169,7 +164,7 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
         if (!before.sprites.some(sp => sp.tag === x.tag)) out.push({ line: n, severity: "warning", message: `${chars.get(x.tag)?.name ?? x.tag} isn't on screen here.` });
         break;
       case "play":
-        if (m && x.channel === "music" && !m.music.includes(x.name)) out.push({ line: n, ...at(x.name), severity: "warning", message: `The game has no music called "${x.name}".` });
+        if (m?.media && x.channel === "music" && !m.music.includes(x.name)) out.push({ line: n, ...at(x.name), severity: "warning", message: `The game has no music called "${x.name}".` });
         break;
       case "pov":
         if (m && !chars.get(x.who)?.pov) out.push({ line: n, severity: "error", message: `${x.who} has no narrator variant (${x.who}_n), so the scene can't be told from their view.` });

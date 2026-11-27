@@ -4,6 +4,7 @@ import { Confirm } from "@/shared/ui/confirm";
 import { fieldCls } from "@/shared/ui/field";
 import { IconButton } from "@/shared/ui/icon-button";
 import { cn } from "@/shared/lib/utils";
+import { useLayoutEffect, useRef } from "react";
 import type { Box } from "../../lib/blocks";
 import { addOption, removeOption, routeOption, setOptionText } from "../../lib/ops";
 import { labelName } from "../../lib/labels";
@@ -11,6 +12,9 @@ import { unescapeText } from "../../lib/renpyText";
 import { idAt, useSceneUi } from "../../lib/ui";
 import { follow, problemsOf, useBox, useDraft, type ListLayout } from "./context";
 import { Acts, BoxItem, List, Problems } from "./List";
+import { EASE, fadeIn, typeIn } from "@/shared/ui/flair";
+import { m, spring } from "@/shared/ui/motion";
+import { useMorph } from "@/shared/ui/use-morph";
 
 type Menu = Extract<Box, { kind: "menu" }>;
 
@@ -21,7 +25,21 @@ export function ChoiceBox({ box: b, prev, next }: { box: Menu; prev: Box | null;
   const tab = Math.min(useSceneUi(s => s.tabs[id] ?? 0), Math.max(0, b.options.length - 1));
   const setTab = (i: number) => useSceneUi.setState(s => ({ tabs: { ...s.tabs, [id]: i } }));
   const o = b.options[tab];
-  const add = () => { addOption(c.view, b, c.base, new Set(c.labels)); setTab(b.options.length); };
+  const fresh = useRef<number | null>(null);
+  const add = () => { fresh.current = b.options.length; addOption(c.view, b, c.base, new Set(c.labels)); setTab(b.options.length); };
+  // another tab: the folder tab glides over (layoutId), the body morphs to the new route's height (what's below
+  // follows) and the route fades in; a new option's name types itself in
+  const bodyBox = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const head = useRef<HTMLDivElement>(null);
+  useMorph(bodyBox, tab, EASE);
+  const was = useRef(tab);
+  useLayoutEffect(() => {
+    if (tab !== was.current && body.current) fadeIn(body.current);
+    was.current = tab;
+    const label = fresh.current !== null ? head.current?.querySelectorAll<HTMLElement>(".bx-tab-label")[fresh.current] : null;
+    if (label) { fresh.current = null; typeIn(label); }
+  }, [tab, b.options.length]);
 
   return (
     <div className="bx-box bx-choice" data-line={b.from} data-from={b.from} data-to={b.to}>
@@ -33,18 +51,21 @@ export function ChoiceBox({ box: b, prev, next }: { box: Menu; prev: Box | null;
           ))}
         </div>
       )}
-      <div className="bx-choice-head" role="tablist" aria-label="Options">
+      <div className="bx-choice-head" role="tablist" aria-label="Options" ref={head}>
         <span className="bx-choice-name"><Split className="h-4 w-4" strokeWidth={2.25} />The player picks</span>
         {b.options.map((x, i) => (
           <button key={x.line} type="button" role="tab" className="bx-tab" aria-selected={i === tab} onClick={() => setTab(i)}
             onFocus={() => follow(c.view, x.line)} title={unescapeText(x.raw)}>
-            {unescapeText(x.raw) || `Option ${i + 1}`}
+            {i === tab && <m.span layoutId={`tab-${id}`} className="bx-tab-bg" transition={spring.bouncy} />}
+            <span className="bx-tab-label">{unescapeText(x.raw) || `Option ${i + 1}`}</span>
           </button>
         ))}
         <IconButton icon={Plus} size="sm" label="Add an option" className="mb-0.5" onClick={add} />
       </div>
-      <div className="bx-choice-body" role="tabpanel">
-        {o ? <Option key={o.line} menu={b} index={tab} onRemoved={() => setTab(Math.max(0, tab - 1))} /> : <p className="py-2 text-center font-talk text-sm text-taupe">No options yet.</p>}
+      <div className="bx-choice-body" role="tabpanel" ref={bodyBox}>
+        <div ref={body}>
+          {o ? <Option key={o.line} menu={b} index={tab} onRemoved={() => setTab(Math.max(0, tab - 1))} /> : <p className="py-2 text-center font-talk text-sm text-taupe">No options yet.</p>}
+        </div>
         {b.cont && <p className="bx-choice-foot">Then every option goes on below</p>}
       </div>
       <Problems list={problemsOf(c, b)} />

@@ -69,8 +69,7 @@ const lineIndent = (p: Line) => ("indent" in p ? p.indent : 0);
  *  off), so it never ends a block. */
 function nest(s: Script): N[] {
   const { parsed, layout } = s;
-  if (!layout.code) return [];
-  const first = layout.code.open + 1, end = (layout.code.close ?? parsed.length + 1) - 1;
+  const first = layout.first, end = parsed.length;
   const eff: number[] = [];
   let next = 0;
   for (let n = end; n >= first; n--) {
@@ -190,8 +189,7 @@ export function buildTree(s: Script, raw: ReadonlySet<number> = new Set()): Tree
     } else if (sections.length) sections[sections.length - 1].boxes.push(toBox(node, s, r));
     else pre.push(toBox(node, s, r));
   }
-  const code = s.layout.code;
-  const empty = !!code && !s.parsed.some((p, k) => p && p.kind !== "blank" && inScript(s.layout, k + 1));
+  const empty = !s.parsed.some((p, k) => p && p.kind !== "blank" && inScript(s.layout, k + 1));
   if (!sections.length) return { pre, scene: null, extra: [], empty };
 
   const byName = new Map(sections.map(x => [x.name, x]));

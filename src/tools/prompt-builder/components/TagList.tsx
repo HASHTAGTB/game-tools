@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { X, TriangleAlert } from "lucide-react";
 import { splitTags, tagKey } from "../lib/prompt";
 import { parseTag, setWeight, toggleOff } from "../lib/tag";
@@ -7,7 +7,8 @@ import { DRAG_MIME, useDnd } from "../lib/dnd";
 import type { ListKey } from "../lib/types";
 import { cn, fmtCount } from "@/shared/lib/utils";
 import { MenuMarker, MenuRule } from "@/shared/ui/menu";
-import { AnimatePresence, fade, m, pop, spring } from "@/shared/ui/motion";
+import { m } from "@/shared/ui/motion";
+import { MotionItem, MotionList } from "@/shared/ui/motion-list";
 import { surfaceCls } from "@/shared/ui/popover";
 import { DEFAULT_COLOR } from "@/shared/lib/colors";
 
@@ -97,7 +98,7 @@ export function TagList({ listKey, tags, onChange, db, active, onActivate, place
         dnd.drag && over !== null && "border-(--accent) bg-(--accent)/10",
       )}
     >
-      <AnimatePresence initial={false} mode="popLayout">
+      <MotionList>
       {tags.map((t, i) => (
         <Chip
           key={chipKeys[i]}
@@ -115,7 +116,7 @@ export function TagList({ listKey, tags, onChange, db, active, onActivate, place
           onRemove={() => onChange(tags.filter((_, j) => j !== i))}
         />
       ))}
-      </AnimatePresence>
+      </MotionList>
       {over === tags.length && <DropMarker />}
       <div className="relative min-w-32 flex-1">
         <input
@@ -133,7 +134,7 @@ export function TagList({ listKey, tags, onChange, db, active, onActivate, place
           className="h-7 w-full bg-transparent px-1 font-talk text-base text-paper placeholder:text-taupe focus:outline-hidden"
         />
         {suggestions.length > 0 && (
-          <m.div {...pop} className={cn(surfaceCls, "absolute left-0 top-full z-40 mt-1.5 w-72 origin-top-left px-3 py-2")}>
+          <div className={cn(surfaceCls, "absolute left-0 top-full z-40 mt-1.5 w-72 origin-top-left animate-bloom px-3 py-2")}>
             <MenuRule>
               {suggestions.map((s, i) => (
                 <li
@@ -148,7 +149,7 @@ export function TagList({ listKey, tags, onChange, db, active, onActivate, place
                 </li>
               ))}
             </MenuRule>
-          </m.div>
+          </div>
         )}
       </div>
     </div>
@@ -173,17 +174,10 @@ type ChipProps = {
 /** Insertion point shown while dragging. */
 const DropMarker = () => <m.span layout initial={{ scaleY: 0 }} animate={{ scaleY: 1 }} className="h-6 w-1 rounded-full bg-(--accent)" />;
 
-/** Chip enter/exit. Layout is "position" only: a chip whose text changes width snaps instead of stretching. */
-const chipMotion = {
-  layout: "position" as const,
-  initial: { opacity: 0, scale: 0.8 },
-  animate: { opacity: 1, scale: 1, transition: { ...spring.snappy, opacity: fade.in } },
-  exit: { opacity: 0, scale: 0.8, transition: fade.out },
-};
-
-const Chip = forwardRef<HTMLSpanElement, ChipProps>(function Chip(props, ref) {
-  return <m.span ref={ref} {...chipMotion} className="inline-flex items-center gap-1.5"><ChipBody {...props} /></m.span>;
-});
+/** A chip: drops in, crumples away, and the others slide into the gap (the app's list motion). */
+function Chip({ ref, ...props }: ChipProps & { ref?: React.Ref<HTMLSpanElement> }) {
+  return <MotionItem as="span" ref={ref} className="inline-flex items-center gap-1.5"><ChipBody {...props} /></MotionItem>;
+}
 
 function ChipBody({ raw, count, known, marker, dragging, onDragStart, onDragOver, onDrop, onToggle, onWeight, onEdit, onRemove }: ChipProps) {
   const { text, weight, off } = parseTag(raw);

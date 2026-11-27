@@ -76,6 +76,11 @@ function inRoot(root: string, rel: string | null) {
   return full;
 }
 
+const RAW_TYPES: Record<string, string> = {
+  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".avif": "image/avif",
+  ".gif": "image/gif", ".svg": "image/svg+xml",
+};
+
 const missing = (e: any) => e?.code === "ENOENT" || e?.code === "ENOTDIR";
 
 async function writeAtomic(file: string, data: string) {
@@ -148,6 +153,19 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<boolea
       return send(res, 200, { text, mtime: st.mtimeMs }), true;
     } catch (e) {
       if (missing(e)) return send(res, 200, null), true;
+      throw e;
+    }
+  }
+
+  if (route === "GET /api/fs/raw") {
+    try {
+      const data = await fs.readFile(full);
+      res.statusCode = 200;
+      res.setHeader("Content-Type", RAW_TYPES[path.extname(full).toLowerCase()] ?? "application/octet-stream");
+      res.end(data);
+      return true;
+    } catch (e) {
+      if (missing(e)) return send(res, 404, { error: "not found" }), true;
       throw e;
     }
   }

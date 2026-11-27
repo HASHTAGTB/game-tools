@@ -1,4 +1,6 @@
 import { AlertDialog } from "@base-ui/react/alert-dialog";
+import { bloomRef } from "@/shared/ui/flair";
+import { bloomCls } from "@/shared/ui/motion";
 import { ContextMenu } from "@base-ui/react/context-menu";
 import { ChevronRight, Copy, FilePlus, FolderPlus, Pencil, Trash2, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
@@ -7,6 +9,7 @@ import { Button } from "@/shared/ui/button";
 import { IconButton } from "@/shared/ui/icon-button";
 import { AnimatePresence, m, spring } from "@/shared/ui/motion";
 import { MenuMarker } from "@/shared/ui/menu";
+import { MotionItem, MotionList } from "@/shared/ui/motion-list";
 import { popoverCls } from "@/shared/ui/popover";
 import { Rule } from "@/shared/ui/heading";
 import { useVault } from "./context";
@@ -87,15 +90,17 @@ export function FileTree() {
           {!root ? <p className="px-6 font-talk text-sm text-taupe">Loading…</p>
             : !root.length ? <p className="px-6 font-talk text-sm text-taupe">No {noun}s here yet. Right-click for a new one.</p>
             : (
+              // a row made, moved or renamed drops in, a deleted one crumples (rows of a folder just listed don't)
               <ul role="tree" aria-label={`${Noun}s`} className="relative">
-                {root.map(n => <Row key={n.path} node={n} depth={0} dropDir={dropDir} dragging={dragging}
-                  onDragStart={p => setDragging(p)} onDragEnd={endDrag} onDelete={setDeleting} />)}
+                <MotionList>{root.map(n => <Row key={n.path} node={n} depth={0} dropDir={dropDir} dragging={dragging}
+                  onDragStart={p => setDragging(p)} onDragEnd={endDrag} onDelete={setDeleting} />)}</MotionList>
               </ul>
             )}
         </ContextMenu.Trigger>
         <ContextMenu.Portal>
           <ContextMenu.Positioner className="z-50">
-            <ContextMenu.Popup className={cn(popoverCls, "min-w-48 p-1.5 transition-[opacity,scale] duration-100 data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0")}>
+            <ContextMenu.Popup className={cn(popoverCls, "min-w-48 p-1.5", bloomCls)}>
+<div className="contents" ref={bloomRef}>
               {busy ? <p className="px-2.5 py-1.5 text-sm text-taupe">{busy}</p> : (
                 <>
                   {note && <Item icon={Pencil} label="Rename" onClick={() => setRenaming(note.path)} />}
@@ -109,7 +114,8 @@ export function FileTree() {
                   {dir && <Item icon={Trash2} label="Delete folder…" danger onClick={() => setDeleting(dir)} />}
                 </>
               )}
-            </ContextMenu.Popup>
+            </div>
+</ContextMenu.Popup>
           </ContextMenu.Positioner>
         </ContextMenu.Portal>
       </ContextMenu.Root>
@@ -118,7 +124,7 @@ export function FileTree() {
   );
 }
 
-function Item({ icon: Icon, label, danger, onClick }: { icon: LucideIcon; label: string; danger?: boolean; onClick: () => void }) {
+export function Item({ icon: Icon, label, danger, onClick }: { icon: LucideIcon; label: string; danger?: boolean; onClick: () => void }) {
   return (
     <ContextMenu.Item onClick={onClick}
       className={cn("flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-base outline-hidden select-none data-highlighted:bg-paper/8",
@@ -131,10 +137,10 @@ function Item({ icon: Icon, label, danger, onClick }: { icon: LucideIcon; label:
 
 type RowProps = {
   node: Node; depth: number; dropDir: string | null; dragging: string | null;
-  onDragStart: (path: string) => void; onDragEnd: () => void; onDelete: (n: Node) => void;
+  onDragStart: (path: string) => void; onDragEnd: () => void; onDelete: (n: Node) => void; ref?: React.Ref<HTMLLIElement>;
 };
 
-function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete }: RowProps) {
+function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete, ref }: RowProps) {
   const useStore = useVault();
   const { tree, expanded, path: open, renaming, toggle, open: openNote, create, setRenaming } = useStore();
   const isDir = node.kind === "directory";
@@ -145,7 +151,7 @@ function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete 
   const target = isDir && dropDir === node.path;
 
   return (
-    <li role="treeitem" aria-expanded={isDir ? isOpen : undefined} aria-selected={active}>
+    <MotionItem ref={ref} role="treeitem" aria-expanded={isDir ? isOpen : undefined} aria-selected={active}>
       <div data-path={node.path} data-kind={node.kind}
         className={cn("group/row relative flex h-7 items-center pr-2", dragging && isUnder(node.path, dragging) && "opacity-40")}>
         {active && (
@@ -197,12 +203,12 @@ function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete 
               ? <li className="h-7 font-talk text-sm leading-7 text-taupe" style={{ paddingLeft: BASE + (depth + 1) * INDENT + 18 }}>…</li>
               : children.length === 0
                 ? <li className="h-7 font-talk text-sm italic leading-7 text-taupe" style={{ paddingLeft: BASE + (depth + 1) * INDENT + 18 }}>empty</li>
-                : children.map(c => <Row key={c.path} node={c} depth={depth + 1} dropDir={dropDir} dragging={dragging}
-                    onDragStart={onDragStart} onDragEnd={onDragEnd} onDelete={onDelete} />)}
+                : <MotionList>{children.map(c => <Row key={c.path} node={c} depth={depth + 1} dropDir={dropDir} dragging={dragging}
+                    onDragStart={onDragStart} onDragEnd={onDragEnd} onDelete={onDelete} />)}</MotionList>}
           </m.ul>
         )}
       </AnimatePresence>
-    </li>
+    </MotionItem>
   );
 }
 
@@ -228,8 +234,11 @@ function RenameInput({ node, pad }: { node: Node; pad: React.CSSProperties }) {
   );
 }
 
-/** "Are you sure?" for notes and folders, as a dialog: it can be opened from the context menu, which has no anchor. */
-function DeleteDialog({ node, onClose }: { node: Node | null; onClose: () => void }) {
+/** "Are you sure?" for notes and folders, as a dialog: it can be opened from the context menu, which has no anchor.
+ *  `name`: what the file is called (its file name if not given); `what`: what breaks when it's gone. */
+export function DeleteDialog({ node, onClose, name, what = "Links to it will stop working." }: {
+  node: Node | null; onClose: () => void; name?: string; what?: string;
+}) {
   const { remove, removeFolder, loc } = useVault()();
   const last = useRef(node);
   if (node) last.current = node;
@@ -239,19 +248,22 @@ function DeleteDialog({ node, onClose }: { node: Node | null; onClose: () => voi
     <AlertDialog.Root open={!!node} onOpenChange={o => { if (!o) onClose(); }}>
       <AlertDialog.Portal>
         <AlertDialog.Backdrop className="fixed inset-0 z-50 bg-black/40 transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0" />
-        <AlertDialog.Popup className={cn(popoverCls, "fixed left-1/2 top-1/3 z-50 w-96 -translate-x-1/2 transition-[opacity,scale] duration-150 data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0")}>
+        <AlertDialog.Popup className={cn(popoverCls, "fixed left-1/2 top-1/3 z-50 w-96 -translate-x-1/2", bloomCls, "origin-center")}>
           <div className="mb-3">
-            <AlertDialog.Title className="font-sans text-lg text-paper">{isDir ? `Delete the folder "${n?.name}"?` : `Delete "${n ? baseName(n.path) : ""}"?`}</AlertDialog.Title>
+            <AlertDialog.Title className="font-sans text-lg text-paper">{isDir ? `Delete the folder "${n?.name}"?` : `Delete "${name ?? (n ? baseName(n.path) : "")}"?`}</AlertDialog.Title>
             <Rule color="var(--color-coral)" short />
           </div>
           <AlertDialog.Description className="mb-4 text-sm text-bone">
-            {isDir ? "Everything inside it goes too, images and other files included." : "Links to it will stop working."}
+            {isDir ? "Everything inside it goes too, images and other files included." : what}
             {" "}{loc?.kind === "github" ? "Git history still has it if it was saved." : "This can't be undone unless the vault is in git."}
           </AlertDialog.Description>
           <div className="flex justify-end gap-3">
             <AlertDialog.Close render={<Button size="sm" variant="ghost">Cancel</Button>} />
             <Button size="sm" variant="destructive"
-              onClick={() => { if (n) (isDir ? removeFolder : remove)(n.path); onClose(); }}>Delete</Button>
+              onClick={() => {
+                if (n) (isDir ? removeFolder : remove)(n.path);
+                onClose();
+              }}>Delete</Button>
           </div>
         </AlertDialog.Popup>
       </AlertDialog.Portal>

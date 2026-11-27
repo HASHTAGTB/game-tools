@@ -2,13 +2,14 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import type { VaultStore } from "./store";
 
-/** Keeps the address in step with the open file (/notes/CANON/01_Characters/Rin, /scenes/Prolog/04.04.2025 Fr: the
- *  path inside the tool's root, without .md), both ways: opening a file adds a history entry, back/forward and typed
+/** Keeps the address in step with the open file (/notes/CANON/01_Characters/Rin, /scenes/scenes/sc_2025_04_04_fri: the
+ *  path inside the tool's root, without its extension), both ways: opening a file adds a history entry, back/forward and typed
  *  addresses open the file. Renames, deletes and the like replace the entry. Also starts the store. */
 export function useVaultUrl(store: VaultStore, base: "/notes" | "/scenes") {
   const { root } = store.config;
-  const toUrl = (path: string | null) => (path ? (root ? path.slice(root.length + 1) : path).replace(/\.md$/i, "") : "");
-  const fromUrl = (splat: string) => (splat ? [root, splat + ".md"].filter(Boolean).join("/") : null);
+  const ext = store.config.ext ?? ".md";
+  const toUrl = (path: string | null) => (path ? (root ? path.slice(root.length + 1) : path).slice(0, -ext.length) : "");
+  const fromUrl = (splat: string) => (splat ? [root, splat + ext].filter(Boolean).join("/") : null);
 
   const splat = (useParams({ strict: false }) as { _splat?: string })._splat ?? "";
   const navigate = useNavigate();

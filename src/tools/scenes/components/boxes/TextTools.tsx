@@ -1,12 +1,11 @@
-import { Popover as P } from "@base-ui/react/popover";
+import { glow, wave } from "@/shared/ui/flair";
 import { Bold, Gauge, Italic, MousePointerClick, Pilcrow, Rabbit, Redo2, Snail, Trash2, type LucideIcon, type LucideProps } from "lucide-react";
-import { forwardRef, useState } from "react";
+import { forwardRef, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { create } from "zustand";
 import { cn } from "@/shared/lib/utils";
 import { IconButton } from "@/shared/ui/icon-button";
-import { AnimatePresence, m, pop } from "@/shared/ui/motion";
-import { popoverCls, surfaceCls } from "@/shared/ui/popover";
+import { Popover, surfaceCls } from "@/shared/ui/popover";
 import {
   caretAfter, chip, insertAtCaret, PAUSE_BARS, pauseOf, pauseRaw, PAUSES, selRange, setChip, setSpeed, speedAround, SPEEDS, speedAtCaret, stepBy,
   unwrap, wrapSpeed, type Marks,
@@ -52,6 +51,19 @@ export type TextAction = {
 
 const mark = (raw: string) => (el: HTMLElement) => insertAtCaret(el, chip(raw));
 
+/** Run a text tool; the marks it adds show up: slowed or sped-up words wave, a pause or wait lights up once. */
+function withMarkMotion(el: HTMLElement, run: () => void) {
+  const before = new Set(el.querySelectorAll(".bx-chip, .bx-speed"));
+  run();
+  requestAnimationFrame(() => {
+    for (const m of el.querySelectorAll<HTMLElement>(".bx-chip, .bx-speed")) {
+      if (before.has(m)) continue;
+      if (m.classList.contains("bx-speed")) { if (m.textContent?.trim()) wave(m); }
+      else glow(m);
+    }
+  });
+}
+
 const italic: TextAction = { label: "Italic", icon: Italic, hint: "{i}", bar: "Italic", kbd: "Ctrl+I", on: m => m.i, run: () => document.execCommand("italic") };
 const bold: TextAction = { label: "Bold", icon: Bold, hint: "{b}", bar: "Bold", kbd: "Ctrl+B", on: m => m.b, run: () => document.execCommand("bold") };
 const speed: TextAction = { label: "Speed", icon: Gauge, bar: "Slower (click its number in the text to change it)", kbd: "{", on: m => m.speed !== null, run: toggleSpeed };
@@ -77,7 +89,7 @@ export function TextBar() {
   const use = (a: TextAction) => () => {
     if (!t) return;
     t.el.focus({ preventScroll: true });
-    a.run(t.el);
+    withMarkMotion(t.el, () => a.run(t.el));
     t.commit();
   };
   return (
@@ -143,7 +155,7 @@ export function bracePick(el: HTMLElement, b: Brace, it: BraceItem) {
   s.removeAllRanges();
   s.addRange(r);
   if (!el.contains(document.activeElement)) el.focus({ preventScroll: true });
-  it.run(el);
+  withMarkMotion(el, () => it.run(el));
 }
 
 export function BraceMenu({ brace, onPick }: { brace: Brace; onPick: (it: BraceItem) => void }) {
@@ -211,22 +223,16 @@ export function nudgeMark(kind: "speed" | "pause", mark: HTMLElement, dir: 1 | -
 
 /** The one popup for the marks; rendered once by the box view. */
 export function MarkPopup() {
-  const edit = useMark(s => s.edit);
+  const open = useMark(s => s.edit);
   const tick = useMark(s => s.tick);
+  // while it closes it stays where and what it was
+  const last = useRef(open);
+  if (open) last.current = open;
+  const edit = last.current;
   return (
-    <P.Root open={!!edit} onOpenChange={v => { if (!v) closeMark(); }}>
-      <AnimatePresence>
-        {edit && (
-          <P.Portal keepMounted>
-            <P.Positioner anchor={edit.mark} side="bottom" align="center" sideOffset={6} className="z-50">
-              <P.Popup className={cn(popoverCls, "p-2.5")} finalFocus={false} render={<m.div {...pop} />}>
-                {edit.kind === "speed" ? <SpeedChoices key={tick} edit={edit} /> : <PauseChoices key={tick} edit={edit} />}
-              </P.Popup>
-            </P.Positioner>
-          </P.Portal>
-        )}
-      </AnimatePresence>
-    </P.Root>
+    <Popover open={!!open} onOpenChange={v => { if (!v) closeMark(); }} anchor={edit?.mark} className="p-2.5" finalFocus={false}>
+      {edit && (edit.kind === "speed" ? <SpeedChoices key={tick} edit={edit} /> : <PauseChoices key={tick} edit={edit} />)}
+    </Popover>
   );
 }
 

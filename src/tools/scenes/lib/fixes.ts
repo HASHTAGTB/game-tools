@@ -1,6 +1,9 @@
 import { forceLinting, type Diagnostic } from "@codemirror/lint";
 import type { EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
+import { createCharacter } from "@/shared/lib/game";
+import { errorMessage } from "@/shared/lib/utils";
+import { useScenes } from "../state";
 import type { Problem } from "./checks";
 
 /** Putting a problem's fix in the file: from the lint tooltip, under a box, or the checks list. */
@@ -24,21 +27,38 @@ const fresh = (view: EditorView, p: Problem) => {
 export function applyFix(view: EditorView, p: Problem) {
   if (!p.fix) return;
   const at = p.fix.at ?? "line";
-  if (at !== "end" && !fresh(view, p)) { forceLinting(view); return; }
+  if (at !== "end" && at !== "start" && !fresh(view, p)) { forceLinting(view); return; }
+  if (p.fix.create) { void addSpeaker(view, p); return; }
   const { doc } = view.state;
   const L = doc.line(p.line);
   const change = at === "line" ? { from: L.from, to: L.to, insert: p.fix.text }
     : at === "after" ? { from: L.to, insert: "\n" + p.fix.text }
+    : at === "start" ? { from: 0, insert: p.fix.text + "\n" }
     : { from: doc.length, insert: (doc.length && !doc.sliceString(doc.length - 1).endsWith("\n") ? "\n" : "") + p.fix.text };
   view.dispatch({ changes: change, userEvent: "input.fix" });
   view.focus();
+}
+
+/** Define the speaker the line names, then name them by their new variable there (it may differ: "Test" → test). */
+async function addSpeaker(view: EditorView, p: Problem) {
+  try {
+    const id = await createCharacter(p.fix!.create!);
+    const { doc } = view.state;
+    if (fresh(view, p) && p.from !== undefined && p.to !== undefined) {
+      const L = doc.line(p.line);
+      if (doc.sliceString(L.from + p.from, L.from + p.to) !== id) {
+        view.dispatch({ changes: { from: L.from + p.from, to: L.from + p.to, insert: id }, userEvent: "input.fix" });
+      }
+    }
+    forceLinting(view);
+  } catch (e) { useScenes.getState().setError("Could not add the character: " + errorMessage(e)); }
 }
 
 /** Every problem's line fix at once (one undo step). */
 export function applyFixes(view: EditorView, problems: Problem[]) {
   const { doc } = view.state;
   const seen = new Set<number>();
-  const changes = problems.filter(p => p.fix && (p.fix.at ?? "line") === "line" && fresh(view, p) && !seen.has(p.line) && seen.add(p.line))
+  const changes = problems.filter(p => p.fix && !p.fix.create && (p.fix.at ?? "line") === "line" && fresh(view, p) && !seen.has(p.line) && seen.add(p.line))
     .map(p => { const L = doc.line(p.line); return { from: L.from, to: L.to, insert: p.fix!.text }; });
   if (changes.length) view.dispatch({ changes, userEvent: "input.fix" });
   else forceLinting(view);

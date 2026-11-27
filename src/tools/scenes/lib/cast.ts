@@ -1,7 +1,6 @@
 import type { EditorState } from "@codemirror/state";
-import { characterIdIn, characterOf, type Manifest } from "@/shared/lib/game";
-import { manifestField, scriptField } from "./editorState";
-import { readInfo } from "./frontmatter";
+import type { Manifest } from "@/shared/lib/game";
+import { scriptField } from "./editorState";
 import { escapeText } from "./renpyText";
 import { pad, parseLine, sayText } from "./script";
 
@@ -9,18 +8,12 @@ import { pad, parseLine, sayText } from "./script";
 
 // ---------------------------------------------------------------- the cast
 
-/** Who can speak in this scene, for Tab and the speaker menu: the scene's characters (from its info) and everyone
- *  who already speaks in it, in order of first appearance. */
+/** Who can speak in this scene, for Tab and the speaker menu: everyone who already speaks in it, in order of first
+ *  appearance. */
 export function sceneCast(state: EditorState): string[] {
   const s = state.field(scriptField);
-  const m = state.field(manifestField);
   const out: string[] = [];
-  const add = (id: string) => { if (!out.includes(id)) out.push(id); };
-  for (const note of readInfo(state.doc.toString())?.characters ?? []) {
-    const id = characterIdIn(note);
-    if (!m || characterOf(m, id)) add(id);
-  }
-  for (const p of s.parsed) if (p?.kind === "say" && p.who && p.who !== "extend") add(p.who);
+  for (const p of s.parsed) if (p?.kind === "say" && p.who && p.who !== "extend" && !out.includes(p.who)) out.push(p.who);
   return out;
 }
 

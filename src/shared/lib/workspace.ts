@@ -40,6 +40,8 @@ export class NeedsPermission extends Error {
 
 interface Store {
   read(path: string): Promise<FileData | null>;
+  /** A file's bytes (images), null if it doesn't exist or this backend can't give them. */
+  readBytes(path: string): Promise<Blob | null>;
   write(path: string, text: string): Promise<number>;
   remove(path: string): Promise<void>;
   list(dir: string): Promise<Entry[]>;
@@ -77,6 +79,10 @@ const q = (path: string) => `?path=${encodeURIComponent(check(path).join("/"))}`
 
 const server: Store = {
   read: path => api("GET", `/api/fs/file${q(path)}`),
+  readBytes: async path => {
+    const r = await fetch(`/api/fs/raw${q(path)}`);
+    return r.ok ? r.blob() : null;
+  },
   write: async (path, text) => (await api<{ mtime: number }>("PUT", `/api/fs/file${q(path)}`, { text })).mtime,
   remove: async path => void (await api("DELETE", `/api/fs/file${q(path)}`)),
   list: dir => api("GET", `/api/fs/list${q(dir)}`),
@@ -105,6 +111,8 @@ type Stored = { text: string; mtime: number };
 
 const browser: Store = {
   read: async path => (await tx<Stored | undefined>("files", "readonly", s => s.get(check(path).join("/")))) ?? null,
+  // only holds the tools' text files
+  readBytes: async () => null,
   write: async (path, text) => {
     const mtime = Date.now();
     await tx("files", "readwrite", s => s.put({ text, mtime } satisfies Stored, check(path).join("/")));
@@ -217,6 +225,7 @@ const folder: Store = {
     const f = await (await fileAt(path, false))?.getFile();
     return f ? { text: await f.text(), mtime: f.lastModified } : null;
   },
+  readBytes: async path => (await (await fileAt(path, false))?.getFile()) ?? null,
   write: async (path, text) => {
     const h = (await fileAt(path, true))!;
     const w = await h.createWritable();
@@ -311,6 +320,7 @@ async function store(): Promise<Store> {
 
 /** Text of a file and when it last changed; null if it doesn't exist. */
 export const readFile = async (path: string) => (await store()).read(path);
+export const readBytes = async (path: string) => (await store()).readBytes(path);
 export const readText = async (path: string) => (await readFile(path))?.text ?? null;
 export async function readJson<T>(path: string): Promise<T | null> {
   const t = await readText(path);

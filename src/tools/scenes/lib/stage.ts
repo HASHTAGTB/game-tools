@@ -13,14 +13,20 @@ export type Stage = {
   music: string | null;
   date: string | null;
   time: string | null;
+  /** who said the last line (null: narration); an `extend` line goes on in their voice */
+  speaker: string | null;
 };
 
-export const EMPTY_STAGE: Stage = { background: null, sprites: [], pov: null, music: null, date: null, time: null };
+export const EMPTY_STAGE: Stage = { background: null, sprites: [], pov: null, music: null, date: null, time: null, speaker: null };
 
 /** The stage after each line: `stages[i]` is how it looks once line i (0-based) has run. */
 export function playScript(s: Script): Stage[] {
   let st: Stage = EMPTY_STAGE;
   return s.parsed.map(p => {
+    if (p?.kind === "say") {
+      if (p.who !== "extend" && p.who !== st.speaker) st = { ...st, speaker: p.who };
+      return st;
+    }
     if (p?.kind !== "stmt") return st;
     const x = p.stmt;
     switch (x.kind) {

@@ -19,13 +19,13 @@ export function labelOf(s: Script) {
 /** A line that jumps to or calls `name` (outside a comment). */
 export const jumpsTo = (name: string) => new RegExp(`^[^#]*\\b(jump|call)\\s+${name}\\b`);
 
-/** The lines of label `name` in `doc`: its label line up to the next label or the end of the block, or null. */
+/** The lines of label `name` in `doc`: its label line up to the next label or the end of the file, or null. */
 export function labelLines(doc: Text, name: string): [number, number] | null {
   let n = 1;
   while (n <= doc.lines && labelName(doc.line(n).text) !== name) n++;
   if (n > doc.lines) return null;
   let e = n + 1;
-  while (e <= doc.lines && !/^label\s/.test(doc.line(e).text) && !/^```/.test(doc.line(e).text)) e++;
+  while (e <= doc.lines && !/^label\s/.test(doc.line(e).text)) e++;
   return [n, e - 1];
 }
 

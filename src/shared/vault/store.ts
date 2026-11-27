@@ -7,9 +7,9 @@ import {
 } from "@/shared/lib/workspace";
 import { indexFiles, resolve, rewriteLinks } from "./links";
 
-/** A folder of the vault's Markdown files, edited in place: the Notes tool (the whole vault) and the Scenes tool (the
- *  scenes folder) each make one with `createVaultStore`. Paths are vault paths ("CANON/01_Characters/Rin.md").
- *  Dot-folders (.obsidian, .git, .game-tools) and non-Markdown files are left out of the tree. */
+/** A folder of the vault's files of one type, edited in place: the Notes tool (the whole vault's Markdown) and the
+ *  Scenes tool (the game's scene .rpy files) each make one with `createVaultStore`. Paths are vault paths
+ *  ("CANON/01_Characters/Rin.md"). Dot-folders (.obsidian, .git, .game-tools) and other file types are left out. */
 
 export type VaultConfig = {
   /** localStorage key for this browser's view (open folders, last file, mode) */
@@ -18,10 +18,12 @@ export type VaultConfig = {
   root: string;
   /** Files and folders this tool leaves to another one (not listed, not searched). */
   hide?: (path: string) => boolean;
-  /** What a new file starts with; `name` is its file name without .md. */
+  /** What a new file starts with; `name` is its file name without its extension. */
   template?: (name: string) => string;
   /** "note", "scene": used in messages. */
   noun: string;
+  /** The files this tool edits: ".md" (the default) or ".rpy". [[links]] are only updated for ".md". */
+  ext?: string;
   /** A link led to a file this tool hides (`hide`): let the tool that has it open it. */
   openElsewhere?: (path: string) => void;
 };
@@ -106,17 +108,18 @@ const RECENT = 12;
 // ---------------------------------------------------------------- helpers
 
 export const parentOf = (path: string) => path.split("/").slice(0, -1).join("/");
-export const baseName = (path: string) => path.split("/").pop()!.replace(/\.md$/i, "");
+/** A file's name without its folder and its .md or .rpy. */
+export const baseName = (path: string) => path.split("/").pop()!.replace(/\.(md|rpy)$/i, "");
 const lastPart = (path: string) => path.split("/").pop()!;
 /** `path` with the folder `from` (or the file itself) replaced by `to`. */
 const rebase = (path: string, from: string, to: string) => (isUnder(path, from) ? to + path.slice(from.length) : path);
 const BAD_NAME = /[\\/:*?"<>|#^[\]]/;
-const shown = (e: Entry) => !e.name.startsWith(".") && (e.kind === "directory" || /\.md$/i.test(e.name));
-const isNote = (p: string) => /\.md$/i.test(p);
+const hasExt = (p: string, ext: string) => p.toLowerCase().endsWith(ext);
 const byKindThenName = (a: Node, b: Node) =>
   a.kind !== b.kind ? (a.kind === "directory" ? -1 : 1) : a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
 
-async function listNodes(dir: string, virtual: Set<string>, hide: (path: string) => boolean): Promise<Node[]> {
+async function listNodes(dir: string, ext: string, virtual: Set<string>, hide: (path: string) => boolean): Promise<Node[]> {
+  const shown = (e: Entry) => !e.name.startsWith(".") && (e.kind === "directory" || hasExt(e.name, ext));
   const nodes: Node[] = (await listDir(dir)).filter(shown).map(e => ({ name: e.name, kind: e.kind, path: joinPath(dir, e.name) }))
     .filter(n => !hide(n.path));
   for (const v of virtual) {
@@ -126,18 +129,18 @@ async function listNodes(dir: string, virtual: Set<string>, hide: (path: string)
 }
 
 /** A name that isn't taken in `dir`: "Untitled.md", "Untitled 2.md", … (`ext` "" for folders) */
-async function freeFileName(dir: string, base: string, ext = ".md", virtual: Set<string> = new Set()) {
+async function freeFileName(dir: string, base: string, ext: string, virtual: Set<string> = new Set()) {
   const taken = new Set([...(await listDir(dir)).map(e => e.name), ...[...virtual].filter(v => parentOf(v) === dir).map(lastPart)].map(n => n.toLowerCase()));
   return freeName(base + ext, n => taken.has(n.toLowerCase()), i => `${base} ${i}${ext}`);
 }
 
-/** Every file in the vault (any type), skipping dot-folders like .obsidian and .git. */
-async function allFiles(dir = ""): Promise<string[]> {
+/** Every file under `dir` (any type), skipping dot-folders like .obsidian and .git and the folders `skip` says. */
+async function allFiles(dir = "", skip: (path: string) => boolean = () => false): Promise<string[]> {
   const out: string[] = [];
   for (const e of await listDir(dir)) {
     if (e.name.startsWith(".")) continue;
     const p = joinPath(dir, e.name);
-    if (e.kind === "directory") out.push(...await allFiles(p));
+    if (e.kind === "directory") { if (!skip(p)) out.push(...await allFiles(p, skip)); }
     else out.push(p);
   }
   return out;
@@ -145,7 +148,12 @@ async function allFiles(dir = ""): Promise<string[]> {
 
 export function createVaultStore(cfg: VaultConfig) {
   const { root, noun } = cfg;
+  const ext = (cfg.ext ?? ".md").toLowerCase();
+  const markdown = ext === ".md";
   const hide = cfg.hide ?? (() => false);
+  const isNote = (p: string) => hasExt(p, ext);
+  /** The files a move has to look at: the whole vault for Markdown (links), else only this tool's folder. */
+  const filesForMoves = () => (markdown ? allFiles() : allFiles(root, hide));
   const Noun = noun[0].toUpperCase() + noun.slice(1);
   const serial = serialQueue();
   /** Saving: a moment after the last keystroke (and when the tab is hidden, below). */
@@ -162,13 +170,13 @@ export function createVaultStore(cfg: VaultConfig) {
   const store = create<State & Actions>()((set, get) => {
   const savePrefs = () => { const s = get(); prefsStore.write({ expanded: [...s.expanded], path: s.path, recent: s.recent, mode: s.mode }); };
   const refreshDir = async (dir: string) => {
-    const nodes = await listNodes(dir, get().virtual, hide);
+    const nodes = await listNodes(dir, ext, get().virtual, hide);
     set(s => ({ tree: { ...s.tree, [dir]: nodes } }));
   };
   /** List the vault and every open folder again; open folders that are gone get closed. */
   const refreshAll = async () => {
     const dirs = [root, ...get().expanded];
-    const lists = await Promise.all(dirs.map(d => listNodes(d, get().virtual, hide).catch(() => null)));
+    const lists = await Promise.all(dirs.map(d => listNodes(d, ext, get().virtual, hide).catch(() => null)));
     const tree: Record<string, Node[]> = {};
     dirs.forEach((d, i) => { if (lists[i]) tree[d] = lists[i]!; });
     const expanded = new Set([...get().expanded].filter(d => tree[d]?.length || tree[parentOf(d)]?.some(n => n.path === d)));
@@ -194,7 +202,7 @@ export function createVaultStore(cfg: VaultConfig) {
       if (clash) throw new Error(`There is already something called "${lastPart(to)}" there.`);
 
       set({ busy: `Moving ${lastPart(from)}…` });
-      const before = await allFiles();
+      const before = await filesForMoves();
       const moving = before.filter(f => isUnder(f, from));
       if (moving.length) await movePath(from, to);
       else await movePath(from, to).catch(() => {});   // an empty folder: real on disk, or only shown here
@@ -206,7 +214,7 @@ export function createVaultStore(cfg: VaultConfig) {
       const now = open && rebase(open, from, to);
       let updated = 0, openDisk: string | null = null;
       let fix: (text: string, note: string) => string | null = () => null;
-      if (moves.size) {
+      if (moves.size && markdown) {
         const bi = indexFiles(before), ai = indexFiles(after);
         const back = new Map([...moves].map(([o, n]) => [n, o]));
         fix = (text, note) => (text.includes("[[") ? rewriteLinks(text, back.get(note) ?? note, bi, ai, moves) : null);
@@ -257,7 +265,7 @@ export function createVaultStore(cfg: VaultConfig) {
         busy: null,
       }));
       await refreshAll();
-      const verb = parentOf(from) === parentOf(to) ? `Renamed to ${lastPart(to).replace(/\.md$/i, "")}` : `Moved to ${parentOf(to) || "the vault"}`;
+      const verb = parentOf(from) === parentOf(to) ? `Renamed to ${baseName(to)}` : `Moved to ${parentOf(to) || "the vault"}`;
       get().setNotice(updated ? `${verb} · links updated in ${plural(updated, "note")}` : verb);
     }).catch(fail("Couldn't move it"));
   };
@@ -370,14 +378,15 @@ export function createVaultStore(cfg: VaultConfig) {
     },
 
     listFolder: async dir => {
-      const nodes = await listNodes(dir, get().virtual, hide);
+      const nodes = await listNodes(dir, ext, get().virtual, hide);
       set(s => ({ tree: { ...s.tree, [dir]: nodes } }));
       return nodes;
     },
 
     loadIndex: () => {
       if (!get().ready) return Promise.resolve();
-      return (indexing ??= allFiles()
+      // Markdown: every note, for following links; other files: only this tool's folders
+      return (indexing ??= (markdown ? allFiles() : allFiles(root, hide))
         .then(files => {
           everyNote = files.filter(isNote);
           set({ index: everyNote.filter(mine).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })) });
@@ -412,9 +421,9 @@ export function createVaultStore(cfg: VaultConfig) {
 
     create: async dir => {
       try {
-        const name = await freeFileName(dir, "Untitled");
+        const name = await freeFileName(dir, "Untitled", ext);
         const path = joinPath(dir, name);
-        await writeText(path, cfg.template?.(name.replace(/\.md$/i, "")) ?? "");
+        await writeText(path, cfg.template?.(baseName(name)) ?? "");
         set(s => ({ index: s.index && [...s.index, path] }));
         if (dir) set(s => ({ expanded: new Set([...s.expanded, dir]) }));
         await refreshDir(dir);
@@ -437,11 +446,11 @@ export function createVaultStore(cfg: VaultConfig) {
 
     rename: async (path, name) => {
       set({ renaming: null });
-      const isNote = /\.md$/i.test(path);
-      const clean = isNote ? name.trim().replace(/\.md$/i, "") : name.trim();
-      if (!clean || clean === (isNote ? baseName(path) : lastPart(path))) return;
+      const file = isNote(path);
+      const clean = file ? baseName(name.trim()) : name.trim();
+      if (!clean || clean === (file ? baseName(path) : lastPart(path))) return;
       if (BAD_NAME.test(clean) || clean.startsWith(".")) return set({ error: "Names can't start with a dot or contain \\ / : * ? \" < > | # ^ [ ]" });
-      await relocate(path, joinPath(parentOf(path), isNote ? `${clean}.md` : clean));
+      await relocate(path, joinPath(parentOf(path), file ? clean + ext : clean));
     },
 
     move: async (path, dir) => {
@@ -453,7 +462,7 @@ export function createVaultStore(cfg: VaultConfig) {
       try {
         await get().flush();
         const dir = parentOf(path);
-        const copy = joinPath(dir, await freeFileName(dir, baseName(path)));
+        const copy = joinPath(dir, await freeFileName(dir, baseName(path), ext));
         await writeText(copy, get().path === path ? get().text : (await readFile(path))?.text ?? "");
         set(s => ({ index: s.index && [...s.index, copy] }));
         await refreshDir(dir);

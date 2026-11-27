@@ -3,19 +3,19 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/shared/lib/utils";
 import { MenuMarker, MenuRule } from "@/shared/ui/menu";
 import { Popover, popoverCls } from "@/shared/ui/popover";
-import { m, pop } from "@/shared/ui/motion";
 import { useVault } from "./context";
 import { fuzzy, shownPath, type Hit } from "./fuzzy";
 import { baseName, parentOf, type Node } from "./store";
 
 /** The top of the page: the open file's path, like an address bar. Each folder opens a menu of what's in it;
  *  clicking the name (or the empty space) turns the bar into a fuzzy search over every file of the tool.
- *  `rootLabel` names the tool's root folder (default: the vault's name). */
-export function PathBar({ rootLabel, children }: { rootLabel?: string; children?: ReactNode }) {
+ *  `rootLabel` names the tool's root folder (default: the vault's name); `title` is shown for the open file instead of
+ *  its file name. */
+export function PathBar({ rootLabel, title, children }: { rootLabel?: string; title?: string; children?: ReactNode }) {
   const [searching, setSearching] = useState(false);
   return (
     <div className="relative z-30 flex h-12 shrink-0 items-center gap-3 border-b border-ink-line/60 px-6">
-      {searching ? <QuickSwitch onClose={() => setSearching(false)} /> : <Crumbs rootLabel={rootLabel} onSearch={() => setSearching(true)} />}
+      {searching ? <QuickSwitch onClose={() => setSearching(false)} /> : <Crumbs rootLabel={rootLabel} title={title} onSearch={() => setSearching(true)} />}
       {!searching && children}
     </div>
   );
@@ -23,7 +23,7 @@ export function PathBar({ rootLabel, children }: { rootLabel?: string; children?
 
 // ---------------------------------------------------------------- the path
 
-function Crumbs({ rootLabel, onSearch }: { rootLabel?: string; onSearch: () => void }) {
+function Crumbs({ rootLabel, title, onSearch }: { rootLabel?: string; title?: string; onSearch: () => void }) {
   const useStore = useVault();
   const { root, noun } = useStore.config;
   const loc = useStore(s => s.loc);
@@ -48,7 +48,7 @@ function Crumbs({ rootLabel, onSearch }: { rootLabel?: string; onSearch: () => v
       <button onClick={onSearch} disabled={!ready} title={`Search ${noun}s`}
         className="group/search flex h-full min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-default">
         {path
-          ? <span className="truncate font-sans text-lg text-paper">{baseName(path)}</span>
+          ? <span className="truncate font-sans text-lg text-paper">{title || baseName(path)}</span>
           : <span className="truncate pl-1 font-talk text-base text-taupe">Search {noun}s…</span>}
         <Search className={cn("ml-auto h-4 w-4 shrink-0 text-taupe transition-opacity", path && "opacity-0 group-hover/search:opacity-100 group-focus-visible/search:opacity-100")} />
       </button>
@@ -169,7 +169,7 @@ function QuickSwitch({ onClose }: { onClose: () => void }) {
         className="h-full min-w-0 flex-1 bg-transparent font-talk text-base text-paper placeholder:text-taupe focus:outline-hidden" />
       <kbd className="font-talk text-xs text-taupe">esc</kbd>
 
-      <m.div {...pop} className={cn(popoverCls, "absolute inset-x-4 top-full mt-1.5 origin-top px-4 py-2.5")}>
+      <div className={cn(popoverCls, "absolute inset-x-4 top-full mt-1.5 origin-top animate-bloom px-4 py-2.5")}>
           {!q.trim() && hits.length > 0 && <p className="pb-1.5 text-xs text-taupe">Recent</p>}
           <MenuRule ref={listRef} id="note-hits" role="listbox" className="max-h-[60vh] overflow-y-auto">
             {hits.length === 0 && <li className="py-1 pl-3 text-base text-taupe">{empty}</li>}
@@ -184,7 +184,7 @@ function QuickSwitch({ onClose }: { onClose: () => void }) {
               </li>
             ))}
           </MenuRule>
-      </m.div>
+      </div>
     </>
   );
 }

@@ -1,5 +1,7 @@
 import { Check, ClipboardCopy } from "lucide-react";
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { SayTab } from "@/shared/ui/say-tab";
+import { useWash } from "@/shared/ui/use-wash";
 import type { Character } from "../lib/types";
 import { castLook } from "../lib/cast";
 import { promptSegments, segColor, type Segment } from "../lib/prompt";
@@ -16,7 +18,7 @@ export function PromptPanel({ ch, onNegative }: { ch: Character; onNegative: (v:
   const prompt = segs.map(s => s.tag).join(", ");
   const [copied, setCopied] = useState<"p" | "n" | null>(null);
   const manifest = useGame(s => s.manifest);
-  useEffect(() => { if (!useGame.getState().loaded) useGame.getState().load(); }, []);
+  useEffect(() => { useGame.getState().load(); }, []);   // a cached copy shows meanwhile
   const look = castLook(ch.name, manifest);
   const [shown, skip] = useCrawl(ch.id, prompt.length);
 
@@ -34,23 +36,15 @@ export function PromptPanel({ ch, onNegative }: { ch: Character; onNegative: (v:
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  const boxRef = useRef<HTMLDivElement>(null);
+  useWash(ch.id, boxRef);
   const boxStyle = { "--char": look.color, "--pattern": look.pattern ? `url(${look.pattern})` : "none" } as CSSProperties;
 
   return (
     <div className="relative z-10 bg-ink px-6 pb-5 pt-2 shadow-[0_-16px_24px_-8px_#2b2826]">
       <div className="flex h-10 items-end justify-between px-6">
-        {/* The namebox slides up from behind the box when the character changes. */}
-        <AnimatePresence mode="popLayout" initial={false}>
-          <m.span
-            key={ch.id}
-            initial={{ y: 28 }} animate={{ y: 0 }} exit={{ y: 28, transition: { duration: 0.12, ease: "easeIn" } }}
-            transition={spring.bouncy}
-            className="say-tab px-5 pb-1.5 pt-2.5 font-sans text-lg font-bold leading-none"
-            style={{ color: `color-mix(in srgb, ${look.color} 78%, #2f2924)` }}
-          >
-            {ch.name || ch.id}
-          </m.span>
-        </AnimatePresence>
+        {/* The namebox swaps (ducks behind the box, the new one springs up) and the box's colour washes over. */}
+        <SayTab id={ch.id} name={ch.name || ch.id} color={look.color} className="px-5 pb-1.5 pt-2.5 font-sans text-lg font-bold leading-none" />
         <button
           onClick={() => copy("p")}
           title="Copy prompt (Ctrl+Shift+C)"
@@ -62,6 +56,7 @@ export function PromptPanel({ ch, onNegative }: { ch: Character; onNegative: (v:
       </div>
 
       <m.div
+        ref={boxRef}
         className="say-box"
         style={boxStyle}
         animate={copied === "p" ? { scale: [1, 1.012, 1] } : { scale: 1 }}

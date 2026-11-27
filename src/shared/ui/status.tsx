@@ -1,4 +1,5 @@
 import { Button } from "./button";
+import { AnimatePresence, m, spring } from "./motion";
 import { Toasts } from "./toasts";
 
 /** A tool's error and notice, as toasts (`className` places them). */
@@ -37,3 +38,19 @@ export function ConflictBar({ items, onResolve }: { items: ConflictItem[]; onRes
 /** The save state shown next to an open file. */
 export const saveState = (s: { saving: boolean; unsaved: boolean; github: boolean }) =>
   s.saving ? "Saving…" : s.unsaved ? "Unsaved" : s.github ? "Staged" : "Saved";
+
+/** The save state, rolling over when it changes (Unsaved → Saving… → Saved). */
+export function SaveState(s: { saving: boolean; unsaved: boolean; github: boolean }) {
+  const text = saveState(s);
+  return (
+    <span className="relative inline-grid overflow-hidden align-bottom">
+      <AnimatePresence mode="popLayout" initial={false}>
+        <m.span key={text} className="inline-block whitespace-nowrap"
+          initial={{ y: "100%", opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: "-100%", opacity: 0, transition: { duration: 0.14, ease: "easeIn" } }}
+          transition={spring.bouncy}>
+          {text}
+        </m.span>
+      </AnimatePresence>
+    </span>
+  );
+}

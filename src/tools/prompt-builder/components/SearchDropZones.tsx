@@ -26,7 +26,7 @@ export function SearchDropZones() {
 
   if (blocked && !dnd.drag) {
     return (
-      <div className="fixed bottom-6 right-6 z-50 animate-pop-in">
+      <div className="fixed bottom-6 right-6 z-50 animate-bloom origin-bottom-right">
         <div className={cn(surfaceCls, "flex items-center gap-3 px-4 py-3")}>
           <span className="text-bone">The browser blocked the new tab.</span>
           <a href={blocked.url} target="_blank" rel="noopener noreferrer" onClick={() => setBlocked(null)}
@@ -41,7 +41,7 @@ export function SearchDropZones() {
   if (!dnd.drag) return null;
   const name = searchName(dnd.drag.tag);
   return (
-    <div className="pointer-events-none fixed inset-y-0 right-0 z-50 flex w-[280px] flex-col items-center justify-center gap-4 animate-pop-in lg:w-[340px] xl:w-[360px] 2xl:w-[400px]">
+    <div className="pointer-events-none fixed inset-y-0 right-0 z-50 flex w-[280px] flex-col items-center justify-center gap-4 animate-bloom origin-bottom-right lg:w-[340px] xl:w-[360px] 2xl:w-[400px]">
       <Zone label="Danbooru" sub={name} color="#7e9be3" onDrop={() => open("Danbooru", name, danbooruUrl(dnd.drag!.tag))} />
       <Zone label="Google" sub={name} color="#8ce3a0" onDrop={() => open("Google Images", name, googleUrl(dnd.drag!.tag))} />
     </div>

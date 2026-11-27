@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { BookOpen, Code, FilePlus, FolderPlus } from "lucide-react";
 import { TOOLS } from "@/app/tools";
 import { IconButton } from "@/shared/ui/icon-button";
-import { ConflictBar, saveState, StatusToasts } from "@/shared/ui/status";
+import { ConflictBar, SaveState, StatusToasts } from "@/shared/ui/status";
 import { ToolNav } from "@/shared/ui/tool-nav";
 import { WorkspaceLocation } from "@/shared/ui/workspace-location";
 import { Editor } from "./components/Editor";
@@ -71,7 +71,7 @@ export default function Notes() {
           {path && <FormatBar />}
           {path && (
             <span className="shrink-0 font-talk text-xs text-taupe">
-              {words(text)} words · {saveState({ saving, unsaved, github: loc?.kind === "github" })}
+              {words(text)} words · <SaveState saving={saving} unsaved={unsaved} github={loc?.kind === "github"} />
             </span>
           )}
           {path && (

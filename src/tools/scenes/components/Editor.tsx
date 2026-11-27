@@ -68,15 +68,16 @@ type Props = {
   mode: Mode;
   /** labels of the other scenes and the game, for checking jumps (null while they're read) */
   labels: Set<string> | null;
-  fileName: string;
+  /** the scene's title, for the label the checks suggest */
+  title: string;
   onChange: (text: string) => void;
 };
 
-export function Editor({ path, text, rev, mode, labels, fileName, onChange }: Props) {
+export function Editor({ path, text, rev, mode, labels, title, onChange }: Props) {
   const modeNow = useRef(mode);
   modeNow.current = mode;
-  const checkInput = useRef({ labels, fileName });
-  checkInput.current = { labels, fileName };
+  const checkInput = useRef({ labels, title });
+  checkInput.current = { labels, title };
   const manifest = useGame(s => s.manifest);
 
   const { host, view } = useDocEditor({
@@ -117,9 +118,9 @@ export function Editor({ path, text, rev, mode, labels, fileName, onChange }: Pr
   useEffect(() => {
     const v = view.current;
     if (!v) return;
-    v.dispatch({ effects: setCheckInput.of({ labels, fileName }) });
+    v.dispatch({ effects: setCheckInput.of({ labels, title }) });
     forceLinting(v);
-  }, [labels, manifest, fileName, view]);
+  }, [labels, manifest, title, view]);
 
   const shown = useSceneUi(s => s.view);
   return (

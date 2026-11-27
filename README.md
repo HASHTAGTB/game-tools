@@ -35,7 +35,7 @@ Keeping a tool's data and its files in step:
 
 UI kit (`src/shared/ui/`): `Section` (title over a colored rule, actions that appear on hover), `IconButton` (icon only, so it always takes a `label` for its tooltip), `Tooltip`, `Popover`, `Confirm`, `Switch`, `CollapsiblePanel`, `SearchField` and `Toasts`.
 
-Animation: import `m`, `AnimatePresence` and the `spring`/`fade`/`pop` presets from `src/shared/ui/motion.ts` (not `motion.*` from `motion/react`; the app runs LazyMotion in strict mode and loads Motion's features in their own chunk). Simple hover and color changes stay CSS transitions.
+Animation: the map at the top of `src/shared/ui/motion.ts` says which shared piece moves what (lists: `MotionList`/`MotionItem`, popups: `Popover`/`bloomCls`, something opening or switching: `useMorph`, editor text: `flair.ts`). Tools use those, never their own animations. Import `m` and `AnimatePresence` from `motion.ts` (not `motion.*` from `motion/react`; the app runs LazyMotion in strict mode and loads Motion's features in their own chunk). Simple hover and color changes stay CSS transitions.
 
 The theme colors are CSS variables (`--color-caramel` etc., see `@theme` in `src/index.css`), so canvas code can read them too.
 

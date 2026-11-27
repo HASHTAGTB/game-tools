@@ -10,7 +10,8 @@ import { IconButton } from "@/shared/ui/icon-button";
 import { Switch } from "@/shared/ui/switch";
 import { CollapsiblePanel } from "@/shared/ui/collapsible";
 import { Section } from "@/shared/ui/section";
-import { AnimatePresence, fade, m, spring } from "@/shared/ui/motion";
+import { m, spring } from "@/shared/ui/motion";
+import { MotionItem, MotionList } from "@/shared/ui/motion-list";
 import { TagList } from "./TagList";
 import { useDropTarget } from "../lib/dnd";
 
@@ -46,24 +47,17 @@ export function TogglesCard({ toggles, db, activeKey, setActive, onChange }: Pro
       color={COLOR}
       actions={<IconButton icon={Plus} label="Add toggle" onClick={add} />}
     >
-      <div className="mt-3">
+      <div className="relative mt-3">
         {!toggles.length && (
           <button onClick={add} className="flex min-h-11 w-full items-center gap-2 rounded-lg border-2 border-dashed border-ink-3 px-3 text-left font-talk text-base text-taupe transition-colors hover:border-ink-line hover:text-bone">
             <Plus className="h-4 w-4" />Add a toggle for accessories, props or effects you switch on and off.
           </button>
         )}
-        <AnimatePresence initial={false}>
+        <MotionList>
           {toggles.map(t => {
             const isOpen = open.has(t.id);
             return (
-              <m.div
-                key={t.id}
-                layout="position"
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto", transition: { ...spring.smooth, opacity: fade.in } }}
-                exit={{ opacity: 0, height: 0, transition: { ...spring.smooth, opacity: fade.out } }}
-                className="group/row"
-              >
+              <MotionItem as="div" key={t.id} className="group/row">
                 <Collapsible.Root open={isOpen} onOpenChange={v => setOpenFor(t.id, v)} className="py-0.5">
                   <div className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-1 transition-colors hover:bg-ink-2" {...dropTarget({ kind: "toggle", id: t.id })}>
                     <Switch checked={t.on} onCheckedChange={v => edit(t.id, x => { x.on = v; })} aria-label={`${t.name} on or off`} />
@@ -100,10 +94,10 @@ export function TogglesCard({ toggles, db, activeKey, setActive, onChange }: Pro
                     />
                   </CollapsiblePanel>
                 </Collapsible.Root>
-              </m.div>
+              </MotionItem>
             );
           })}
-        </AnimatePresence>
+        </MotionList>
       </div>
     </Section>
   );

@@ -2,9 +2,9 @@ import { parseStmt, type Stmt } from "./statements";
 
 /** Reading and writing the Ren'Py in a scene file, one line at a time. Pure: no editor, no React.
  *
- *  A scene file is Markdown: YAML frontmatter, then one ```python block that holds the script (a `label`, then its
- *  lines indented under it). Text outside the block (notes, to-dos) is left alone. Only the statements the team uses
- *  are understood; anything else is `code` and stays editable as it is. */
+ *  A scene file is the game's own .rpy: a few `## key: value` lines at the top (lib/header.ts: title, chapter,
+ *  status), then the script (a `label`, then its lines indented under it). Only the statements the team uses are
+ *  understood; anything else is `code` and stays editable as it is. */
 
 export type Line =
   | { kind: "blank" }
@@ -24,35 +24,23 @@ export type Line =
 
 /** Where things are in the file, as line numbers (1-based, like CodeMirror's). */
 export type Layout = {
-  /** the frontmatter's `---` lines, or null */
+  /** the `## key: value` lines at the top, or null */
   front: { from: number; to: number } | null;
-  /** the ```python block: the fence lines (`close` null if it never closes) */
-  code: { open: number; close: number | null } | null;
+  /** the script's first line: everything from here to the end */
+  first: number;
 };
 
+/** A header line: `## title: Prolog`. */
+export const HEADER_LINE = /^##\s*([A-Za-z_][\w-]*)\s*:(.*)$/;
+
 export function layoutOf(lines: string[]): Layout {
-  let front: Layout["front"] = null;
-  let i = 0;
-  if (lines[0]?.trimEnd() === "---") {
-    for (let j = 1; j < lines.length; j++) {
-      if (lines[j].trimEnd() === "---") { front = { from: 1, to: j + 1 }; i = j + 1; break; }
-    }
-  }
-  let code: Layout["code"] = null;
-  for (; i < lines.length; i++) {
-    if (/^```\s*(python|renpy)?\s*$/i.test(lines[i]) && !code) {
-      code = { open: i + 1, close: null };
-      for (let j = i + 1; j < lines.length; j++) {
-        if (/^```\s*$/.test(lines[j])) { code.close = j + 1; break; }
-      }
-      break;
-    }
-  }
-  return { front, code };
+  let n = 0;
+  while (n < lines.length && HEADER_LINE.test(lines[n])) n++;
+  return { front: n ? { from: 1, to: n } : null, first: n + 1 };
 }
 
-/** Is line `n` (1-based) Ren'Py script? Without a code block, nothing is. */
-export const inScript = (l: Layout, n: number) => !!l.code && n > l.code.open && (l.code.close === null || n < l.code.close);
+/** Is line `n` (1-based) Ren'Py script (not the header)? */
+export const inScript = (l: Layout, n: number) => n >= l.first;
 
 // ---------------------------------------------------------------- strings
 
@@ -114,7 +102,7 @@ export const sayText = (who: string | null, raw = "", tail = "") => `${who ? who
 
 // ---------------------------------------------------------------- the whole script
 
-/** Every line of the file, parsed (outside the code block: null). */
+/** Every line of the file, parsed (the header: null). */
 export function parseScript(text: string) {
   const lines = text.split("\n");
   const layout = layoutOf(lines);
@@ -123,23 +111,15 @@ export function parseScript(text: string) {
 }
 export type Script = ReturnType<typeof parseScript>;
 
-/** The ```python block's lines, as a .rpy file. */
-export function exportRpy(text: string): string {
-  const { lines, layout } = parseScript(text);
-  if (!layout.code) return "";
-  const end = layout.code.close ?? lines.length + 1;
-  return lines.slice(layout.code.open, end - 1).join("\n").replace(/\s+$/, "") + "\n";
-}
-
 // ---------------------------------------------------------------- names
 
 const WEEKDAYS: Record<string, string> = { mo: "mon", di: "tue", mi: "wed", do: "thu", fr: "fri", sa: "sat", so: "sun" };
 
-/** The label a scene file's name calls for: `04.04.2025 Fr` → sc_2025_04_04_fri, otherwise scene_<the name>. */
-export function suggestLabel(fileName: string): string {
-  const m = /^(\d{2})\.(\d{2})\.(\d{4})\s*(\p{L}{2})?/u.exec(fileName.trim());
+/** The label a scene's title calls for: `04.04.2025 Fr` → sc_2025_04_04_fri, otherwise scene_<the name>. */
+export function suggestLabel(title: string): string {
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})\s*(\p{L}{2})?/u.exec(title.trim());
   if (m) return `sc_${m[3]}_${m[2]}_${m[1]}${m[4] && WEEKDAYS[m[4].toLowerCase()] ? "_" + WEEKDAYS[m[4].toLowerCase()] : ""}`;
-  const slug = fileName.toLowerCase()
+  const slug = title.toLowerCase()
     .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
     .normalize("NFKD").replace(/[̀-ͯ]/g, "")
     .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
@@ -147,16 +127,11 @@ export function suggestLabel(fileName: string): string {
 }
 
 /** A new scene file. */
-export const sceneTemplate = (name: string) => `---
-tags:
-  - scene
-status: idea
-renpy: basic
-owner:
-characters:
----
-\`\`\`python
-label ${suggestLabel(name)}:
+export const sceneTemplate = (title: string, label = suggestLabel(title)) =>
+  `## title: ${title}
+## status: idea
+## renpy: basic
+
+label ${label}:
     ""
-\`\`\`
 `;

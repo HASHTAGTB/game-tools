@@ -1,6 +1,7 @@
 import { EditorView } from "@codemirror/view";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useGame } from "@/shared/lib/game";
+import { cascade, spotlight } from "@/shared/ui/flair";
 import { allBoxes, buildTree, type Box, type Tree } from "../../lib/blocks";
 import { sceneCast } from "../../lib/cast";
 import type { Problem } from "../../lib/checks";
@@ -50,10 +51,11 @@ export function BoxView({ view }: { view: EditorView }) {
     const next: BoxCtx = {
       view, manifest, stages: playScript(script), cast, problems: byLine,
       base: label.replace(/^(sc|scene)_/, ""), labels: labelsIn(script), epoch, ids: view.state.field(lineIds),
+      structure: tree ? structureOf(tree, view.state.field(lineIds)) : "",
     };
     shared.current = prev ? Object.assign(prev, next) : next;
     return shared.current;
-  }, [view, script, manifest, problems]);
+  }, [view, script, manifest, problems, tree]);
 
   // after an edit that moved lines: the caret goes where the edit said
   useLayoutEffect(() => {
@@ -76,6 +78,14 @@ export function BoxView({ view }: { view: EditorView }) {
     useSceneUi.setState({ focus: null });
   }, [focus, script]);
 
+  // a scene just opened: its boxes fall into place one after another
+  const cascaded = useRef<EditorView | null>(null);
+  useLayoutEffect(() => {
+    if (!tree || !page.current || cascaded.current === view) return;
+    cascaded.current = view;
+    cascade(page.current.querySelectorAll(".bx-col > :not(.bx-list), .bx-col > .bx-list > *, .bx-col > section > :not(.bx-list), .bx-col > section > .bx-list > *"));
+  }, [tree, view]);
+
   // a problem clicked in the checks list: open the tab it's in, scroll there, point at it
   useEffect(() => {
     if (!reveal || !tree || !page.current) return;
@@ -88,9 +98,7 @@ export function BoxView({ view }: { view: EditorView }) {
     if (hit) {
       const target = hit.classList.contains("bx-box") ? hit : hit.querySelector<HTMLElement>(".bx-box") ?? hit;
       target.scrollIntoView({ block: "center", behavior: "smooth" });
-      target.removeAttribute("data-ping");
-      void target.offsetWidth;
-      target.setAttribute("data-ping", "");
+      spotlight(target, page.current, ".bx-box");
       hit.querySelector<HTMLElement>("[data-text]")?.focus({ preventScroll: true });
     }
     useSceneUi.setState({ reveal: null });
@@ -98,16 +106,13 @@ export function BoxView({ view }: { view: EditorView }) {
 
   if (!script || !tree || !ctx) return null;
   const fix = (p: Problem | undefined) => p && <FixButton view={view} problem={p} variant="primary" className="mt-4" />;
-  const after = script.layout.code?.close ? script.lines.slice(script.layout.code.close).filter(l => l.trim()).length : 0;
 
   return (
     <BoxContext.Provider value={ctx}>
       <div ref={page} className="bx-page h-full overflow-y-auto">
         <div className="bx-col">
-          {!script.layout.code ? (
-            <Empty text="This scene has no Ren'Py yet.">{fix(problems.find(p => p.fix?.at === "end"))}</Empty>
-          ) : !tree.scene ? (
-            <Empty text="The script has no label yet, so nothing can jump to it.">{fix(problems.find(p => p.fix?.at === "after"))}</Empty>
+          {!tree.scene ? (
+            <Empty text="The script has no label yet, so nothing can jump to it.">{fix(problems.find(p => p.fix?.at === "after" || p.fix?.at === "start"))}</Empty>
           ) : (
             <>
               {tree.pre.length > 0 && (
@@ -123,11 +128,6 @@ export function BoxView({ view }: { view: EditorView }) {
                   <List boxes={sec.boxes} start={sec.place} layout={{ ...sec.place, tight: false }} />
                 </section>
               ))}
-              {after > 0 && (
-                <p className="mt-10 font-talk text-sm text-taupe">
-                  Below the script, this file has {after} more line{after === 1 ? "" : "s"} of notes. They're in the source view (Ctrl+E).
-                </p>
-              )}
             </>
           )}
         </div>
@@ -144,6 +144,12 @@ function Empty({ text, children }: { text: string; children?: React.ReactNode })
       {children}
     </div>
   );
+}
+
+/** Every box of the scene, nested ones included, by its first line's name. */
+function structureOf(tree: Tree, ids: number[]) {
+  const lists = [tree.pre, ...(tree.scene ? [tree.scene.boxes] : []), ...tree.extra.map(s => s.boxes)];
+  return lists.map(l => [...allBoxes(l)].map(b => ids[b.from - 1]).join()).join("|");
 }
 
 /** The choice tabs to open to show line `n`: [choice line, option] pairs, outermost first. */

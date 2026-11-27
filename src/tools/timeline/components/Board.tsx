@@ -1,3 +1,4 @@
+import { spotlight } from "@/shared/ui/flair";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
 import { ChevronsLeftRight, ChevronsRightLeft, Plus, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
@@ -8,10 +9,11 @@ import { arrowsOf, drawOrder, stubsOf } from "../lib/arrows";
 import { allEvents, castOf, findEvent, insertColumn, moveEvent, randomId, removeColumn, swapIn, threadsOf } from "../lib/model";
 import type { StoryEvent } from "../lib/types";
 import { nav } from "../lib/nav";
+import { useGame } from "@/shared/lib/game";
 import { useTimeline, useTimelinePick } from "../state";
 import { BoardArrows } from "./BoardArrows";
 import { BoardCard } from "./BoardCard";
-import { useLanding, useZoomAnchor } from "./boardMotion";
+import { at, useLanding, useZoomAnchor } from "./boardMotion";
 
 export const LABEL_W = 132;
 const TITLE_H = 46;
@@ -44,7 +46,8 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
   /** Empty spot under the pointer, where a double-click would add an event. */
   const [slot, setSlot] = useState<{ key: string; x: number; y: number; w: number; h: number } | null>(null);
 
-  const cast = useMemo(() => castOf(doc.roster, doc.chapters), [doc.roster, doc.chapters]);
+  const game = useGame(g => g.manifest);
+  const cast = useMemo(() => castOf(doc.roster, doc.chapters), [doc.roster, doc.chapters, game]);
   const threads = useMemo(() => threadsOf(doc.threads, doc.chapters), [doc.threads, doc.chapters]);
   const charColor = useMemo(() => new Map(cast.map(c => [c.id, visible(c.color)])), [cast]);
   const threadColor = useMemo(() => new Map(threads.map(t => [t.id, visible(t.color)])), [threads]);
@@ -55,6 +58,9 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
 
   const animate = useZoomAnchor(scroller, zoom, colW, LABEL_W);
   const land = useLanding(track, lay);
+  /** the event just added here: its card drops in (cards that appear because of a filter or a load don't) */
+  const added = useRef<string | null>(null);
+  useEffect(() => { added.current = null; });
 
   useEffect(() => {
     Object.assign(nav, {
@@ -67,7 +73,9 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
         const c = lay.primary.get(id);
         const el = scroller.current;
         if (c && el) el.scrollTo({ left: Math.max(0, c.box.x - el.clientWidth / 3), top: Math.max(0, c.box.y - el.clientHeight / 3), behavior: "smooth" });
-        ping(track.current?.querySelector(`[data-event="${CSS.escape(id)}"][data-primary]`));
+        // the other cards dim for a moment so this one stands alone (Spotlight, as in the Scenes checks)
+        const card = track.current?.querySelector<HTMLElement>(`[data-event="${CSS.escape(id)}"][data-primary]`);
+        if (card && track.current) spotlight(card, track.current, "[data-event]");
       },
     });
   }, [lay]);
@@ -166,6 +174,7 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
       chars: filter.groupBy === "chars" ? (lane.id ? [lane.id] : []) : [...filter.chars],
       threads: filter.groupBy === "threads" ? (lane.id ? [lane.id] : []) : [...filter.threads],
     };
+    added.current = id;
     edit(doc => { doc.chapters.find(c => c.id === t.chapter.id)?.events.push(ev); });
     select({ kind: "event", id });
     setSlot(null);
@@ -235,12 +244,12 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
               if (pc.folded) return (
                 <button key={pc.chapter.id} onClick={() => folded.has(pc.chapter.id) ? toggleFolded(pc.chapter.id) : select({ kind: "chapter", id: pc.chapter.id })}
                   title={folded.has(pc.chapter.id) ? `${pc.chapter.name}: unfold` : `${pc.chapter.name}: nothing here matches`}
-                  className="board-move absolute inset-y-0 border-l border-ink-line/70 text-taupe hover:bg-ink-2 hover:text-paper" style={{ left: pc.x, width: pc.w }}>
+                  className="board-move absolute inset-y-0 border-l border-ink-line/70 text-taupe hover:bg-ink-2 hover:text-paper" style={{ ...at(pc.x), width: pc.w }}>
                   <span className="absolute left-1/2 top-2 origin-top-left translate-x-[7px] rotate-90 whitespace-nowrap font-sans text-sm">{pc.chapter.name}</span>
                 </button>
               );
               return (
-                <div key={pc.chapter.id} className="board-move group/chapter absolute inset-y-0 border-l border-ink-line/70" style={{ left: pc.x, width: pc.w }}>
+                <div key={pc.chapter.id} className="board-move group/chapter absolute inset-y-0 border-l border-ink-line/70" style={{ ...at(pc.x), width: pc.w }}>
                   <div className="flex items-start gap-1 overflow-hidden px-2 pt-1.5" style={{ height: TITLE_H }}>
                     <button data-chapter={pc.chapter.id} onClick={() => select({ kind: "chapter", id: pc.chapter.id })} className="min-w-0 flex-1 rounded-md text-left">
                       <span className={cn("block truncate font-sans text-base leading-tight", on ? "text-paper underline decoration-caramel decoration-2 underline-offset-4" : "text-bone hover:text-paper")}>{pc.chapter.name}</span>
@@ -269,7 +278,7 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
               const kind = filter.groupBy === "chars" ? "char" : "thread";
               const on = selection?.kind === kind && selection.id === l.id;
               return (
-                <div key={l.key} className="board-move board-enter absolute inset-x-0 border-b border-ink-line/40 px-3 pt-2.5" style={{ top: l.y, height: l.h }}>
+                <div key={l.key} className="board-move board-enter absolute inset-x-0 border-b border-ink-line/40 px-3 pt-2.5" style={{ ...at(0, l.y), height: l.h }}>
                   {l.id && filter.groupBy !== "none" ? (
                     <button onClick={() => select({ kind, id: l.id! })}
                       className={cn("max-w-full truncate border-b-2 text-left font-sans text-base leading-6", on ? "text-paper" : "text-bone hover:text-paper")}
@@ -284,13 +293,13 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
             onPointerMove={drag ? onMove : onHover} onPointerLeave={() => setSlot(null)}>
             {/* chapter and column rules */}
             {lay.chapters.map(pc => (
-              <div key={pc.chapter.id} className={cn("board-move pointer-events-none absolute inset-y-0 border-l border-ink-line/70", pc.folded && "bg-ink-2/60")} style={{ left: pc.x, width: pc.w }}>
+              <div key={pc.chapter.id} className={cn("board-move pointer-events-none absolute inset-y-0 border-l border-ink-line/70", pc.folded && "bg-ink-2/60")} style={{ ...at(pc.x), width: pc.w }}>
                 {!pc.folded && pc.columns.slice(1).filter(c => c.w > 0).map(c => (
-                  <div key={c.i} className="board-move absolute inset-y-0 border-l border-dashed border-ink-line/30" style={{ left: c.x - pc.x }} />
+                  <div key={c.i} className="board-move absolute inset-y-0 border-l border-dashed border-ink-line/30" style={at(c.x - pc.x)} />
                 ))}
               </div>
             ))}
-            {lay.lanes.map(l => <div key={l.key} className="board-move pointer-events-none absolute inset-x-0 border-b border-ink-line/40" style={{ top: l.y, height: l.h }} />)}
+            {lay.lanes.map(l => <div key={l.key} className="board-move pointer-events-none absolute inset-x-0 border-b border-ink-line/40" style={{ ...at(0, l.y), height: l.h }} />)}
             {slot && !drag && (
               <div key={slot.key} className="board-enter pointer-events-none absolute flex items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-md border border-dashed border-taupe/50 font-talk text-xs text-taupe transition-[opacity,scale] duration-150"
                 style={{ left: slot.x, top: slot.y, width: slot.w, height: slot.h }}>
@@ -304,7 +313,7 @@ export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | 
               connecting={drag?.kind === "connect" && pointer ? { from: drag.id, to: pointer } : null} />
 
             {lay.cards.map((c, ci) => (
-              <BoardCard key={copyKeys[ci]} card={c} color={colorOf(c)} groupBy={filter.groupBy} primary={lay.primary.get(c.event.id) === c}
+              <BoardCard key={copyKeys[ci]} card={c} added={c.event.id === added.current} color={colorOf(c)} groupBy={filter.groupBy} primary={lay.primary.get(c.event.id) === c}
                 selected={selected === c.event.id} focused={focus === c.event.id} lifted={moving?.id === c.event.id} problem={flagged.get(c.event.id)}
                 arrive={lay.primary.get(c.event.id) === c ? arriveAt.get(c.event.id) : undefined}
                 threadColor={threadColor} charColor={charColor} charName={nameOf}

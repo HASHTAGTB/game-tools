@@ -17,11 +17,11 @@ import { IconButton } from "@/shared/ui/icon-button";
 import { Popover, PopoverTitle } from "@/shared/ui/popover";
 import { HoverActions, Section } from "@/shared/ui/section";
 import { ConflictBar, StatusToasts } from "@/shared/ui/status";
-import { m, spring } from "@/shared/ui/motion";
+import { MotionFollow, MotionItem, MotionList } from "@/shared/ui/motion-list";
 
 export default function PromptBuilder() {
   const s = usePromptBuilder();
-  const { chars, curId, db, loc, error, notice, drag, update, setActiveKey, setError, setNotice } = s;
+  const { chars, loaded, curId, db, loc, error, notice, drag, update, setActiveKey, setError, setNotice } = s;
   const cur = currentChar(s);
   const target = targetKey(s);
 
@@ -43,7 +43,7 @@ export default function PromptBuilder() {
     <>
       <div className="grid h-screen grid-cols-[240px_minmax(0,1fr)_280px] bg-ink text-paper lg:grid-cols-[240px_minmax(0,1fr)_340px] xl:grid-cols-[280px_minmax(0,1fr)_360px] 2xl:grid-cols-[280px_minmax(0,1fr)_400px]">
         <Sidebar
-          chars={chars} current={curId} onSelect={s.select} onCreate={n => s.create(n)} loc={loc} onImport={s.importChars} onError={setError}
+          chars={chars} loaded={loaded} current={curId} onSelect={s.select} onCreate={n => s.create(n)} loc={loc} onImport={s.importChars} onError={setError}
           onDirChanged={s.reload} onFlush={s.flush} onRevert={s.revert}
           onReload={() => s.reload(loc?.kind === "browser" ? "Reloaded" : loc?.kind === "github" ? "Reloaded from GitHub" : "Reloaded from disk")}
         />
@@ -55,7 +55,7 @@ export default function PromptBuilder() {
             <div className="grid flex-1 place-items-center font-sans text-xl font-light text-bone">Name a character on the left to start.</div>
           ) : (
             <>
-              <div className="min-h-0 flex-1 space-y-10 overflow-y-auto px-8 pb-6 pt-6">
+              <div className="relative min-h-0 flex-1 space-y-10 overflow-y-auto px-8 pb-6 pt-6">
                 <header className="group/section flex items-end gap-3">
                   <input
                     value={cur.name}
@@ -79,9 +79,8 @@ export default function PromptBuilder() {
                   </div>
                 </Section>
 
-                {cur.categories.map((cat, i) => (
-                  // layout: reordering a category slides it into its new place
-                  <m.div key={cat.id} layout="position" transition={spring.smooth}>
+                <MotionList reset={cur.id}>{cur.categories.map((cat, i) => (
+                  <MotionItem as="div" key={cat.id}>
                   <CategoryCard
                     cat={cat}
                     color={i + 1}
@@ -98,14 +97,15 @@ export default function PromptBuilder() {
                       [c.categories[a], c.categories[b]] = [c.categories[b], c.categories[a]];
                     })}
                   />
-                  </m.div>
-                ))}
-                <m.div layout="position" className="mt-5! flex items-center gap-2">
+                  </MotionItem>
+                ))}</MotionList>
+                <MotionFollow className="mt-5! space-y-10">
+                <div className="flex items-center gap-2">
                   <Button variant="default" size="sm" onClick={() => update(c => {
                     c.categories.push({ id: uniqueId("category", c.categories.map(x => x.id)), name: "New category", presets: [], selected: null });
                   })}><Plus className="h-4 w-4" />Add category</Button>
                   <span className="font-talk text-sm text-taupe">A pick-one group, like Hairstyle or Location.</span>
-                </m.div>
+                </div>
 
                 <TogglesCard toggles={cur.toggles} db={db} activeKey={target} setActive={setActiveKey}
                   onChange={fn => update(c => fn(c.toggles))} />
@@ -120,6 +120,7 @@ export default function PromptBuilder() {
                     className="mt-3 field-sizing-content min-h-16 w-full resize-none rounded-lg border-2 border-ink-3 bg-ink-2 px-3 py-2 font-talk text-base text-bone transition-colors placeholder:text-taupe hover:border-ink-line focus:border-caramel focus:outline-hidden"
                   />
                 </Section>
+                </MotionFollow>
               </div>
               <PromptPanel ch={cur} onNegative={v => update(c => { c.negative = v; })} />
             </>

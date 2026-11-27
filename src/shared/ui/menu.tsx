@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { cn } from "@/shared/lib/utils";
 import { m, spring } from "./motion";
+import { MotionFollow, MotionItem } from "./motion-list";
 
 /* Lists laid out like the game's main menu: items beside a thin vertical rule, and a short bar on the rule marks the
    selected one. Every sidebar list and every result list in a popup uses this, so "selected" looks the same everywhere. */
@@ -46,11 +47,14 @@ type ItemProps = {
   /** Icon buttons on the right; they show on hover. */
   actions?: ReactNode;
   title?: string;
+  /** Passed on to the row, for a MotionList. */
+  ref?: React.Ref<HTMLLIElement>;
 };
 
-export function MenuItem({ label, sub, active, color, showIdle, layoutId, faded, editing, toggle, size = "lg", onClick, actions, title }: ItemProps) {
+/** A row of the menu. In a MotionList it drops in, crumples away and slides to its place like any list item. */
+export function MenuItem({ label, sub, active, color, showIdle, layoutId, faded, editing, toggle, size = "lg", onClick, actions, title, ref }: ItemProps) {
   return (
-    <li className="group/item relative flex items-center">
+    <MotionItem ref={ref} className="group/item relative flex items-center">
       {(active || showIdle) && <MenuMarker color={color} layoutId={active ? layoutId : undefined} idle={!active} />}
       <button onClick={onClick} title={title} aria-pressed={toggle ? active : undefined} aria-current={!toggle && active ? true : undefined}
         className={cn("block min-w-0 flex-1 py-1 pl-4 text-left font-sans decoration-2 underline-offset-[6px] transition-colors",
@@ -65,16 +69,17 @@ export function MenuItem({ label, sub, active, color, showIdle, layoutId, faded,
           {actions}
         </span>
       )}
-    </li>
+    </MotionItem>
   );
 }
 
-/** A titled group of menu items (a sidebar block). `actions` sit next to the title and are always visible. */
+/** A titled group of menu items (a sidebar block). `actions` sit next to the title and are always visible. It slides
+ *  along when a list above it grows or shrinks. */
 export function MenuGroup({ title, hint, actions, children, className }: {
   title?: ReactNode; hint?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string;
 }) {
   return (
-    <div className={className}>
+    <MotionFollow className={className}>
       {(title || actions) && (
         <div className="mb-1.5 flex min-h-7 items-center gap-2">
           <span className="min-w-0 flex-1 truncate font-sans text-base text-taupe">{title}</span>
@@ -83,6 +88,6 @@ export function MenuGroup({ title, hint, actions, children, className }: {
         </div>
       )}
       {children}
-    </div>
+    </MotionFollow>
   );
 }

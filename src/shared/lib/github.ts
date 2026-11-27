@@ -214,6 +214,48 @@ const shaTime = (sha: string) => parseInt(sha.slice(0, 12), 16);
 /** The repo's version a change to `path` starts from: the one its pending change started from, else the current one. */
 const baseOf = (ps: Map<string, Pending>, t: Tree, path: string) => (ps.has(path) ? ps.get(path)!.base : t.files.get(path) ?? null);
 
+// ---------------------------------------------------------------- binary files and Git LFS
+
+/** Bytes read so far, by blob sha (a blob never changes, so neither does what it resolves to). */
+const bytesBySha = new Map<string, Promise<Blob | null>>();
+
+/** A blob's raw bytes (images too: the JSON form would be base64 text). */
+async function rawBlob(sha: string): Promise<Blob | null> {
+  const c = await cfg();
+  const res = await fetch(`${API}${repoPath(c)}/git/blobs/${sha}`, {
+    headers: { Accept: "application/vnd.github.raw", "X-GitHub-Api-Version": "2022-11-28", Authorization: `Bearer ${c.token}` },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new GitHubError(res.status, `GitHub: ${res.statusText}`);
+  return res.blob();
+}
+
+/** Git LFS pointers are tiny text files: "version https://git-lfs.github.com/spec/v1\noid sha256:…\nsize …". */
+const LFS_POINTER = /^version https:\/\/git-lfs\.github\.com\/spec\/v1\n(?:.*\n)*?oid sha256:([0-9a-f]{64})\n/;
+const isLfsPointer = (b: Blob) => b.size < 1024 && b.size > 40;
+
+/** Downloaded LFS files, kept by content hash across reloads (each download counts against the repo's monthly LFS
+ *  bandwidth). The Cache API needs a secure context; without one every page load downloads again. */
+const LFS_CACHE = "game-tools-lfs";
+const lfsKey = (oid: string) => `https://lfs.invalid/${oid}`;
+
+/** The file a pointer stands for. GitHub's LFS media host lets the browser in with the token (the LFS batch API
+ *  itself refuses browser requests that carry one). Null when the pointer isn't one, or the host says no. */
+async function lfsBytes(pointer: string, path: string, commit: string): Promise<Blob | null> {
+  const oid = LFS_POINTER.exec(pointer)?.[1];
+  if (!oid) return new Blob([pointer]);     // a small file that merely isn't a pointer
+  const cache = typeof caches === "undefined" ? null : await caches.open(LFS_CACHE).catch(() => null);
+  const hit = await cache?.match(lfsKey(oid));
+  if (hit) return hit.blob();
+  const c = await cfg();
+  const url = `https://media.githubusercontent.com/media/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/${commit}/${path.split("/").map(encodeURIComponent).join("/")}`;
+  const res = await fetch(url, { headers: { Authorization: `token ${c.token}` } }).catch(() => null);
+  if (!res?.ok) return null;
+  const blob = await res.blob();
+  await cache?.put(lfsKey(oid), new Response(blob, { headers: { "Content-Type": blob.type } })).catch(() => {});
+  return blob;
+}
+
 // ---------------------------------------------------------------- the Store
 
 export const github = {
@@ -223,6 +265,23 @@ export const github = {
     if (p) return p.text === null ? null : { text: p.text, mtime: p.mtime };
     const sha = (await currentTree()).files.get(path);
     return sha ? { text: await blob(sha), mtime: shaTime(sha) } : null;
+  },
+
+  /** A file's bytes. Media in the game repo is in Git LFS, which the Git Data API only shows as a pointer; then the
+   *  real file comes from GitHub's LFS media host (see lfsBytes). Pending text changes are returned as they are. */
+  async readBytes(path: string): Promise<Blob | null> {
+    const p = (await pend()).get(path);
+    if (p && !p.sha) return p.text === null ? null : new Blob([p.text]);
+    const t = await currentTree();
+    const sha = p?.sha ?? t.files.get(path);
+    if (!sha) return null;
+    let b = bytesBySha.get(sha);
+    if (!b) {
+      b = rawBlob(sha).then(raw => (raw && isLfsPointer(raw) ? raw.text().then(ptr => lfsBytes(ptr, path, t.head)) : raw));
+      b.catch(() => bytesBySha.delete(sha));
+      bytesBySha.set(sha, b);
+    }
+    return b;
   },
 
   async write(path: string, text: string): Promise<number> {
