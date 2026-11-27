@@ -7,6 +7,17 @@ export function serialQueue() {
   return (fn: () => Promise<void>) => (queue = queue.then(fn, fn));
 }
 
+/** Runs at most `n` async jobs at once; the rest wait their turn, in order. */
+export function limiter(n: number) {
+  let running = 0;
+  const waiting: (() => void)[] = [];
+  return async <T>(fn: () => Promise<T>): Promise<T> => {
+    if (running >= n) await new Promise<void>(go => waiting.push(go));
+    running++;
+    try { return await fn(); } finally { running--; waiting.shift()?.(); }
+  };
+}
+
 /** A `setNotice` for a store: the notice goes away after 5 s. */
 export function noticeSetter(set: (s: { notice: string | null }) => void) {
   let timer: ReturnType<typeof setTimeout> | undefined;

@@ -15,7 +15,7 @@ import { tabKeys } from "../lib/codeEditor";
 import { checkInputField, lineIds, manifestField, scriptField, setCheckInput, setManifest } from "../lib/editorState";
 import { toDiagnostic } from "../lib/fixes";
 import { sourceView } from "../lib/sourceView";
-import { useSceneUi } from "../lib/ui";
+import { editorClosed, sceneLoaded, useSceneUi } from "../lib/ui";
 import { swapFromBoxes, swapFromSource, type Swap } from "../lib/viewSwap";
 import { useScenes } from "../state";
 import { BoxView } from "./boxes/BoxView";
@@ -174,10 +174,10 @@ export function Editor({ mode, labels, title, history }: Props) {
       const s = v.state;
       // moved or renamed: still the scene that's open, so the box view stays where it is (no title card, no rebuild)
       if (followed) return useSceneUi.setState({ view: v, script: s.field(scriptField), line: s.doc.lineAt(s.selection.main.head).number });
-      useSceneUi.setState(u => ({ view: v, opened: useScenes.getState().path, loaded: u.loaded + 1, script: s.field(scriptField), line: s.doc.lineAt(s.selection.main.head).number, menu: null, focus: null, openCard: null, tabs: {}, rawIds: new Set() }));
+      sceneLoaded(v, s.field(scriptField), s.doc.lineAt(s.selection.main.head).number, useScenes.getState().path);
       if (modeNow.current === "source") v.focus();
     },
-    onClose: () => { showLater.cancel(); useSceneUi.setState({ view: null, script: null, menu: null, focus: null, openCard: null, problems: [] }); },
+    onClose: () => { showLater.cancel(); editorClosed(); },
   });
   useEffect(() => {
     window.addEventListener("keydown", flushBeforeActing, true);

@@ -10,7 +10,8 @@ import { removeEvent } from "../lib/actions";
 import { visible } from "../lib/colors";
 import { allEvents, castOf, deleteEvent, findEvent, moveEvent, orderBetween, threadsOf } from "../lib/model";
 import { nav } from "../lib/nav";
-import { useTimeline, useTimelinePick } from "../state";
+import { useTimeline } from "../state";
+import { usePick } from "@/shared/lib/usePick";
 import { AutoText, ColorInput, Field, TextInput } from "@/shared/ui/field";
 import { Select } from "@/shared/ui/select";
 import { ChipPicker } from "./fields";
@@ -41,7 +42,7 @@ function Close() {
 }
 
 function EventPanel({ id }: { id: string }) {
-  const { doc, edit, select } = useTimelinePick("doc", "edit", "select");
+  const { doc, edit, select } = usePick(useTimeline, "doc", "edit", "select");
   const f = findEvent(doc.chapters, id);
   if (!f) return null;
   const { event, chapter } = f;
@@ -118,7 +119,7 @@ function EventPanel({ id }: { id: string }) {
 }
 
 function ChapterPanel({ id }: { id: string }) {
-  const { doc, edit, select, folded, toggleFolded } = useTimelinePick("doc", "edit", "select", "folded", "toggleFolded");
+  const { doc, edit, select, folded, toggleFolded } = usePick(useTimeline, "doc", "edit", "select", "folded", "toggleFolded");
   const i = doc.chapters.findIndex(c => c.id === id);
   const ch = doc.chapters[i];
   if (!ch) return null;
@@ -157,7 +158,7 @@ function ChapterPanel({ id }: { id: string }) {
 }
 
 function ThreadPanel({ id }: { id: string }) {
-  const { doc, edit, select, setFilter } = useTimelinePick("doc", "edit", "select", "setFilter");
+  const { doc, edit, select, setFilter } = usePick(useTimeline, "doc", "edit", "select", "setFilter");
   const t = doc.threads.find(x => x.id === id);
   const count = allEvents(doc.chapters).filter(x => x.event.threads.includes(id)).length;
   const strip = () => edit(d => { for (const { event } of allEvents(d.chapters)) event.threads = event.threads.filter(x => x !== id); d.threads = d.threads.filter(x => x.id !== id); });
@@ -192,7 +193,7 @@ function ThreadPanel({ id }: { id: string }) {
 }
 
 function CharPanel({ id }: { id: string }) {
-  const { doc, edit, select, setFilter } = useTimelinePick("doc", "edit", "select", "setFilter");
+  const { doc, edit, select, setFilter } = usePick(useTimeline, "doc", "edit", "select", "setFilter");
   const c = castOf(doc.roster, []).find(x => x.id === id);
   const count = allEvents(doc.chapters).filter(x => x.event.chars.includes(id)).length;
   if (!c) return (
@@ -233,7 +234,7 @@ function CharPanel({ id }: { id: string }) {
 }
 
 function ViewPanel({ id }: { id: string }) {
-  const { doc, edit, select, filter, viewId, setFilter } = useTimelinePick("doc", "edit", "select", "filter", "viewId", "setFilter");
+  const { doc, edit, select, filter, viewId, setFilter } = usePick(useTimeline, "doc", "edit", "select", "filter", "viewId", "setFilter");
   const v = doc.views.find(x => x.id === id);
   if (!v) return null;
   const cast = castOf(doc.roster, doc.chapters), threads = threadsOf(doc.threads, doc.chapters);

@@ -1,4 +1,5 @@
-import { parseStmt, type Stmt } from "./statements";
+import { asciiIdent } from "@/shared/lib/utils";
+import { parseStmt, STATEMENT_WORDS, type Stmt } from "./statements";
 
 /** Reading and writing the Ren'Py in a scene file, one line at a time. Pure: no editor, no React.
  *
@@ -58,6 +59,9 @@ function stringEnd(s: string, at: number): number {
 export const indentOf = (s: string) => s.length - s.trimStart().length;
 export const pad = (n: number) => " ".repeat(n);
 
+/** Words a say line can't start with: the statements the editor knows, and Ren'Py's other block and line keywords. */
+const KEYWORDS = new Set([...STATEMENT_WORDS, "label", "if", "elif", "while", "python", "init", "define", "default", "voice"]);
+
 export function parseLine(text: string): Line {
   const t = text.trim();
   if (!t) return { kind: "blank" };
@@ -68,7 +72,7 @@ export function parseLine(text: string): Line {
 
   // `who "text" tail`, `"text" tail` or a choice `"text":`
   m = /^(?:([A-Za-z_]\w*)\s+)?"/.exec(t);
-  if (m && !["scene", "show", "hide", "play", "jump", "call", "with", "menu", "label", "if", "elif", "while", "python", "init", "define", "default", "voice", "react"].includes(m[1] ?? "")) {
+  if (m && !KEYWORDS.has(m[1] ?? "")) {
     const q = indent + m[0].length - 1;
     const end = stringEnd(text, q);
     if (end < 0) return { kind: "bad", indent, reason: "This line's text has no closing quote." };
@@ -111,11 +115,7 @@ const WEEKDAYS: Record<string, string> = { mo: "mon", di: "tue", mi: "wed", do: 
 export function suggestLabel(title: string): string {
   const m = /^(\d{2})\.(\d{2})\.(\d{4})\s*(\p{L}{2})?/u.exec(title.trim());
   if (m) return `sc_${m[3]}_${m[2]}_${m[1]}${m[4] && WEEKDAYS[m[4].toLowerCase()] ? "_" + WEEKDAYS[m[4].toLowerCase()] : ""}`;
-  const slug = title.toLowerCase()
-    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
-    .normalize("NFKD").replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-  return "scene_" + (slug || "untitled");
+  return "scene_" + (asciiIdent(title) || "untitled");
 }
 
 /** A new scene file. */

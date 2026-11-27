@@ -5,8 +5,8 @@ import { IconButton } from "@/shared/ui/icon-button";
 import { look } from "../../lib/look";
 import { insertAt, insertReact, setChatHead, setMsgArgs, setStmt } from "../../lib/ops";
 import {
-  blockAt, chatCode, chatKey, dateWords, membersOf, msgAt, newId, parseArgs, priorAt, refFor, resolveRef, snippet,
-  type ChatHead, type ChatMsg, type ChatTarget,
+  blockAt, chatCode, chatKey, chatTitle, dateWords, membersOf, msgAt, newId, parseArgs, priorAt, refFor, resolveRef, snippet,
+  type ChatHead, type ChatMsg, type ChatTarget, type DmTarget,
 } from "../../lib/phone";
 import { parseLine } from "../../lib/script";
 import { formatStmt } from "../../lib/statements";
@@ -246,7 +246,7 @@ function ChatMenu({ line }: { line: number }) {
   const others = [...new Set(texting)].filter(id => id !== pov);
   const known = c.manifest?.characters ?? [];
   const someoneId = known.find(x => x.id === someone.trim() || x.name.toLowerCase() === someone.trim().toLowerCase())?.id;
-  const dms: ChatTarget[] = others.map(id => ({ dm: [id, pov] as [string, string] }));
+  const dms: DmTarget[] = others.map(id => ({ dm: [id, pov] }));
   if ("dm" in head.target && !dms.some(d => chatKey(d) === chatKey(head.target))) dms.push(head.target);
   const now = chatKey(head.target);
   const row = (t: ChatTarget, label: string, color: string, sub?: string) => (
@@ -263,7 +263,7 @@ function ChatMenu({ line }: { line: number }) {
       {(c.manifest?.chats?.length ?? 0) > 0 && <Group>Groups</Group>}
       {c.manifest?.chats?.map(g => row({ group: g.id }, g.title, "var(--color-caramel)", g.members.map(id => look(c.manifest, id).name).join(", ")))}
       <Group>Two people</Group>
-      {dms.map(d => row(d, (d as { dm: string[] }).dm.map(id => look(c.manifest, id).name).join(" & "), look(c.manifest, (d as { dm: string[] }).dm.find(id => id !== pov) ?? pov).legible))}
+      {dms.map(d => row(d, chatTitle(c.manifest, d), look(c.manifest, d.dm.find(id => id !== pov) ?? pov).legible))}
       <input value={someone} onChange={e => setSomeone(e.target.value)} list="chat-people" placeholder="Someone else…" aria-label="Someone else"
         onKeyDown={e => { if (e.key === "Enter" && someoneId && someoneId !== pov) { e.preventDefault(); set({ dm: [someoneId, pov] }); } }}
         className="mt-1.5 w-full border-b-2 border-ink-line bg-transparent px-1 pb-1.5 font-talk text-base text-paper placeholder:text-taupe focus:border-caramel focus:outline-hidden" />

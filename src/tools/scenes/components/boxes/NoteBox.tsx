@@ -9,7 +9,8 @@ import { fileHistoryKey, fileHistoryKeys, newline, rawColours, rawIndent, rawThe
 import { rawText, removeBox, setNote, setRaw } from "../../lib/ops";
 import { focusLine, isRaw, markRaw } from "../../lib/ui";
 import { stepToText } from "../../lib/richtext";
-import { follow, problemsOf, useBox, type ListLayout } from "./context";
+import { follow, useBox, type ListLayout } from "./context";
+import { problemsOf } from "./kinds";
 import { Acts, addAfter, Problems, useMoves } from "./List";
 
 type Props<K extends Box["kind"]> = { box: Extract<Box, { kind: K }>; prev: Box | null; next: Box | null; layout: ListLayout };

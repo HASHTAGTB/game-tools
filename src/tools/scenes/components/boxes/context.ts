@@ -1,7 +1,7 @@
 import type { EditorView } from "@codemirror/view";
 import { createContext, useContext, useState } from "react";
 import type { Manifest } from "@/shared/lib/game";
-import type { Box, Place } from "../../lib/blocks";
+import type { Place } from "../../lib/blocks";
 import type { Problem } from "../../lib/checks";
 import { blockAt, msgAt, priorAt, reactsOn, resolveRef, snippet, type PhoneIndex } from "../../lib/phone";
 import { EMPTY_STAGE, type Stage } from "../../lib/stage";
@@ -82,12 +82,6 @@ export const phoneKey = (c: BoxCtx, line: number, ref: string | null) => {
   return l ? JSON.stringify([c.phone.known, l.block.head, l.target && [l.target.who, snippet(l.target), l.target.line, l.target.scene?.title, l.target.photos[0]], l.reacts]) : "";
 };
 
-/** The problems on a box's lines (for nested boxes: only the lines the box itself draws). */
-export function problemsOf(c: BoxCtx, b: Box): Problem[] {
-  const lines = b.kind === "menu" ? [b.from, ...b.options.map(o => o.line)] : b.kind === "chat" ? [b.from] : range(b.from, b.to);
-  return lines.flatMap(n => c.problems.get(n) ?? []);
-}
-const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
 
 /** Tell the source view's cursor (and so the preview and header) which line the box in focus is on. */
 export function follow(view: EditorView, line: number) {

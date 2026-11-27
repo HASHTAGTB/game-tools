@@ -1,5 +1,6 @@
 import { EditorView } from "@codemirror/view";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useShallow } from "zustand/shallow";
 import { useGame } from "@/shared/lib/game";
 import { EmptyState } from "@/shared/ui/tool-page";
 import { cascade, spotlight, unfold } from "@/shared/ui/flair";
@@ -36,9 +37,10 @@ export function BoxView({ view, swap, history }: { view: EditorView; swap: Swap 
   const opened = useSceneUi(s => s.opened);
   const loaded = useSceneUi(s => s.loaded);
   const manifest = useGame(s => s.manifest);
-  const info = useScenes(s => { const i = readInfo(s.text); return `${i.title}\n${i.chapter}`; });
+  // only the header's title and chapter: not on every keystroke
+  const { title, chapter } = useScenes(useShallow(s => { const i = readInfo(s.text); return { title: i.title, chapter: i.chapter }; }));
   const fileName = useScenes(s => (s.path ? baseName(s.path) : ""));
-  const chapterName = useChapters(c => { const id = info.split("\n")[1]; return id ? c.list?.find(x => x.id === id)?.name ?? id : ""; });
+  const chapterName = useChapters(c => (chapter ? c.list?.find(x => x.id === chapter)?.name ?? chapter : ""));
   const page = useRef<HTMLDivElement>(null);
 
   const tree = useMemo(() => {
@@ -172,7 +174,7 @@ export function BoxView({ view, swap, history }: { view: EditorView; swap: Swap 
       <div ref={page} className="bx-page h-full overflow-y-auto">
         <div className="bx-col">
           {building ? null : !tree.scene ? (
-            <EmptyState className="flex-none py-24" title="The script has no label yet, so nothing can jump to it.">{fix(problems.find(p => p.fix?.at === "after" || p.fix?.at === "start"))}</EmptyState>
+            <EmptyState className="flex-none py-24" title="The script has no label yet, so nothing can jump to it.">{fix(problems.find(p => p.fix?.kind === "after" || p.fix?.kind === "start"))}</EmptyState>
           ) : (
             <>
               {tree.pre.length > 0 && (
@@ -192,7 +194,7 @@ export function BoxView({ view, swap, history }: { view: EditorView; swap: Swap 
           )}
         </div>
       </div>
-      {card && <TitleCard out={card.out} title={info.split("\n")[0] || fileName} chapter={chapterName}
+      {card && <TitleCard out={card.out} title={title || fileName} chapter={chapterName}
         first={tree.scene ? firstLine(tree.scene.boxes) : ""} />}
       </div>
       <BoxMenus />

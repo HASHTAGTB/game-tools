@@ -20,7 +20,8 @@ import { runChecks, type Check } from "./lib/checks";
 import { allEvents, castOf, isFiltered, threadsOf } from "./lib/model";
 import { nav, reveal } from "./lib/nav";
 import type { GroupBy } from "./lib/types";
-import { useTimeline, useTimelinePick } from "./state";
+import { useTimeline } from "./state";
+import { usePick } from "@/shared/lib/usePick";
 import { Board } from "./components/Board";
 import { ChecksButton } from "./components/Checks";
 import { FindButton } from "./components/Find";
@@ -30,7 +31,7 @@ import { UNKNOWN_COLOR } from "@/shared/lib/colors";
 import { useGame } from "@/shared/lib/game";
 
 export default function Timeline() {
-  const s = useTimelinePick("loc", "loaded", "doc", "selection", "error", "notice", "conflicts", "zoom", "canUndo", "canRedo", "filter", "folded",
+  const s = usePick(useTimeline, "loc", "loaded", "doc", "selection", "error", "notice", "conflicts", "zoom", "canUndo", "canRedo", "filter", "folded",
     "undo", "redo", "setZoom", "setFilter", "toggleFolded", "resolveConflict", "setError", "setNotice", "reload", "flush", "revert");
   const { loc, loaded, doc, conflicts, zoom, canUndo, canRedo } = s;
 
@@ -122,7 +123,7 @@ const GROUPS: { id: GroupBy; label: string }[] = [
 
 /** Lanes by character, by thread, or a single one. */
 function GroupSwitch() {
-  const { filter, setFilter } = useTimelinePick("filter", "setFilter");
+  const { filter, setFilter } = usePick(useTimeline, "filter", "setFilter");
   return (
     <div role="radiogroup" aria-label="Lanes" className="flex items-center gap-0.5 rounded-md bg-ink-2 p-0.5">
       <span className="hidden px-1.5 font-sans text-sm text-taupe @4xl:inline">Lanes</span>
@@ -142,7 +143,7 @@ function GroupSwitch() {
 
 /** Shown while focusing: what's picked, dim or hide the rest, save as a view. */
 function FocusBar() {
-  const { doc, filter, viewId, setFilter, edit } = useTimelinePick("doc", "filter", "viewId", "setFilter", "edit");
+  const { doc, filter, viewId, setFilter, edit } = usePick(useTimeline, "doc", "filter", "viewId", "setFilter", "edit");
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   // while the bar closes, keep showing what was focused instead of an empty bar

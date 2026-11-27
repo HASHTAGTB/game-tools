@@ -1,7 +1,9 @@
-import { GAME_DIR } from "@/shared/vault/places";
-import { assetUrl } from "./assetUrl";
-import { joinPath, readText, walkFiles, writeText } from "./workspace";
-import type { GameCharacter, Manifest } from "./game";
+import { MANIFEST_VERSION, type ChatGroup, type GameCharacter, type Manifest } from "./game";
+import { extOf, joinPath, stem } from "./paths";
+import { loadPatterns } from "./patterns";
+import { GAME_DIR } from "./places";
+import { asciiIdent, unixLines } from "./utils";
+import { readText, walkFiles, writeText } from "./workspace";
 
 /** Reads what the game defines straight from the Ren'Py project in the vault (`renpy/game`), on whichever backend the
  *  tools use:
@@ -39,12 +41,10 @@ const BUILTIN_TRANSITIONS = [
   "pushright", "pushleft", "pushup", "pushdown", "irisin", "irisout",
 ];
 
-const ext = (name: string) => { const i = name.lastIndexOf("."); return i > 0 ? name.slice(i).toLowerCase() : ""; };
-const stem = (name: string) => { const i = name.lastIndexOf("."); return i > 0 ? name.slice(0, i) : name; };
-const baseName = (path: string) => path.split("/").pop()!;
+const isImage = (f: string) => IMAGE_EXT.has(extOf(f));
 
 /** Text of a game file with Unix line endings (Windows checkouts have \r\n); "" if it doesn't exist. */
-const gameText = async (rel: string) => ((await readText(joinPath(GAME_DIR, rel)).catch(() => null)) ?? "").replace(/\r\n?/g, "\n");
+const gameText = async (rel: string) => unixLines((await readText(joinPath(GAME_DIR, rel)).catch(() => null)) ?? "");
 
 /** Every file under `dir`, as paths relative to it; `skip`: folders (relative to it) not to look into. */
 async function walk(dir: string, skip?: Set<string>): Promise<string[]> {
@@ -73,7 +73,7 @@ export function parseCharacters(charactersRpy: string, sayRpy: string): GameChar
     const asset = m[3];
     boxes.set(m[1], {
       box: m[2].toLowerCase(),
-      pattern: asset ? stem(baseName(asset)).replace(/_icon$/, "") : null,
+      pattern: asset ? stem(asset).replace(/_icon$/, "") : null,
       ...(asset && { patternAsset: asset }),
     });
   }
@@ -120,23 +120,23 @@ export const parseLabels = (rpy: string) =>
 
 /** Media file names (paths relative to assets/) → sprites, backgrounds, music, and the file of each image name. */
 export function parseMedia(files: string[]) {
-  const image = files.filter(f => f.startsWith("images/") && IMAGE_EXT.has(ext(f)) && !stem(baseName(f)).includes("."));
+  const image = files.filter(f => f.startsWith("images/") && isImage(f) && !stem(f).includes("."));
   const sprites: Manifest["sprites"] = {};
-  const names = [...new Set(image.filter(f => f.split("/").includes("char")).map(f => stem(baseName(f)).toLowerCase().replace(/_/g, " ")))].sort();
+  const names = [...new Set(image.filter(f => f.split("/").includes("char")).map(f => stem(f).toLowerCase().replace(/_/g, " ")))].sort();
   for (const n of names) {
     const [tag, outfit, ...expr] = n.split(/\s+/);
     if (!expr.length) continue;
     ((sprites[tag] ??= {})[outfit] ??= []).push(expr.join(" "));
   }
-  const backgrounds = [...new Set(["black", ...image.filter(f => !f.split("/").includes("char")).map(f => stem(baseName(f)).toLowerCase())])].sort();
+  const backgrounds = [...new Set(["black", ...image.filter(f => !f.split("/").includes("char")).map(f => stem(f).toLowerCase())])].sort();
   // the name Ren'Py gives each image: sprites with spaces ("rin casual happy"), backgrounds as the file is named
   const imageFiles: Record<string, string> = {};
   for (const f of image) {
-    const n = stem(baseName(f)).toLowerCase();
+    const n = stem(f).toLowerCase();
     imageFiles[f.split("/").includes("char") ? n.replace(/_/g, " ") : n] ??= f;
   }
-  const music = [...new Set(files.filter(f => f.startsWith("audio/") && AUDIO_EXT.has(ext(f)) && !f.split("/").includes("not_used"))
-    .map(f => stem(baseName(f))))].sort();
+  const music = [...new Set(files.filter(f => f.startsWith("audio/") && AUDIO_EXT.has(extOf(f)) && !f.split("/").includes("not_used"))
+    .map(f => stem(f)))].sort();
   return { sprites, backgrounds, music, imageFiles };
 }
 
@@ -149,21 +149,21 @@ export async function readGame(): Promise<Manifest | null> {
   if (!charactersRpy) return null;
   const labels = new Set((await Promise.all(code.map(gameText))).flatMap(parseLabels));
   const characters = parseCharacters(charactersRpy, sayRpy);
-  await loadPatterns(characters, media);
+  await loadPatterns(characters, media, isImage);
   return {
-    version: 1,
+    version: MANIFEST_VERSION,
     characters,
     media: media.length > 0,
     ...parseMedia(media),
     ...parseTransitions(transitionsRpy),
     labels: [...labels].sort(),
-    chats: chatsRpy ? parseChats(chatsRpy) : undefined,   // undefined: no chats.rpy, the groups aren't known
+    chats: chatsRpy ? parseChats(chatsRpy) : null,
     photos: parsePhotos(media),
   };
 }
 
 /** `phone_group("sakari", "SaKaRi", ["satoru", "kaishi", "rin"])` */
-export function parseChats(rpy: string) {
+export function parseChats(rpy: string): ChatGroup[] {
   return [...stripLines(rpy).matchAll(/phone_group\(\s*"(\w+)"\s*,\s*"([^"]*)"\s*,\s*\[([^\]]*)\]/g)]
     .map(m => ({ id: m[1], title: m[2], members: [...m[3].matchAll(/"(\w+)"|(\w+)/g)].map(x => x[1] ?? x[2]) }));
 }
@@ -172,7 +172,7 @@ const stripLines = (rpy: string) => rpy.split("\n").map(stripComment).join("\n")
 /** The phone's photos: every image in assets/features/photos, by its name (file name without extension). */
 export function parsePhotos(files: string[]) {
   const out: Record<string, string> = {};
-  for (const f of files) if (f.startsWith("features/photos/") && IMAGE_EXT.has(ext(f))) out[stem(baseName(f))] ??= f;
+  for (const f of files) if (f.startsWith("features/photos/") && isImage(f)) out[stem(f)] ??= f;
   return out;
 }
 
@@ -190,10 +190,7 @@ const RESERVED = new Set([
 
 /** The variable for a speaker's name, like the hand-written ones: "Kecker Schüler" → kecker_schueler. */
 export function characterVar(name: string) {
-  const id = name.trim().toLowerCase()
-    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const id = asciiIdent(name);
   return !id ? "sprecher" : /^\d/.test(id) ? `sprecher_${id}` : id;
 }
 
@@ -236,42 +233,7 @@ export async function addCharacter(name: string) {
   const path = joinPath(GAME_DIR, "core/characters.rpy");
   const rpy = await readText(path);
   if (rpy === null) throw new Error("The game has no core/characters.rpy.");
-  const { text, id } = withCharacter(rpy.replace(/\r\n?/g, "\n"), name);
+  const { text, id } = withCharacter(unixLines(rpy), name);
   await writeText(path, text);
   return id;
-}
-
-// ---------------------------------------------------------------- textbox patterns
-
-/** Tiles made so far, by the icon's object URL (a new URL = the icon changed). */
-const tiles = new Map<string, Promise<string | null>>();
-
-/** Give each character with a textbox pattern a tile made from its icon in assets/ (`patternUrl`, a data URL so it can
- *  be cached with the rest). Where the icon can't be read (browser storage has no game files, a checkout without Git
- *  LFS only pointers) `boxLook` falls back to public/patterns. */
-async function loadPatterns(chars: GameCharacter[], media: string[]) {
-  await Promise.all(chars.map(async c => {
-    if (!c.patternAsset) return;
-    const file = media.find(f => stem(f) === c.patternAsset && IMAGE_EXT.has(ext(f)));
-    const icon = file && await assetUrl(file);
-    if (!icon) return;
-    if (!tiles.has(icon)) tiles.set(icon, tileOf(icon).catch(() => null));
-    const tile = await tiles.get(icon);
-    if (tile) c.patternUrl = tile;
-  }));
-}
-
-/** The tile the textbox CSS repeats (index.css `.say-box`, 120×72): the icon at 30px in a staggered grid with room
- *  around it, like the game's `_make_icon_pattern` (and the copies in public/patterns). */
-const TILE = { w: 120, h: 72, icon: 30 };
-async function tileOf(iconUrl: string) {
-  const img = await createImageBitmap(await (await fetch(iconUrl)).blob());
-  const canvas = document.createElement("canvas");
-  canvas.width = TILE.w;
-  canvas.height = TILE.h;
-  const g = canvas.getContext("2d")!;
-  const { w, h, icon: s } = TILE;
-  for (const [x, y] of [[0, 0], [w / 2, 0], [w / 4, h / 2], [w * 3 / 4, h / 2]]) g.drawImage(img, x, y, s, s);
-  img.close();
-  return canvas.toDataURL("image/png");
 }

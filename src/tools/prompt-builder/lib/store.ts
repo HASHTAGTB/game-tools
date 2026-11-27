@@ -1,11 +1,11 @@
 import { download } from "@/shared/lib/utils";
-import { joinPath, jsonText, listFiles, readText, removeFile, toolDir, writeText } from "@/shared/lib/workspace";
+import { fileName, joinPath, stem } from "@/shared/lib/paths";
+import { jsonText, listFiles, readText, removeFile, toolDir, writeText } from "@/shared/lib/workspace";
 import type { Category, Character, Toggle } from "./types";
 
 /** Characters are one `<id>.json` each in the workspace's `.game-tools/prompt-builder/` folder; the file name is the id. */
 const DIR = toolDir("prompt-builder");
 export const charPath = (id: string) => joinPath(DIR, `${id}.json`);
-const idOf = (path: string) => path.split("/").pop()!.replace(/\.json$/, "");
 export const listCharacterFiles = () => listFiles(DIR, ".json");
 
 /** Where character files lived before the shared tools folder: the vault's character notes folder, or the root of an
@@ -48,7 +48,16 @@ async function readChars(paths: string[]) {
 /** The character in a file (its id is the file name), or null if it isn't one. Throws if it isn't JSON. */
 export function parseCharacter(path: string, text: string): Character | null {
   const c = JSON.parse(text);
-  return looksLikeCharacter(c) ? normalize({ ...c, id: idOf(path) }) : null;
+  return looksLikeCharacter(c) ? normalize({ ...c, id: stem(path) }) : null;
+}
+
+/** The characters with one file's text put in (null: the file was deleted); null if the file isn't a character.
+ *  Throws if it isn't JSON. */
+export function applyCharacterFile(chars: Character[], path: string, text: string | null): Character[] | null {
+  const others = chars.filter(c => charPath(c.id) !== path);
+  if (text === null) return others;
+  const c = parseCharacter(path, text);
+  return c && [...others, c];
 }
 
 /** Move character files from the first legacy folder that has any, if the tools folder has none yet. */
@@ -58,7 +67,7 @@ export async function migrateLegacy() {
     const found = await readChars(await listFiles(dir, ".json"));
     if (!found.length) continue;
     for (const [path, c] of found) {
-      await writeText(joinPath(DIR, path.split("/").pop()!), toJson(normalize(c)));
+      await writeText(joinPath(DIR, fileName(path)), toJson(normalize(c)));
       await removeFile(path);
     }
     return;

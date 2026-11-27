@@ -9,6 +9,16 @@ export const cn = (...v: ClassValue[]) => twMerge(clsx(v));
 export const slugify = (s: string) =>
   s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "item";
 
+/** A name as a Ren'Py identifier, the way the team writes them by hand: lowercase ASCII, German umlauts spelled out
+ *  ("Ärger über Öl" → aerger_ueber_oel), other accents dropped, anything else an underscore. "" if nothing's left. */
+export const asciiIdent = (s: string) => s.trim().toLowerCase()
+  .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+  .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+  .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+
+/** Text with Unix line endings (Windows checkouts and pastes have \r\n). */
+export const unixLines = (s: string) => s.replace(/\r\n?/g, "\n");
+
 /** The first name that isn't taken: `base`, then `nth(2)`, `nth(3)`, … */
 export function freeName(base: string, taken: (name: string) => boolean, nth = (i: number) => `${base}-${i}`) {
   let name = base;
@@ -21,9 +31,6 @@ export function uniqueId(name: string, taken: Iterable<string>) {
   const set = new Set(taken);
   return freeName(slugify(name), id => set.has(id));
 }
-
-/** `path` is `dir` itself or inside it. */
-export const isUnder = (path: string, dir: string) => path === dir || path.startsWith(dir + "/");
 
 /** The strings in `v`, if it's an array (data read from a file can hold anything). */
 export const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);

@@ -1,8 +1,9 @@
 import type { Manifest } from "@/shared/lib/game";
+import type { CheckInput } from "./editorState";
 import { labelOf, labelsIn } from "./labels";
 import { PAIRED, tokenize } from "./renpyText";
 import { inScript, suggestLabel, type Script } from "./script";
-import { chatKey, groupOf, membersOf, parseArgs, parseChatHead, phoneIndex, priorAt, resolveRef, type ChatHead, type ChatMsg, type PhoneIndex } from "./phone";
+import { blockAt, chatKey, chatTitle, groupOf, membersOf, parseArgs, parseChatHead, phoneIndex, priorAt, resolveRef, type ChatHead, type PhoneIndex } from "./phone";
 import { EMPTY_STAGE, playScript } from "./stage";
 import { formatStmt } from "./statements";
 
@@ -17,22 +18,26 @@ export type Problem = {
   to?: number;
   severity: "error" | "warning" | "info";
   message: string;
-  fix?: { label: string; /** the line's new text (may hold several lines), or for `at: "end"` text added at the end of the file */ text: string; at?: "line" | "end" | "after" | "start";
-    /** the line's text when it was checked: the fix only applies while the line still reads so */
-    was?: string;
-    /** instead: define a new character with this name in the game, then use their variable for the speaker at from–to */
-    create?: string };
+  fix?: Fix;
 };
 
-export type CheckContext = {
-  manifest: Manifest | null;
-  /** labels of the other scenes (and the game's own, from the manifest); null while they're being read */
-  labels: Set<string> | null;
-  /** the scene's title (its file name if it has none), for label suggestions */
-  title: string;
-  /** the chat messages of the scenes before this one, for replies and reactions; null while they're read */
-  history?: ChatMsg[] | null;
-};
+/** What a problem's button does. `was`: the line's text when it was checked; the fix only applies while the line still
+ *  reads so (the checks run a moment after typing, so line numbers can be old). */
+export type Fix =
+  /** the line becomes `text` (it may hold several lines) */
+  | { kind: "line"; label: string; text: string; was: string }
+  /** `text` goes in after the line */
+  | { kind: "after"; label: string; text: string; was: string }
+  /** `text` goes in at the start of the file */
+  | { kind: "start"; label: string; text: string }
+  /** define a new character called `name` in the game, then use their variable for the speaker at from–to */
+  | { kind: "speaker"; label: string; name: string; was: string };
+
+/** A fix that rewrites line `was` to `text`. */
+const lineFix = (label: string, was: string, text: string): Fix => ({ kind: "line", label, text, was });
+
+/** What the checks need: the game's data, and what the editor knows about the other scenes (`CheckInput`). */
+export type CheckContext = CheckInput & { manifest: Manifest | null };
 
 /** Tags Ren'Py knows (renpy.org/doc/html/text.html). */
 const KNOWN_TAGS = new Set([...PAIRED, "w", "p", "nw", "fast", "image", "space", "vspace", "outlinecolor", "alt", "noalt", "rt", "rb", "art", "done", "clear"]);
@@ -62,9 +67,10 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
 
   const label = labelOf(s);
   if (!label) {
+    const line = Math.max(1, layout.first - 1), add = `Add label ${suggestLabel(cx.title)}`, text = `label ${suggestLabel(cx.title)}:`;
     out.push({
-      line: Math.max(1, layout.first - 1), severity: "error", message: "The scene has no label, so nothing can jump to it.",
-      fix: { label: `Add label ${suggestLabel(cx.title)}`, at: layout.front ? "after" : "start", text: `label ${suggestLabel(cx.title)}:` },
+      line, severity: "error", message: "The scene has no label, so nothing can jump to it.",
+      fix: layout.front ? { kind: "after", label: add, text, was: lines[line - 1] } : { kind: "start", label: add, text },
     });
   }
 
@@ -74,28 +80,26 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
   const transitions = new Set(m?.transitions ?? []);
   const ownLabels = labelsIn(s);
   let povWarned = false, seenLabel = false;
-  /** indent of the `chat …:` block we're in, if any, and its head */
-  let chatIndent: number | null = null;
-  let chat: ChatHead | null = null;
-  const phone: PhoneIndex = phoneIndex(s, cx.history === undefined ? [] : cx.history);
-  const chatName = (h: ChatHead) => ("group" in h.target ? groupOf(m, h.target.group)?.title ?? h.target.group : h.target.dm.map(id => chars.get(id)?.name ?? id).join(" & "));
+  const phone: PhoneIndex = phoneIndex(s, cx.history ?? []);
 
   parsed.forEach((p, i) => {
     const n = i + 1, text = lines[i];
     if (!p || !inScript(layout, n)) return;
     const before = i > 0 ? stages[i - 1] : EMPTY_STAGE;
     const ind = "indent" in p ? p.indent : null;
+    /** the chat this line is a message (or reaction…) in, if any */
+    const block = blockAt(phone, n);
+    const chat = block && n > block.from ? block.head : null;
 
-    if (p.kind !== "blank" && chatIndent !== null && ind !== null && ind <= chatIndent) { chatIndent = null; chat = null; }
     if (p.kind === "code" && /^\s*chat\b/.test(text)) {
       const h = parseChatHead(text);
-      if (h) { chatIndent = p.indent; chat = h; checkChatHead(out, n, h, m, chars); }
+      if (h) checkChatHead(out, n, h, m, chars);
       else if (/:\s*$/.test(text)) out.push({ line: n, severity: "error", message: "The game can't read this chat line. Write it like chat sakari: or chat log rin & satoru yesterday:" });
     }
 
     if (p.kind === "label") { seenLabel = true; return; }
     if (p.kind !== "blank" && p.kind !== "comment" && seenLabel && ind === 0) {
-      out.push({ line: n, severity: "error", message: "Lines of a scene go indented under its label.", fix: { label: "Indent it", text: "    " + text } });
+      out.push({ line: n, severity: "error", message: "Lines of a scene go indented under its label.", fix: lineFix("Indent it", text, "    " + text) });
     }
 
     switch (p.kind) {
@@ -109,16 +113,16 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
           out.push({
             line: n, from: p.indent, to: p.indent + p.who.length, severity: "error",
             message: `The game has no character called "${p.who}".` + (guess ? ` Did you mean ${guess}?` : ""),
-            fix: guess ? { label: `Use ${guess}`, text: text.slice(0, p.indent) + guess + text.slice(p.indent + p.who.length) }
-              : { label: `Add ${speakerName(p.who)} to the game`, text, create: speakerName(p.who) },
+            fix: guess ? lineFix(`Use ${guess}`, text, text.slice(0, p.indent) + guess + text.slice(p.indent + p.who.length))
+              : { kind: "speaker", label: `Add ${speakerName(p.who)} to the game`, name: speakerName(p.who), was: text },
           });
         }
-        if (!p.who && !before.pov && !povWarned && chatIndent === null) {
+        if (!p.who && !before.pov && !povWarned && !chat) {
           povWarned = true;
           out.push({ line: n, severity: "warning", message: "No point of view is set yet, so the narration has no textbox colour. Add a POV card before it." });
         }
         checkTags(out, n, p.from, text.slice(p.from, p.to));
-        if (chat && p.who && p.who !== "extend") checkMessage(out, n, p.tail, p.who, chat, chatName(chat), m, chars, phone, cx.history !== null);
+        if (chat && p.who && p.who !== "extend") checkMessage(out, n, p.tail, p.who, chat, chatTitle(m, chat.target), m, chars, phone, cx.history !== null);
         return;
       }
       case "choice":
@@ -135,7 +139,7 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
       const guess = closest(x.with, [...transitions]);
       out.push({
         line: n, ...at(x.with), severity: "error", message: `There's no transition called "${x.with}".` + (guess ? ` Did you mean ${guess}?` : ""),
-        ...(guess && { fix: { label: `Use ${guess}`, text: rewrite({ ...x, with: guess } as typeof x) } }),
+        ...(guess && { fix: lineFix(`Use ${guess}`, text, rewrite({ ...x, with: guess } as typeof x)) }),
       });
     }
     switch (x.kind) {
@@ -147,7 +151,7 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
         if (!shown && !x.at) {
           out.push({
             line: n, severity: "warning", message: `${chars.get(x.tag)?.name ?? x.tag} comes on screen here: say where they stand.`,
-            fix: { label: "Put them in the center", text: rewrite({ ...x, at: "center" }) },
+            fix: lineFix("Put them in the center", text, rewrite({ ...x, at: "center" })),
           });
         }
         if (x.at && m) {
@@ -157,7 +161,7 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
             const guess = positions.has(stripped) ? stripped : stripped === "default" ? "center" : closest(name, [...positions]);
             out.push({
               line: n, ...at(x.at), severity: "error", message: `There's no position called "${name}".` + (guess ? ` Did you mean ${guess}?` : ""),
-              ...(guess && { fix: { label: `Use ${guess}`, text: rewrite({ ...x, at: guess }) } }),
+              ...(guess && { fix: lineFix(`Use ${guess}`, text, rewrite({ ...x, at: guess })) }),
             });
           }
         }
@@ -184,14 +188,14 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
         if (!chat) { out.push({ line: n, severity: "error", message: "A reaction only works inside a chat block." }); break; }
         const who = x.by ? chars.get(x.by)?.name ?? x.by : null;
         const members = membersOf(m, chat.target);
-        if (x.by && members && !members.includes(x.by)) out.push({ line: n, severity: "error", message: `${who} isn't in ${chatName(chat)}.` });
+        if (x.by && members && !members.includes(x.by)) out.push({ line: n, severity: "error", message: `${who} isn't in ${chatTitle(m, chat.target)}.` });
         if (cx.history !== null && !resolveRef(x.ref, priorAt(phone, chatKey(chat.target), n))) {
-          out.push({ line: n, severity: "error", message: `The reaction finds no message: nothing in ${chatName(chat)} before this ${x.byText ? `says „${x.ref}“` : `is called ${x.ref}`}.` });
+          out.push({ line: n, severity: "error", message: `The reaction finds no message: nothing in ${chatTitle(m, chat.target)} before this ${x.byText ? `says „${x.ref}“` : `is called ${x.ref}`}.` });
         }
         break;
       }
       case "jump": case "call":
-        if (chatIndent !== null) out.push({ line: n, severity: "error", message: "A chat block can't jump away: end the chat first (un-indent the jump)." });
+        if (chat) out.push({ line: n, severity: "error", message: "A chat block can't jump away: end the chat first (un-indent the jump)." });
         if (!x.target) { out.push({ line: n, severity: "error", message: "Pick the scene this continues at." }); break; }
         if (cx.labels && !ownLabels.has(x.target) && !cx.labels.has(x.target)) {
           out.push({ line: n, ...at(x.target), severity: "error", message: `No scene has the label "${x.target}".` });
@@ -199,7 +203,6 @@ export function checkScene(s: Script, cx: CheckContext): Problem[] {
         break;
     }
   });
-  for (const p of out) if (p.fix && p.fix.at !== "end") p.fix.was = lines[p.line - 1];
   return out;
 }
 

@@ -10,7 +10,8 @@ import { addOption, removeOption, routeOption, setOptionText } from "../../lib/o
 import { labelName } from "../../lib/labels";
 import { unescapeText } from "../../lib/renpyText";
 import { idAt, useSceneUi } from "../../lib/ui";
-import { follow, problemsOf, useBox, useDraft, type ListLayout } from "./context";
+import { follow, useBox, useDraft, type ListLayout } from "./context";
+import { problemsOf } from "./kinds";
 import { Acts, BoxItem, List, Problems } from "./List";
 import { EASE, fadeIn, typeIn } from "@/shared/ui/flair";
 import { m, spring } from "@/shared/ui/motion";

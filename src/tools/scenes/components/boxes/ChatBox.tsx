@@ -6,9 +6,10 @@ import { useWash } from "@/shared/ui/use-wash";
 import type { Box } from "../../lib/blocks";
 import { look } from "../../lib/look";
 import { setChatHead } from "../../lib/ops";
-import { chatCode, dateWords, groupOf, membersOf } from "../../lib/phone";
+import { chatCode, chatTitle, dateWords, membersOf } from "../../lib/phone";
 import { idAt } from "../../lib/ui";
-import { follow, problemsOf, useBox, type ListLayout } from "./context";
+import { follow, useBox, type ListLayout } from "./context";
+import { problemsOf } from "./kinds";
 import { Acts, List, Problems } from "./List";
 import { openPhoneMenu } from "./PhoneParts";
 
@@ -22,7 +23,7 @@ export function ChatBox({ box: b, prev, next }: { box: Chat; prev: Box | null; n
   const h = b.head;
   const id = idAt(c.view, b.from);
   const members = membersOf(c.manifest, h.target) ?? [];
-  const title = "group" in h.target ? groupOf(c.manifest, h.target.group)?.title ?? h.target.group : h.target.dm.map(x => look(c.manifest, x).name).join(" & ");
+  const title = chatTitle(c.manifest, h.target);
   // another chat: the head's colour washes over, the name rolls in; live ↔ earlier (the day chip comes or goes):
   // the phone morphs
   const head = useRef<HTMLDivElement>(null);

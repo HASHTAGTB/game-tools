@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { useShallow } from "zustand/shallow";
 import { createFileSync, type FileConflict } from "@/shared/lib/fileSync";
 import { browserPrefs, debounce, noticeSetter, whenHidden } from "@/shared/lib/toolState";
 import { errorMessage, freeName } from "@/shared/lib/utils";
@@ -80,27 +79,13 @@ export const useTimeline = create<State & Actions>()((set, get) => {
 
   // ---------------------------------------------------------------- files (shared/lib/fileSync)
   const sync = createFileSync({
-    files: () => docFiles(get().doc),
+    empty: EMPTY_DOC,
+    get: () => get().doc,
+    set: doc => setDoc(doc, "clear"),
+    files: docFiles,
+    applyFile,
     list: docPaths,
     blank: blankFile,
-    load: files => {
-      let doc = EMPTY_DOC;
-      const used: string[] = [];
-      for (const [path, text] of files) {
-        try { doc = applyFile(doc, path, text); used.push(path); } catch { /* reported below */ }
-      }
-      setDoc(doc, "clear");
-      return used;
-    },
-    apply: files => {
-      let doc = get().doc;
-      const used: string[] = [];
-      for (const [path, text] of files) {
-        try { doc = applyFile(doc, path, text); used.push(path); } catch { /* half-written: next time */ }
-      }
-      setDoc(doc, "clear");
-      return used;
-    },
     label: path => fileLabel(get().doc, path),
     conflicts: () => get().conflicts,
     setConflicts: conflicts => set({ conflicts }),
@@ -189,11 +174,6 @@ export const useTimeline = create<State & Actions>()((set, get) => {
     setNotice: noticeSetter(set),
   };
 });
-
-/** Some of the timeline's state and actions; the component draws again only when one of them changes. */
-export function useTimelinePick<K extends keyof (State & Actions)>(...keys: K[]): Pick<State & Actions, K> {
-  return useTimeline(useShallow(s => Object.fromEntries(keys.map(k => [k, s[k]])) as Pick<State & Actions, K>));
-}
 
 /** A new chapter's file id, unique among `chapters`. */
 export const chapterIdFor = (chapters: Chapter[], base = "chapter") => {

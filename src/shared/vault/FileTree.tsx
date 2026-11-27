@@ -4,7 +4,8 @@ import { bloomCls } from "@/shared/ui/motion";
 import { ContextMenu } from "@base-ui/react/context-menu";
 import { ChevronRight, Copy, FilePlus, FolderPlus, Pencil, Trash2 } from "lucide-react";
 import { useRef, useState, type DragEvent, type MouseEvent } from "react";
-import { cn, isUnder } from "@/shared/lib/utils";
+import { fileName, isUnder, parentOf } from "@/shared/lib/paths";
+import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { undoNote } from "@/shared/ui/confirm";
 import { ContextMenuItem as Item, ContextMenuSeparator } from "@/shared/ui/menu-item";
@@ -15,7 +16,7 @@ import { MotionItem, MotionList } from "@/shared/ui/motion-list";
 import { popoverCls } from "@/shared/ui/popover";
 import { Rule } from "@/shared/ui/heading";
 import { useVault } from "./context";
-import { baseName, parentOf, type Node } from "./store";
+import { baseName, type Node } from "./store";
 import { DropRing, GroupRule, hoverOnly, hoverSlot, InlineRename, RowActions, useHoverOpen } from "./tree-parts";
 
 const INDENT = 14;
@@ -29,7 +30,7 @@ function nodeAt(target: EventTarget | null): Node | null {
   const el = (target as HTMLElement | null)?.closest<HTMLElement>("[data-path]");
   if (!el) return null;
   const path = el.dataset.path!;
-  return { path, name: path.split("/").pop()!, kind: el.dataset.kind as Node["kind"] };
+  return { path, name: fileName(path), kind: el.dataset.kind as Node["kind"] };
 }
 /** Where something dropped on `n` goes: into the folder, or next to the note; `root` for the empty space. */
 const dropDirOf = (n: Node | null, root: string) => (!n ? root : n.kind === "directory" ? n.path : parentOf(n.path));
@@ -76,7 +77,7 @@ export function FileTree() {
   const dir = menuFor?.kind === "directory" ? menuFor : null;
   const note = menuFor?.kind === "file" ? menuFor : null;
   const here = dir?.path ?? (note ? parentOf(note.path) : rootDir);
-  const inHere = here !== rootDir ? ` in ${here.split("/").pop()}` : "";
+  const inHere = here !== rootDir ? ` in ${fileName(here)}` : "";
 
   return (
     <>

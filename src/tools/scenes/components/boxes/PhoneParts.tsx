@@ -1,4 +1,4 @@
-import { CornerDownRight, Keyboard } from "lucide-react";
+import { CornerDownRight, Image, Keyboard, Reply, SmilePlus } from "lucide-react";
 import { useLayoutEffect, useRef, type CSSProperties } from "react";
 import { useAssetImage } from "@/shared/lib/assetUrl";
 import { useGame } from "@/shared/lib/game";
@@ -7,10 +7,11 @@ import { glow, spotlight } from "@/shared/ui/flair";
 import { IconButton } from "@/shared/ui/icon-button";
 import type { Box } from "../../lib/blocks";
 import { look } from "../../lib/look";
-import { snippet, type ChatMsg, type ChatReact } from "../../lib/phone";
+import { snippet, type ChatMsg, type ChatReact, type MsgArgs } from "../../lib/phone";
 import { useSceneUi, type PhoneMenu } from "../../lib/ui";
 import { useScenes } from "../../state";
-import { phoneLook, problemsOf, stageBefore, useBox, type ListLayout } from "./context";
+import { phoneLook, stageBefore, useBox, type ListLayout } from "./context";
+import { problemsOf, type ReactBox } from "./kinds";
 import { Acts, Problems } from "./List";
 
 /* The pieces of a chat on the phone (ChatBox, and SayBox for a message): a reply's quote, photos, the typing chip,
@@ -19,7 +20,7 @@ import { Acts, Problems } from "./List";
 export const openPhoneMenu = (menu: PhoneMenu) => useSceneUi.setState({ menu });
 
 /** Points at a message: in this scene it's scrolled to and spotlit; from an earlier scene, that scene opens. */
-export function goToMessage(m: ChatMsg) {
+export function goToMessage(m: Pick<ChatMsg, "line" | "scene">) {
   if (m.scene) { void useScenes.getState().open(m.scene.path); return; }
   const page = document.querySelector<HTMLElement>(".bx-page");
   const box = page?.querySelector<HTMLElement>(`[data-line="${m.line}"]`);
@@ -32,7 +33,7 @@ export function goToMessage(m: ChatMsg) {
 /** A photo by its name: the game's image (assets/features/photos), or a tile with its name while there's none. */
 export function Photo({ name, className }: { name: string; className?: string }) {
   const manifest = useGame(g => g.manifest);
-  const rel = manifest?.photos?.[name] ?? manifest?.imageFiles[name] ?? null;
+  const rel = manifest?.photos[name] ?? manifest?.imageFiles[name] ?? null;
   const { img } = useAssetImage(rel, manifest);
   return (
     <span className={cn("bx-photo", className)} style={img ? { backgroundImage: `url(${img.url})` } : { background: tileOf(name) }} title={name}>
@@ -80,6 +81,31 @@ export function Quote({ target, reply, onRepick, pending }: { target: ChatMsg | 
   );
 }
 
+/** What a message shows above its text: the message it replies to, its photos, "typing…" first. `target`: what the
+ *  reply finds (null: nothing); `live`: the chat is written live (typing only shows then). */
+export function MessageTop({ line, args: a, target, live }: { line: number; args: MsgArgs; target: ChatMsg | null; live: boolean }) {
+  const c = useBox();
+  const pickReply = (anchor: Element) => openPhoneMenu({ kind: "pick", anchor, line, for: "reply" });
+  return <>
+    {a.reply !== null && <Quote target={target} reply={a.reply} onRepick={pickReply} pending={!c.phone.known} />}
+    {!!a.photos?.length && <Photos names={a.photos} />}
+    {a.typing ? <TypingChip secs={a.typing} live={live} onClick={el => openPhoneMenu({ kind: "typing", anchor: el, line })} /> : null}
+  </>;
+}
+
+/** A message's hover icons, before the usual ones: reply, react, photos, typing. */
+export function MessageActs({ line, args: a, live }: { line: number; args: MsgArgs; live: boolean }) {
+  const menu = (kind: "photos" | "typing", anchor: Element) => openPhoneMenu({ kind, anchor, line });
+  return <>
+    <IconButton icon={Reply} size="sm" label={a.reply !== null ? "Reply: another message, or none" : "Reply to an earlier message"} pressed={a.reply !== null}
+      onClick={e => openPhoneMenu({ kind: "pick", anchor: e.currentTarget, line, for: "reply" })} />
+    <IconButton icon={SmilePlus} size="sm" label="React to it" onClick={e => openPhoneMenu({ kind: "emoji", anchor: e.currentTarget, line, new: true })} />
+    <IconButton icon={Image} size="sm" label="Photos" pressed={!!a.photos?.length} onClick={e => menu("photos", e.currentTarget)} />
+    <IconButton icon={Keyboard} size="sm" label={live ? "“Typing…” first" : "Typing only shows in a live chat"} pressed={!!a.typing} disabled={!live}
+      onClick={e => menu("typing", e.currentTarget)} />
+  </>;
+}
+
 export function TypingChip({ secs, live, onClick }: { secs: number; live: boolean; onClick: (el: Element) => void }) {
   return (
     <button type="button" className={cn("bx-typing", !live && "bx-off")} onClick={e => live && onClick(e.currentTarget)}
@@ -109,7 +135,7 @@ export function Pills({ reacts }: { reacts: ChatReact[] }) {
         return (
           <button key={r.line} type="button" className="bx-pill" data-react={r.line} style={{ "--rc": w?.legible ?? "var(--color-taupe)" } as CSSProperties}
             title={`${w?.name ?? "The phone's owner"}. Click: show the reaction`}
-            onClick={() => goToMessage({ line: r.line } as ChatMsg)}>
+            onClick={() => goToMessage({ line: r.line })}>
             {r.emoji}
           </button>
         );
@@ -118,13 +144,11 @@ export function Pills({ reacts }: { reacts: ChatReact[] }) {
   );
 }
 
-type ReactBox = Extract<Box, { kind: "stmt" }> & { stmt: { kind: "react" } };
-
 /** `react rin_luck "👌"` in a chat: who reacts, the emoji (click: change it, who, take it back) and the message it's
  *  on (click: go there). The emoji also shows under that message. */
-export function ReactRow({ box: b, prev, next }: { box: Extract<Box, { kind: "stmt" }>; prev: Box | null; next: Box | null; layout: ListLayout }) {
+export function ReactRow({ box: b, prev, next }: { box: ReactBox; prev: Box | null; next: Box | null; layout: ListLayout }) {
   const c = useBox();
-  const x = (b as ReactBox).stmt as Extract<ReactBox["stmt"], { kind: "react" }>;
+  const x = b.stmt;
   const target = phoneLook(c, b.from, x.ref)?.target ?? null;
   const by = x.by ?? stageBefore(c, b.from).pov;
   const w = by ? look(c.manifest, by) : null;

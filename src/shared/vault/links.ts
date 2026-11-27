@@ -1,14 +1,14 @@
 /** Obsidian [[wikilinks]]: which file a link points at, and rewriting links after files were renamed or moved.
  *  Pure functions on path lists, so they work the same on every storage backend. */
 
+import { fileName as lastPart, parentOf as dirOf } from "@/shared/lib/paths";
+
 /** `!` embed, target, `#heading` / `^block`, `|alias`. */
 const LINK = /(!?)\[\[([^\[\]\n|#^]*)([#^][^\[\]\n|]*)?(\|[^\[\]\n]*)?\]\]/g;
 
 const isNote = (p: string) => /\.md$/i.test(p);
 /** What a link calls a file: notes without ".md", other files with their extension. */
 const linkName = (p: string) => (isNote(p) ? p.replace(/\.md$/i, "") : p);
-const lastPart = (p: string) => p.slice(p.lastIndexOf("/") + 1);
-const dirOf = (p: string) => p.slice(0, Math.max(0, p.lastIndexOf("/")));
 
 export type Index = { files: string[]; byName: Map<string, string[]> };
 

@@ -7,7 +7,8 @@ import { BarOpener, toolBarCls } from "@/shared/ui/tool-page";
 import { menuButtonCls } from "@/shared/ui/menu-item";
 import { useVault } from "./context";
 import { fuzzy, shownPath, type Hit } from "./fuzzy";
-import { baseName, parentOf, type Node } from "./store";
+import { fileName, parentOf } from "@/shared/lib/paths";
+import { baseName, type Node } from "./store";
 
 /** The top of the page: the open file's path, like an address bar. Each folder opens a menu of what's in it;
  *  clicking the name (or the empty space) turns the bar into a fuzzy search over every file of the tool.
@@ -77,7 +78,7 @@ function FolderMenu({ dir, label, disabled }: { dir: string; label: string; disa
   }, [open, at]);
 
   const change = (v: boolean) => { setOpen(v); if (v) setAt(dir); };
-  const name = (p: string) => p.split("/").pop() || label;
+  const name = (p: string) => fileName(p) || label;
 
   return (
     <Popover open={open} onOpenChange={change} align="start" className="w-72 p-1.5"

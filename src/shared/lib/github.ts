@@ -1,5 +1,6 @@
 import { openDb, req } from "./idb";
-import { isUnder } from "./utils";
+import { isUnder } from "./paths";
+import { limiter } from "./toolState";
 import type { Entry, FileData } from "./workspace";
 
 /** The vault as a GitHub repository, used through GitHub's REST API, so the static build works in any browser.
@@ -23,11 +24,13 @@ export const REPO = { owner: "HASHTAGTB", repo: "game", branch: "main" } as cons
  *  `text` null). Moves go by blob, so images and other binary files are moved without being read. */
 type Pending = { text: string | null; sha?: string; base: string | null; mtime: number };
 const deleted = (p: Pending) => p.text === null && !p.sha;
-type Tree = { head: string; tree: string; files: Map<string, string>; dirs: Set<string>; etag: string | null; at: number };
+type Tree = { head: string; tree: string; files: Map<string, string>; etag: string | null; at: number };
 
 const API = "https://api.github.com";
 /** How long the repo's file list counts as current. Checking costs nothing while the branch hasn't moved (304). */
 const FRESH_MS = 15_000;
+/** Requests to GitHub at once. Callers ask for as many files as they like; this keeps it to a few at a time. */
+const inFlight = limiter(8);
 
 export class GitHubError extends Error {
   status: number;
@@ -93,21 +96,24 @@ export function onPendingChange(fn: () => void) {
 // ---------------------------------------------------------------- REST calls
 
 async function call<T>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}, token = config?.token): Promise<{ data: T; res: Response }> {
-  const res = await fetch(API + path, {
-    method,
-    // the browser's HTTP cache would hand back a stale branch; freshness is checked with ETags below instead
-    cache: "no-store",
-    headers: {
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...headers,
-    },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+  // the slot is held until the body is read too: that's the part that takes long for a big tree or blob
+  const { res, data } = await inFlight(async () => {
+    const res = await fetch(API + path, {
+      method,
+      // the browser's HTTP cache would hand back a stale branch; freshness is checked with ETags below instead
+      cache: "no-store",
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...headers,
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    return { res, data: res.status === 304 ? null : await res.json().catch(() => ({})) };
   });
   if (res.status === 304) return { data: null as T, res };
-  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = res.status === 401 ? "GitHub refused the token (expired or revoked?). Connect again under Data folder."
       : res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0" ? "GitHub's hourly request limit is used up. Try again later."
@@ -154,35 +160,22 @@ async function loadTree(): Promise<Tree> {
   if (tree?.head === head) return keep({ ...tree, etag: ref.res.headers.get("etag"), at: Date.now() });
   const commit = (await call<{ tree: { sha: string } }>("GET", `${r}/git/commits/${head}`)).data;
   const files = new Map<string, string>();
-  const dirs = new Set<string>();
-  await walk(r, commit.tree.sha, "", files, dirs);
-  return keep({ head, tree: commit.tree.sha, files, dirs, etag: ref.res.headers.get("etag"), at: Date.now() });
+  await walk(r, commit.tree.sha, "", files);
+  return keep({ head, tree: commit.tree.sha, files, etag: ref.res.headers.get("etag"), at: Date.now() });
 }
 
 type TreeEntry = { path: string; type: string; sha: string };
 
 /** Every file under the tree `sha`. GitHub cuts long recursive listings short (`truncated`); then each folder is
  *  listed on its own, so no file goes missing (a missing file would look new, and saving would overwrite it). */
-async function walk(r: string, sha: string, prefix: string, files: Map<string, string>, dirs: Set<string>): Promise<void> {
+async function walk(r: string, sha: string, prefix: string, files: Map<string, string>): Promise<void> {
   const all = (await call<{ tree: TreeEntry[]; truncated: boolean }>("GET", `${r}/git/trees/${sha}?recursive=1`)).data;
-  const add = (e: TreeEntry) => {
-    if (e.type === "blob") files.set(prefix + e.path, e.sha);
-    else if (e.type === "tree") dirs.add(prefix + e.path);
-  };
+  const add = (e: TreeEntry) => { if (e.type === "blob") files.set(prefix + e.path, e.sha); };
   if (!all.truncated) { all.tree.forEach(add); return; }
   const top = (await call<{ tree: TreeEntry[]; truncated: boolean }>("GET", `${r}/git/trees/${sha}`)).data;
   if (top.truncated) throw new GitHubError(0, `GitHub can't list the folder "${prefix || "/"}" in full (too many files in it).`);
   top.tree.forEach(add);
-  await Promise.all(top.tree.filter(e => e.type === "tree").map(e => walk(r, e.sha, prefix + e.path + "/", files, dirs)));
-}
-
-/** The folders holding `files` (git keeps no empty ones). */
-function dirsOf(files: Map<string, string>) {
-  const dirs = new Set<string>();
-  for (const path of files.keys()) {
-    for (let i = path.indexOf("/"); i >= 0; i = path.indexOf("/", i + 1)) dirs.add(path.slice(0, i));
-  }
-  return dirs;
+  await Promise.all(top.tree.filter(e => e.type === "tree").map(e => walk(r, e.sha, prefix + e.path + "/", files)));
 }
 
 const bytesToText = (b64: string) => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g, "")), ch => ch.charCodeAt(0)));
@@ -222,12 +215,14 @@ const bytesBySha = new Map<string, Promise<Blob | null>>();
 /** A blob's raw bytes (images too: the JSON form would be base64 text). */
 async function rawBlob(sha: string): Promise<Blob | null> {
   const c = await cfg();
-  const res = await fetch(`${API}${repoPath(c)}/git/blobs/${sha}`, {
-    headers: { Accept: "application/vnd.github.raw", "X-GitHub-Api-Version": "2022-11-28", Authorization: `Bearer ${c.token}` },
+  return inFlight(async () => {
+    const res = await fetch(`${API}${repoPath(c)}/git/blobs/${sha}`, {
+      headers: { Accept: "application/vnd.github.raw", "X-GitHub-Api-Version": "2022-11-28", Authorization: `Bearer ${c.token}` },
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new GitHubError(res.status, `GitHub: ${res.statusText}`);
+    return res.blob();
   });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new GitHubError(res.status, `GitHub: ${res.statusText}`);
-  return res.blob();
 }
 
 /** Git LFS pointers are tiny text files: "version https://git-lfs.github.com/spec/v1\noid sha256:…\nsize …". */
@@ -249,9 +244,11 @@ async function lfsBytes(pointer: string, path: string, commit: string): Promise<
   if (hit) return hit.blob();
   const c = await cfg();
   const url = `https://media.githubusercontent.com/media/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/${commit}/${path.split("/").map(encodeURIComponent).join("/")}`;
-  const res = await fetch(url, { headers: { Authorization: `token ${c.token}` } }).catch(() => null);
-  if (!res?.ok) return null;
-  const blob = await res.blob();
+  const blob = await inFlight(async () => {
+    const res = await fetch(url, { headers: { Authorization: `token ${c.token}` } }).catch(() => null);
+    return res?.ok ? res.blob() : null;
+  });
+  if (!blob) return null;
   await cache?.put(lfsKey(oid), new Response(blob, { headers: { "Content-Type": blob.type } })).catch(() => {});
   return blob;
 }
@@ -437,7 +434,7 @@ export async function commit(message: string): Promise<CommitResult> {
       blobs.set(sha, p.text);
       files.set(path, sha);
     }
-    setTree({ head: made.sha, tree: newTree.sha, files, dirs: dirsOf(files), etag: null, at: Date.now() });
+    setTree({ head: made.sha, tree: newTree.sha, files, etag: null, at: Date.now() });
     for (const [path, p] of snap) {
       const now = ps.get(path);
       if (now === p) ps.delete(path);   // saved as it is now

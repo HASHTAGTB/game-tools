@@ -4,7 +4,8 @@ import { bloomCls } from "@/shared/ui/motion";
 import { ChevronRight, Copy, FilePlus, Pencil, Trash2 } from "lucide-react";
 import { useMemo, useState, type DragEvent, type MouseEvent } from "react";
 import { useShallow } from "zustand/shallow";
-import { cn, isUnder } from "@/shared/lib/utils";
+import { fileName } from "@/shared/lib/paths";
+import { cn } from "@/shared/lib/utils";
 import { ContextMenuItem as Item, ContextMenuSeparator } from "@/shared/ui/menu-item";
 import { MenuMarker } from "@/shared/ui/menu";
 import { AnimatePresence, m, spring } from "@/shared/ui/motion";
@@ -12,11 +13,9 @@ import { popoverCls } from "@/shared/ui/popover";
 import { MotionItem, MotionList } from "@/shared/ui/motion-list";
 import { DeleteDialog } from "@/shared/vault/FileTree";
 import { DropRing, GroupRule, InlineRename, RowActions, useHoverOpen } from "@/shared/vault/tree-parts";
-import { GAME_DIR, NEW_SCENE_DIR } from "@/shared/vault/places";
+import { GAME_DIR } from "@/shared/lib/places";
 import { readInfo } from "../lib/header";
 import { createScene, duplicateScene, groupScenes, moveScene, retitleScene, useChapters, useSceneIndex, useScenes, type SceneRow } from "../state";
-
-const DEV_DIR = `${GAME_DIR}/dev`;
 
 type Row = SceneRow;
 
@@ -68,12 +67,8 @@ export function SceneList() {
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
     const g = groupAt(e.target);
-    if (dragging && g && g !== dragging.group) {
-      const p = dragging.path;
-      if (g === ":dev") moveScene(p, "", DEV_DIR);
-      else if (g === ":none") moveScene(p, "", isUnder(p, DEV_DIR) ? NEW_SCENE_DIR : undefined);
-      else moveScene(p, g);
-    }
+    const target = g !== dragging?.group ? groups?.find(x => x.id === g)?.target : undefined;
+    if (dragging && target) moveScene(dragging.path, target);
     endDrag();
   };
 
@@ -92,7 +87,7 @@ export function SceneList() {
                       className="relative flex h-7 w-full items-center gap-1 pl-3 pr-2 text-left font-sans text-base text-bone transition-colors hover:text-paper">
                       {dropGroup === g.id && <DropRing />}
                       <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-taupe transition-transform duration-200", !closed.has(g.id) && "rotate-90")} strokeWidth={2.5} />
-                      <span className={cn("relative truncate", g.id.startsWith(":") && "italic text-taupe")}>{g.name}</span>
+                      <span className={cn("relative truncate", !g.target.chapter && "italic text-taupe")}>{g.name}</span>
                     </button>
                     <AnimatePresence initial={false}>
                       {!closed.has(g.id) && (
@@ -126,7 +121,7 @@ export function SceneList() {
           </ContextMenu.Positioner>
         </ContextMenu.Portal>
       </ContextMenu.Root>
-      <DeleteDialog node={deleting && { path: deleting.path, name: deleting.path.split("/").pop()!, kind: "file" }} name={deleting?.title}
+      <DeleteDialog node={deleting && { path: deleting.path, name: fileName(deleting.path), kind: "file" }} name={deleting?.title}
         what="Jumps to its labels will stop working." onClose={() => setDeleting(null)} />
     </>
   );

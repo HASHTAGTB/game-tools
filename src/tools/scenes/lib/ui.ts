@@ -62,11 +62,21 @@ type SceneUi = {
   speedOpen: boolean;
 };
 
+/** What the box view has open or pending for the scene in it: none of it carries over to another scene. */
+const perScene = (): Pick<SceneUi, "focus" | "openCard" | "tabs" | "reveal" | "menu" | "entering" | "rawIds" | "typing" | "speedOpen"> => ({
+  focus: null, openCard: null, tabs: {}, reveal: null, menu: null, entering: null, rawIds: new Set(), typing: null, speedOpen: false,
+});
+
 export const useSceneUi = create<SceneUi>(() => ({
-  view: null, script: null, line: 1, moved: 0, problems: [], opened: null, loaded: 0,
-  focus: null, openCard: null, tabs: {}, reveal: null, menu: null, entering: null, rawIds: new Set(),
-  typing: null, speedOpen: false,
+  view: null, script: null, line: 1, moved: 0, problems: [], opened: null, loaded: 0, ...perScene(),
 }));
+
+/** The editor loaded a scene (`path`): the box view starts over with it. */
+export const sceneLoaded = (view: EditorView, script: Script, line: number, path: string | null) =>
+  useSceneUi.setState(u => ({ ...perScene(), view, script, line, opened: path, loaded: u.loaded + 1 }));
+
+/** The editor went away (another tool, no scene open). */
+export const editorClosed = () => useSceneUi.setState({ ...perScene(), view: null, script: null, problems: [] });
 
 export const focusLine = (line: number, caret: Caret = "end") => useSceneUi.setState({ focus: { line, caret } });
 export const closeMenu = () => useSceneUi.setState({ menu: null });

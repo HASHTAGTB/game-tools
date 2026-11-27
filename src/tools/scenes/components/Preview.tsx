@@ -15,7 +15,7 @@ import { EMPTY_STAGE, placeOf, playScript, type Sprite, type Stage } from "../li
 import { beatsOf, type Beat } from "../lib/renpyText";
 import { useSceneUi } from "../lib/ui";
 import { useScenes } from "../state";
-import { applyFixes } from "../lib/fixes";
+import { applyFixes, isLineFix } from "../lib/fixes";
 import { FixButton } from "./problems";
 import { ProblemRow, ProblemSummary } from "@/shared/ui/problems";
 
@@ -380,7 +380,7 @@ function Problems() {
     v.dispatch({ selection: { anchor: L.from + (p.from ?? L.length) }, scrollIntoView: true });
     v.focus();
   };
-  const fixable = real.filter(p => p.fix && !p.fix.create && (p.fix.at ?? "line") === "line");
+  const fixable = real.filter(isLineFix);
   return (
     <section className="flex min-h-0 flex-1 flex-col">
       <div className="mb-2 flex shrink-0 items-baseline gap-3">

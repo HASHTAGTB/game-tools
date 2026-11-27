@@ -2,12 +2,13 @@ import { useMemo, useRef } from "react";
 import { create } from "zustand";
 import { useShallow } from "zustand/shallow";
 import { useGame } from "@/shared/lib/game";
-import { errorMessage, freeName, isUnder } from "@/shared/lib/utils";
-import { joinPath, listFiles, readFile, readJson, writeText } from "@/shared/lib/workspace";
-import { GAME_DIR, NEW_SCENE_DIR, SCENE_DIRS } from "@/shared/vault/places";
-import { baseName, createVaultStore, parentOf } from "@/shared/vault/store";
-import { CHAPTERS_DIR, chapterIdOf } from "@/tools/timeline/lib/store";
-import { readInfo, setInfo, withInfo, type SceneInfo } from "./lib/header";
+import { isUnder, joinPath, parentOf } from "@/shared/lib/paths";
+import { errorMessage, freeName } from "@/shared/lib/utils";
+import { readFile, writeText } from "@/shared/lib/workspace";
+import { DEV_SCENE_DIR, GAME_DIR, NEW_SCENE_DIR, SCENE_DIRS } from "@/shared/lib/places";
+import { baseName, createVaultStore } from "@/shared/vault/store";
+import { readChapterRefs, type ChapterRef } from "@/tools/timeline/lib/store";
+import { readInfo, setInfo, withInfo, type InfoKey, type SceneInfo } from "./lib/header";
 import { labelsIn } from "./lib/labels";
 import { chatsIn, type ChatMsg } from "./lib/phone";
 import { parseScript, sceneTemplate, suggestLabel } from "./lib/script";
@@ -46,8 +47,7 @@ type SceneIndex = {
   reading: Promise<void> | null;
   /** The open scene's entry from before the index was read. */
   pending: Record<string, SceneEntry>;
-  /** Read every scene once per story folder, a few files at a time (on GitHub each is a request). A read that fails
-   *  is tried again on the next call. */
+  /** Read every scene once per story folder. A read that fails is tried again on the next call. */
   load: () => Promise<void>;
   /** A scene changed (opened, saved, written): keep its entry up to date. */
   update: (path: string, text: string) => void;
@@ -69,12 +69,10 @@ export const useSceneIndex = create<SceneIndex>()((set, get) => ({
       await useScenes.getState().loadIndex();
       const paths = useScenes.getState().index ?? [];
       const files: Record<string, SceneEntry> = {};
-      for (let i = 0; i < paths.length; i += 8) {
-        await Promise.all(paths.slice(i, i + 8).map(async p => {
-          const f = await readFile(p).catch(() => null);
-          if (f) files[p] = entryOf(f.text);
-        }));
-      }
+      await Promise.all(paths.map(async p => {
+        const f = await readFile(p).catch(() => null);
+        if (f) files[p] = entryOf(f.text);
+      }));
       if (locKey() !== key) return;   // another folder was picked meanwhile
       set(s => ({ files: { ...files, ...s.pending, ...(s.files ?? {}) } }));
     })().catch(e => { if (get().readFor === key) set({ reading: null }); throw e; });
@@ -128,8 +126,10 @@ export function useKnownLabels(): Set<string> | null {
 // ---------------------------------------------------------------- story order
 
 export type SceneRow = { path: string; title: string };
-export type SceneGroup = { id: string; name: string; rows: SceneRow[] };
-const DEV_DIR = `${GAME_DIR}/dev`;
+/** Where a scene dropped on a group goes: that chapter ("" none), and into `folder` if it isn't in it already. */
+export type SceneTarget = { chapter: string; folder: string | null };
+/** A group of the scene list: a chapter, "No chapter" (the scenes in scenes/) or "dev" (the dev/ folder's). */
+export type SceneGroup = { id: string; name: string; rows: SceneRow[]; target: SceneTarget };
 const byTitle = (a: SceneRow, b: SceneRow) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" });
 
 /** The scenes grouped by their timeline chapter, in the timeline's order, each chapter's by title (dates sort right:
@@ -139,15 +139,18 @@ export function groupScenes(paths: string[], infoOf: (p: string) => SceneInfo | 
   const byChapter = new Map<string, SceneRow[]>();
   for (const p of paths) {
     const info = infoOf(p);
-    const id = info?.chapter || (isUnder(p, DEV_DIR) ? ":dev" : ":none");
+    const id = info?.chapter || (isUnder(p, DEV_SCENE_DIR) ? ":dev" : ":none");
     byChapter.set(id, [...(byChapter.get(id) ?? []), { path: p, title: titleOf(p, info) }]);
   }
   const out: SceneGroup[] = [];
-  const take = (id: string, name: string) => { const rows = byChapter.get(id); if (rows) { out.push({ id, name, rows: rows.sort(byTitle) }); byChapter.delete(id); } };
-  for (const c of chapters ?? []) take(c.id, c.name);
-  for (const id of [...byChapter.keys()].filter(k => !k.startsWith(":")).sort()) take(id, id);
-  take(":none", "No chapter");
-  take(":dev", "dev");
+  const take = (id: string, name: string, target: SceneTarget) => {
+    const rows = byChapter.get(id);
+    if (rows) { out.push({ id, name, rows: rows.sort(byTitle), target }); byChapter.delete(id); }
+  };
+  for (const c of chapters ?? []) take(c.id, c.name, { chapter: c.id, folder: null });
+  for (const id of [...byChapter.keys()].filter(k => !k.startsWith(":")).sort()) take(id, id, { chapter: id, folder: null });
+  take(":none", "No chapter", { chapter: "", folder: NEW_SCENE_DIR });
+  take(":dev", "dev", { chapter: "", folder: DEV_SCENE_DIR });
   return out;
 }
 
@@ -172,22 +175,13 @@ export function useChatHistory(path: string | null): ChatMsg[] | null {
 
 // ---------------------------------------------------------------- chapters (from the timeline)
 
-/** A timeline chapter, as far as the scenes care. Later the timeline could link its events to scenes too. */
-export type ChapterRef = { id: string; name: string; order: number };
-
 type Chapters = { list: ChapterRef[] | null; load: () => Promise<void> };
 
 export const useChapters = create<Chapters>()(set => ({
   list: null,
   load: async () => {
     try {
-      const paths = await listFiles(CHAPTERS_DIR, ".json");
-      const raw = await Promise.all(paths.map(async p => ({ p, c: await readJson<Partial<ChapterRef>>(p).catch(() => null) })));
-      const list = raw.map(({ p, c }) => {
-        const id = c?.id || chapterIdOf(p);
-        return { id, name: c?.name || id, order: typeof c?.order === "number" ? c.order : 0 };
-      });
-      set({ list: list.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name)) });
+      set({ list: await readChapterRefs() });
     } catch {
       set({ list: [] });   // no timeline yet: every scene is "No chapter"
     }
@@ -203,9 +197,10 @@ function taken(dir: string) {
   const names = new Set(Object.keys(files).filter(p => parentOf(p) === dir).map(p => baseName(p).toLowerCase()));
   return { labels, names };
 }
-const freeLabel = (base: string, dir: string) => {
+/** `base`, or `base_2`, `base_3`, …: a label no scene or the game uses, nor `also`, and no file in `dir` is called. */
+const freeLabel = (base: string, dir: string, also: ReadonlySet<string> = new Set()) => {
   const t = taken(dir);
-  return freeName(base, n => t.labels.has(n) || t.names.has(n.toLowerCase()), i => `${base}_${i}`);
+  return freeName(base, n => t.labels.has(n) || also.has(n) || t.names.has(n.toLowerCase()), i => `${base}_${i}`);
 };
 
 /** A file the store doesn't know about yet: list its folder again and add it to the index. */
@@ -241,12 +236,7 @@ export async function duplicateScene(path: string) {
     const dir = parentOf(path);
     const own = [...labelsIn(parseScript(text))];
     const renames = new Map<string, string>();
-    for (const l of own) {
-      const t = taken(dir);
-      const base = `${l}_copy`;
-      const name = freeName(base, n => t.labels.has(n) || [...renames.values()].includes(n) || t.names.has(n.toLowerCase()), i => `${base}_${i}`);
-      renames.set(l, name);
-    }
+    for (const l of own) renames.set(l, freeLabel(`${l}_copy`, dir, new Set(renames.values())));
     let copy = text.split("\n").map(line => {
       if (!/^\s*(label|jump|call)\b/.test(line) && !/\b(jump|call)\s+\w/.test(line)) return line;
       return line.replace(/\b\w+\b/g, w => renames.get(w) ?? w);
@@ -260,46 +250,36 @@ export async function duplicateScene(path: string) {
   } catch (e) { st.setError("Could not duplicate it: " + errorMessage(e)); }
 }
 
-/** Give a scene a new title (its `## title:` line). The open scene changes through its editor, so Ctrl+Z undoes it. */
+/** Set a scene's header key (its `## key:` line; "" takes it out). The open scene changes through its editor, so
+ *  Ctrl+Z undoes it; any other is rewritten on disk. */
+async function setSceneInfo(path: string, key: InfoKey, value: string) {
+  const view = useSceneUi.getState().view;
+  if (useScenes.getState().path === path && view) {
+    const c = setInfo(view.state.doc.toString(), key, value);
+    if (c) view.dispatch({ changes: c, userEvent: "input.info" });
+    return;
+  }
+  const f = await readFile(path);
+  if (!f) return;
+  const next = withInfo(f.text, key, value);
+  if (next === f.text) return;
+  await writeText(path, next);
+  useSceneIndex.getState().update(path, next);
+}
+
+/** Give a scene a new title (its `## title:` line). */
 export async function retitleScene(path: string, title: string) {
   const st = useScenes.getState();
   st.setRenaming(null);
   const clean = title.replace(/\s+/g, " ").trim();
   if (!clean) return;
-  const view = useSceneUi.getState().view;
-  if (st.path === path && view) {
-    const c = setInfo(view.state.doc.toString(), "title", clean);
-    if (c) view.dispatch({ changes: c, userEvent: "input.info" });
-    return;
-  }
-  try {
-    const f = await readFile(path);
-    if (!f) return;
-    const next = withInfo(f.text, "title", clean);
-    if (next === f.text) return;
-    await writeText(path, next);
-    useSceneIndex.getState().update(path, next);
-  } catch (e) { st.setError("Could not rename it: " + errorMessage(e)); }
+  await setSceneInfo(path, "title", clean).catch(e => st.setError("Could not rename it: " + errorMessage(e)));
 }
 
-/** Put a scene in a timeline chapter (its `## chapter:` line; "" takes it out), and into `dir` if given (the list's
- *  "dev" group is the dev/ folder). The open scene changes through its editor, so Ctrl+Z undoes the chapter. */
-export async function moveScene(path: string, chapter: string, dir?: string) {
-  const st = useScenes.getState();
-  const view = useSceneUi.getState().view;
+/** Put a scene where a group of the list says: in its chapter, and into its folder if it isn't in it already. */
+export async function moveScene(path: string, to: SceneTarget) {
   try {
-    if (st.path === path && view) {
-      const c = setInfo(view.state.doc.toString(), "chapter", chapter);
-      if (c) view.dispatch({ changes: c, userEvent: "input.info" });
-    } else {
-      const f = await readFile(path);
-      if (!f) return;
-      const next = withInfo(f.text, "chapter", chapter);
-      if (next !== f.text) {
-        await writeText(path, next);
-        useSceneIndex.getState().update(path, next);
-      }
-    }
-    if (dir && parentOf(path) !== dir) await useScenes.getState().move(path, dir);
-  } catch (e) { st.setError("Could not move it: " + errorMessage(e)); }
+    await setSceneInfo(path, "chapter", to.chapter);
+    if (to.folder && !isUnder(path, to.folder)) await useScenes.getState().move(path, to.folder);
+  } catch (e) { useScenes.getState().setError("Could not move it: " + errorMessage(e)); }
 }

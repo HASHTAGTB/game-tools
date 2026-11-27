@@ -103,6 +103,12 @@ function Picker({ groups, placeholder, create }: { groups: Group[]; placeholder:
   );
 }
 
+/** A character as a Picker row, found by their variable too. */
+function person(m: Manifest | null, id: string, run: () => void, current?: boolean): Item {
+  const w = look(m, id);
+  return { label: w.name, color: w.legible, keys: id, current, run };
+}
+
 /** The Picker row that makes a new character from what was typed (core/characters.rpy), then uses them. */
 function newCharacter(manifest: Manifest | null, use: (id: string) => void) {
   if (!manifest) return undefined;
@@ -130,7 +136,12 @@ function AddMenu({ menu }: { menu: Extract<BoxMenu, { kind: "add" }> }) {
   const line = (who: string | null) => () => focusLine(put([sayText(who, "")]), "end");
   /** an empty Ren'Py box (`pass` until something's typed) */
   const raw = () => { const n = put(["pass"]); markRaw(view, n, true); focusLine(n, "end"); };
-  const card = (x: Stmt) => () => { const n = put([formatStmt(x)]); useSceneUi.setState({ openCard: idAt(view, n), focus: { line: n, caret: "end" } }); };
+  /** a new card, open for editing (none: the item is off, see `off`) */
+  const card = (x: Stmt | null) => () => {
+    if (!x) return;
+    const n = put([formatStmt(x)]);
+    useSceneUi.setState({ openCard: idAt(view, n), focus: { line: n, caret: "end" } });
+  };
 
   const thread = useMemo(() => {
     const count = new Map<string, number>();
@@ -138,9 +149,9 @@ function AddMenu({ menu }: { menu: Extract<BoxMenu, { kind: "add" }> }) {
     return [...count].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "chat";
   }, [script]);
   const pov = stage.pov ?? cast[0] ?? "satoru";
-  const people = cast.map(id => { const w = look(c.manifest, id); return { label: w.name, color: w.legible, keys: id, run: line(id) } as Item; });
+  const people = cast.map(id => person(manifest, id, line(id)));
   const others = (manifest?.characters ?? []).filter(x => !cast.includes(x.id))
-    .map(x => ({ label: x.name, color: look(manifest, x.id).legible, keys: x.id, run: line(x.id) }) as Item);
+    .map(x => person(manifest, x.id, line(x.id)));
   const everyone: Group[] = others.length ? [{ title: "Everyone else", layout: "chips", search: true, items: others }] : [];
   const create = newCharacter(manifest, id => line(id)());
 
@@ -148,7 +159,7 @@ function AddMenu({ menu }: { menu: Extract<BoxMenu, { kind: "add" }> }) {
     // the chat's members first; narration and every other statement work inside a chat too
     const block = blockAt(c.phone, place.after);
     const members = block ? membersOf(manifest, block.head.target) : null;
-    const inChat = members ? people.filter(p => members.includes(p.keys!)).concat(members.filter(id => !cast.includes(id)).map(id => { const w = look(manifest, id); return { label: w.name, color: w.legible, keys: id, run: line(id) }; })) : people;
+    const inChat = members ? [...cast.filter(id => members.includes(id)), ...members.filter(id => !cast.includes(id))].map(id => person(manifest, id, line(id))) : people;
     return <Picker placeholder="Who writes…" create={create} groups={[
       { layout: "chips", items: [...inChat, { icon: Text, label: "Narration", keys: "erzähler text", run: line(null) }] },
       ...everyone,
@@ -203,8 +214,8 @@ function SpeakerMenu({ menu }: { menu: Extract<BoxMenu, { kind: "speaker" }> }) 
   return <Picker placeholder="Who says it…" create={newCharacter(c.manifest, id => set(id)())} groups={[
     { layout: "list", items: [
       ...(menu.chat ? [] : [{ icon: Text, label: "Narration", keys: pov ? look(c.manifest, pov).name.toLowerCase() : "", current: current === null, run: set(null) }]),
-      ...c.cast.map(id => { const w = look(c.manifest, id); return { label: w.name, color: w.legible, keys: id, current: current === id, run: set(id) }; }),
+      ...c.cast.map(id => person(c.manifest, id, set(id), current === id)),
     ] },
-    ...(others.length ? [{ title: "Everyone else", layout: "list" as const, search: true, items: others.map(x => ({ label: x.name, color: look(c.manifest, x.id).legible, keys: x.id, current: current === x.id, run: set(x.id) })) }] : []),
+    ...(others.length ? [{ title: "Everyone else", layout: "list" as const, search: true, items: others.map(x => person(c.manifest, x.id, set(x.id), current === x.id)) }] : []),
   ]} />;
 }

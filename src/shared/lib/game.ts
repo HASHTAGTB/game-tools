@@ -26,8 +26,14 @@ export type GameCharacter = {
   group: string;
 };
 
+/** A group chat the phone declares. */
+export type ChatGroup = { id: string; title: string; members: string[] };
+
+/** Bumped whenever the shape changes: a copy cached in this browser by an older version is then ignored. */
+export const MANIFEST_VERSION = 2;
+
 export type Manifest = {
-  version: 1;
+  version: typeof MANIFEST_VERSION;
   characters: GameCharacter[];
   /** false when renpy/game/assets/ is missing or empty: sprites, backgrounds and music are then unknown, not absent */
   media: boolean;
@@ -39,13 +45,14 @@ export type Manifest = {
   music: string[];
   transitions: string[];
   /** the game's own transitions (`define`s in core/transitions.rpy): name → what it's defined as ("Fade(1.5, 0, 0.5)") */
-  transitionDefs?: Record<string, string>;
+  transitionDefs: Record<string, string>;
   positions: { name: string; params?: Record<string, number> }[];
   labels: string[];
-  /** the phone's group chats (features/phone/content/chats/chats.rpy); DMs need no declaration */
-  chats?: { id: string; title: string; members: string[] }[];
+  /** the phone's group chats (features/phone/content/chats/chats.rpy); DMs need no declaration. null: the game has no
+   *  chats.rpy, so which groups exist isn't known */
+  chats: ChatGroup[] | null;
   /** photos for the phone (assets/features/photos/): name → file in assets/ ("incident_01" → "features/photos/incident/incident_01.webp") */
-  photos?: Record<string, string>;
+  photos: Record<string, string>;
 };
 
 export type GameState = {
@@ -72,7 +79,7 @@ function fromCache(): { manifest: Manifest; text: string } | null {
     const text = localStorage.getItem(CACHE_KEY);
     if (!text) return null;
     const m = JSON.parse(text);
-    return m?.version === 1 && Array.isArray(m.characters) && m.imageFiles ? { manifest: m, text } : null;
+    return m?.version === MANIFEST_VERSION && Array.isArray(m.characters) && m.imageFiles ? { manifest: m, text } : null;
   } catch { return null; }
 }
 function toCache(text: string | null) {

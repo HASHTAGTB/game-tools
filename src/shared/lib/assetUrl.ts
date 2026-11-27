@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { GAME_DIR } from "@/shared/vault/places";
-import { joinPath, readBytes, statFile } from "./workspace";
+import { GAME_DIR } from "./places";
+import { joinPath } from "./paths";
+import { readBytes, statFile } from "./workspace";
 
 /** Images from the game's assets/ as object URLs, on whichever backend can give their bytes (dev server, picked
  *  folder, GitHub incl. Git LFS). Browser storage has no game files: there everything is null.

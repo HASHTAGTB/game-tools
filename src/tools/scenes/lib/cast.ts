@@ -1,5 +1,6 @@
 import type { EditorState } from "@codemirror/state";
 import type { Manifest } from "@/shared/lib/game";
+import { unixLines } from "@/shared/lib/utils";
 import { scriptField } from "./editorState";
 import { escapeText } from "./renpyText";
 import { pad, parseLine, sayText } from "./script";
@@ -31,7 +32,7 @@ export function resolveName(name: string, m: Manifest | null, cast: string[]): s
 
 /** Pasted text as script lines: Ren'Py stays as it is (re-indented), prose becomes narration, and "Rin: Hallo" Rin's line. */
 export function pastedLines(text: string, indent: number, m: Manifest | null, cast: string[]): string[] {
-  const raw = text.replace(/\r\n?/g, "\n").replace(/\n+$/, "").split("\n");
+  const raw = unixLines(text).replace(/\n+$/, "").split("\n");
   const filled = raw.filter(l => l.trim());
   const renpy = filled.filter(l => { const k = parseLine(l).kind; return k === "say" || k === "stmt" || k === "label" || k === "choice"; }).length;
   if (filled.length && renpy / filled.length >= 0.6) {

@@ -2,9 +2,10 @@ import { serialQueue, whileVisible } from "./toolState";
 import { locationVersion, readFile, removeFile, statFile, writeText, type FileData } from "./workspace";
 
 /** Keeps a tool's data and its files in the data folder in step, for tools whose data is a set of JSON files (the
- *  Timeline's chapters, the Prompt Builder's characters). The tool says what its data is as files (`files`); this
- *  writes the ones that changed, deletes the ones that went, and every few seconds picks up files changed somewhere
- *  else (git pull, another tab, GitHub). A file changed on both sides becomes a conflict for the user to settle.
+ *  Timeline's chapters, the Prompt Builder's characters). The tool says what its data is as files (`files`) and how one
+ *  file goes into it (`applyFile`); this writes the files that changed, deletes the ones that went, and every few
+ *  seconds picks up files changed somewhere else (git pull, another tab, GitHub). A file changed on both sides becomes
+ *  a conflict for the user to settle.
  *
  *  For each file it remembers the text as this tab last read or wrote it and the file's change time: the text to skip
  *  writes that change nothing, the time to notice someone else's change. The text is the tool's own way of writing the
@@ -13,18 +14,20 @@ import { locationVersion, readFile, removeFile, statFile, writeText, type FileDa
 /** Someone else changed (or deleted: `theirs` null) a file while this tab had unsaved edits to it. */
 export type FileConflict = { path: string; label: string; theirs: string | null; mtime: number | null };
 
-export type FileSyncConfig = {
-  /** The data as files right now: path → text. */
-  files: () => Map<string, string>;
+export type FileSyncConfig<D> = {
+  /** The data before any file is read into it. */
+  empty: D;
+  get: () => D;
+  set: (data: D) => void;
+  /** The data as files: path → text. */
+  files: (data: D) => Map<string, string>;
+  /** `data` with one file's text put in (null: the file was deleted). Null if the file isn't something this tool can
+   *  use (left alone); throws if it doesn't parse (half-written? tried again next time). */
+  applyFile: (data: D, path: string, text: string | null) => D | null;
   /** The data's files in the data folder (files others add show up through this). */
   list: () => Promise<string[]>;
   /** What a file that doesn't exist yet stands for (an empty list): it's only written once it holds something else. */
   blank?: (path: string) => string | undefined;
-  /** Replace the data with what was read. Returns the paths it could use (a file that doesn't parse is left alone). */
-  load: (files: [string, string][]) => string[];
-  /** Put files read from disk into the data (text null: deleted). Returns the paths it could use; one that doesn't
-   *  parse (half-written?) is tried again next time. */
-  apply: (files: [string, string | null][]) => string[];
   /** What a file is called in messages ("Chapter "Prolog""). */
   label: (path: string) => string;
   conflicts: () => FileConflict[];
@@ -34,81 +37,91 @@ export type FileSyncConfig = {
   onReloaded: (labels: string[]) => void;
 };
 
-export function createFileSync(c: FileSyncConfig) {
+/** Write `text` to `path` unless the file changed since this tab knew it at `mtime` (null: it didn't exist). Returns
+ *  the new change time, or the file as it is now (null: deleted) when someone else changed it. */
+export async function writeIfUnchanged(path: string, text: string, mtime: number | null): Promise<{ mtime: number } | { theirs: FileData | null }> {
+  if ((await statFile(path)) !== mtime) return { theirs: await readFile(path) };
+  return { mtime: await writeText(path, text) };
+}
+
+export function createFileSync<D>(c: FileSyncConfig<D>) {
   const serial = serialQueue();
   let known = new Map<string, FileData>();
   /** The location the files were last read from (`locationVersion`). */
   let loadedFor = -1;
 
+  const files = () => c.files(c.get());
   /** The text a file holds as far as this tab knows. */
   const base = (path: string) => known.get(path)?.text ?? c.blank?.(path) ?? null;
   /** After reading `f` into the data: remember it as the tool writes it. */
   const remember = (path: string, f: FileData | null) => {
     if (!f) return void known.delete(path);
-    known.set(path, { text: c.files().get(path) ?? f.text, mtime: f.mtime });
+    known.set(path, { text: files().get(path) ?? f.text, mtime: f.mtime });
   };
   const addConflict = (path: string, f: FileData | null) => {
     if (c.conflicts().some(x => x.path === path)) return;
     c.setConflicts([...c.conflicts(), { path, label: c.label(path), theirs: f?.text ?? null, mtime: f?.mtime ?? null }]);
   };
+  /** `start` with these files put in, and the paths that could be used. */
+  const applyAll = (start: D, list: [string, string | null][]) => {
+    let data = start;
+    const used: string[] = [];
+    for (const [path, text] of list) {
+      try {
+        const next = c.applyFile(data, path, text);
+        if (next !== null) { data = next; used.push(path); }
+      } catch { /* doesn't parse: left alone */ }
+    }
+    c.set(data);
+    return new Set(used);
+  };
 
   async function flushNow() {
-    const files = c.files();
+    const now = files();
     const blocked = new Set(c.conflicts().map(x => x.path));
-    for (const [path, text] of files) {
+    for (const [path, text] of now) {
       if (blocked.has(path) || text === base(path)) continue;
-      const now = await statFile(path);
-      if (now !== (known.get(path)?.mtime ?? null)) { addConflict(path, await readFile(path)); continue; }
-      known.set(path, { text, mtime: await writeText(path, text) });
+      const r = await writeIfUnchanged(path, text, known.get(path)?.mtime ?? null);
+      if ("theirs" in r) addConflict(path, r.theirs);
+      else known.set(path, { text, mtime: r.mtime });
     }
     // files whose data was deleted here
     for (const [path, k] of [...known]) {
-      if (files.has(path) || blocked.has(path)) continue;
-      const now = await statFile(path);
-      if (now !== null && now !== k.mtime) { addConflict(path, await readFile(path)); continue; }
+      if (now.has(path) || blocked.has(path)) continue;
+      const mtime = await statFile(path);
+      if (mtime !== null && mtime !== k.mtime) { addConflict(path, await readFile(path)); continue; }
       await removeFile(path);
       known.delete(path);
     }
   }
 
   async function pollNow() {
-    const files = c.files();
-    const paths = new Set([...await c.list(), ...files.keys(), ...known.keys()]);
+    const mine = files();
+    const paths = [...new Set([...await c.list(), ...mine.keys(), ...known.keys()])];
+    const times = await Promise.all(paths.map(statFile));
+    const changed = paths.flatMap((p, i) => (times[i] === (known.get(p)?.mtime ?? null) ? [] : [{ path: p, mtime: times[i] }]));
+    const read = await Promise.all(changed.map(x => (x.mtime === null ? null : readFile(x.path))));
     const incoming: [string, FileData | null][] = [];
-    // the change times a few at a time (on GitHub each is a request), then the few files that changed one by one
-    const list = [...paths], times = new Map<string, number | null>();
-    for (let i = 0; i < list.length; i += 8) {
-      const batch = list.slice(i, i + 8);
-      (await Promise.all(batch.map(statFile))).forEach((t, j) => times.set(batch[j], t));
-    }
-    for (const path of paths) {
-      const now = times.get(path) ?? null;
-      if (now === (known.get(path)?.mtime ?? null)) continue;
-      const f = now === null ? null : await readFile(path);
-      const mine = files.get(path) ?? null;
-      if ((f?.text ?? null) === mine) { remember(path, f); continue; }
-      if (mine !== base(path)) { addConflict(path, f); continue; }   // edited here too
-      incoming.push([path, f]);
-    }
+    changed.forEach(({ path }, i) => {
+      const f = read[i], here = mine.get(path) ?? null;
+      if ((f?.text ?? null) === here) remember(path, f);
+      else if (here !== base(path)) addConflict(path, f);   // edited here too
+      else incoming.push([path, f]);
+    });
     if (!incoming.length) return;
-    const used = new Set(c.apply(incoming.map(([p, f]) => [p, f?.text ?? null])));
+    const used = applyAll(c.get(), incoming.map(([p, f]) => [p, f?.text ?? null]));
     for (const [p, f] of incoming) if (used.has(p)) remember(p, f);
     if (used.size) c.onReloaded([...used].map(c.label));
   }
 
   return {
-    /** Read every file and hand them to `load`. Returns the files that couldn't be used. */
+    /** Read every file into `empty`. Returns the files that couldn't be used. */
     load: async (): Promise<string[]> => {
       const version = locationVersion();
       const paths = await c.list();
-      const read: [string, FileData][] = [];
-      // a few at a time: on GitHub each file is a request
-      for (let i = 0; i < paths.length; i += 8) {
-        const batch = paths.slice(i, i + 8);
-        const fs = await Promise.all(batch.map(p => readFile(p)));
-        batch.forEach((p, j) => { const f = fs[j]; if (f) read.push([p, f]); });
-      }
-      const used = new Set(c.load(read.map(([p, f]) => [p, f.text])));
+      const texts = await Promise.all(paths.map(p => readFile(p)));
+      const read = paths.flatMap((p, i): [string, FileData][] => (texts[i] ? [[p, texts[i]!]] : []));
+      const used = applyAll(c.empty, read.map(([p, f]) => [p, f.text]));
       known = new Map();
       for (const [p, f] of read) if (used.has(p)) remember(p, f);
       c.setConflicts([]);
@@ -136,7 +149,7 @@ export function createFileSync(c: FileSyncConfig) {
       c.setConflicts(c.conflicts().filter(y => y.path !== path));
       const theirs = x.theirs === null ? null : { text: x.theirs, mtime: x.mtime! };
       if (keep === "theirs") {
-        c.apply([[path, x.theirs]]);
+        applyAll(c.get(), [[path, x.theirs]]);
         remember(path, theirs);
       } else {
         if (theirs) known.set(path, theirs); else known.delete(path);

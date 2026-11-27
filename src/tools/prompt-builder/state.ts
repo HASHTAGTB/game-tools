@@ -1,12 +1,13 @@
 import { create } from "zustand";
 import { STATIC } from "@/shared/lib/env";
+import { fileName } from "@/shared/lib/paths";
 import { createFileSync, type FileConflict } from "@/shared/lib/fileSync";
 import { debounce, noticeSetter, whenHidden } from "@/shared/lib/toolState";
 import { errorMessage, uniqueId } from "@/shared/lib/utils";
 import type { DragTag } from "./lib/dnd";
 import { listFor, sameKey, tagKey } from "./lib/prompt";
 import { getLocation, NeedsPermission, type Location } from "@/shared/lib/workspace";
-import { charPath, listCharacterFiles, migrateLegacy, newCharacter, parseCharacter, toJson } from "./lib/store";
+import { applyCharacterFile, charPath, listCharacterFiles, migrateLegacy, newCharacter, toJson } from "./lib/store";
 import { loadTagDb, type TagDb } from "./lib/tags";
 import type { Character, ListKey } from "./lib/types";
 
@@ -69,35 +70,13 @@ export const usePromptBuilder = create<State & Actions>()((set, get) => {
 
   /** One file per character (shared/lib/fileSync). */
   const sync = createFileSync({
-    files: () => new Map(get().chars.map(c => [charPath(c.id), toJson(c)])),
+    empty: [],
+    get: () => get().chars,
+    set: setChars,
+    files: chars => new Map(chars.map(c => [charPath(c.id), toJson(c)])),
+    applyFile: applyCharacterFile,
     list: listCharacterFiles,
-    load: files => {
-      const chars: Character[] = [];
-      const used: string[] = [];
-      for (const [path, text] of files) {
-        try {
-          const c = parseCharacter(path, text);
-          if (c) { chars.push(c); used.push(path); }
-        } catch (e) { console.warn(`[prompt-builder] skipping ${path}: ${e}`); }
-      }
-      setChars(chars);
-      return used;
-    },
-    apply: files => {
-      const byId = new Map(get().chars.map(c => [charPath(c.id), c]));
-      const used: string[] = [];
-      for (const [path, text] of files) {
-        try {
-          const c = text === null ? null : parseCharacter(path, text);
-          if (text !== null && !c) continue;
-          if (c) byId.set(path, c); else byId.delete(path);
-          used.push(path);
-        } catch { /* half-written: next time */ }
-      }
-      setChars([...byId.values()]);
-      return used;
-    },
-    label: path => `"${get().chars.find(c => charPath(c.id) === path)?.name ?? path.split("/").pop()}"`,
+    label: path => `"${get().chars.find(c => charPath(c.id) === path)?.name ?? fileName(path)}"`,
     conflicts: () => get().conflicts,
     setConflicts: conflicts => set({ conflicts }),
     onError: e => set({ error: "Saving failed: " + errorMessage(e) }),

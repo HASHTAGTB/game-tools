@@ -13,6 +13,27 @@ import { formatChatHead, withArgs, type ChatHead, type MsgArgs } from "./phone";
  *  that change where lines are return the line the cursor should go to. */
 
 const ev = (view: EditorView, changes: ChangeSpec, userEvent: string) => view.dispatch({ changes, userEvent });
+/** Replace `from`–`to` (holding `old`) by `next`, as only the part that differs: the lines around the caret keep their
+ *  names (lineIds) and typing undoes in sensible steps. */
+function replaceMinimal(view: EditorView, from: number, to: number, old: string, next: string, userEvent: string) {
+  if (old === next) return;
+  let s = 0;
+  while (s < old.length && s < next.length && old[s] === next[s]) s++;
+  let e = 0;
+  while (e < old.length - s && e < next.length - s && old[old.length - 1 - e] === next[next.length - 1 - e]) e++;
+  ev(view, { from: from + s, to: to - e, insert: next.slice(s, next.length - e) }, userEvent);
+}
+
+/** Line `n` rewritten by `f` (given its text), if that changes it. */
+function replaceLine(view: EditorView, n: number, f: (text: string) => string | null, userEvent: string) {
+  const L = view.state.doc.line(n);
+  const next = f(L.text);
+  if (next !== null && next !== L.text) ev(view, { from: L.from, to: L.to, insert: next }, userEvent);
+}
+
+/** A route's label: its own lines go under it, and it goes on at the label `con` where the routes meet. */
+const routeLabel = (label: string, con: string) => `label ${label}:\n    jump ${con}\n\n`;
+
 const isBlank = (view: EditorView, n: number) => n >= 1 && n <= view.state.doc.lines && !view.state.doc.line(n).text.trim();
 
 /** Put `lines` (without the place's indent; nested lines carry their own extra indent) at `place`. Returns the line
@@ -83,13 +104,7 @@ export function setSayRaw(view: EditorView, line: number, raw: string) {
   const L = view.state.doc.line(line);
   const p = parseLine(L.text);
   if (p.kind !== "say" && p.kind !== "choice") return;
-  const old = L.text.slice(p.from, p.to);
-  if (old === raw) return;
-  let s = 0;
-  while (s < old.length && s < raw.length && old[s] === raw[s]) s++;
-  let e = 0;
-  while (e < old.length - s && e < raw.length - s && old[old.length - 1 - e] === raw[raw.length - 1 - e]) e++;
-  ev(view, { from: L.from + p.from + s, to: L.from + p.to - e, insert: raw.slice(s, raw.length - e) }, "input.type");
+  replaceMinimal(view, L.from + p.from, L.from + p.to, L.text.slice(p.from, p.to), raw, "input.type");
 }
 
 export function setSpeaker(view: EditorView, line: number, who: string | null) {
@@ -127,31 +142,18 @@ export function joinSays(view: EditorView, prev: Extract<Box, { kind: "say" }>, 
   return gap;
 }
 
-export function setStmt(view: EditorView, line: number, stmt: Stmt) {
-  const L = view.state.doc.line(line);
-  const text = pad(indentOf(L.text)) + formatStmt(stmt);
-  if (text !== L.text) ev(view, { from: L.from, to: L.to, insert: text }, "input.stmt");
-}
+export const setStmt = (view: EditorView, line: number, stmt: Stmt) =>
+  replaceLine(view, line, t => pad(indentOf(t)) + formatStmt(stmt), "input.stmt");
 
-export function setNote(view: EditorView, line: number, text: string) {
-  const L = view.state.doc.line(line);
-  const next = pad(indentOf(L.text)) + "# " + text.replace(/\n/g, " ");
-  if (next !== L.text) ev(view, { from: L.from, to: L.to, insert: next }, "input.type");
-}
+export const setNote = (view: EditorView, line: number, text: string) =>
+  replaceLine(view, line, t => pad(indentOf(t)) + "# " + text.replace(/\n/g, " "), "input.type");
 
 /** Lines `from`–`to` replaced by `text` (dedented by `indent`; written back with it). */
 export function setRaw(view: EditorView, from: number, to: number, indent: number, text: string) {
   const { doc } = view.state;
   const next = text.split("\n").map(l => (l.trim() ? pad(indent) + l : "")).join("\n");
   const a = doc.line(from).from, b = doc.line(to).to;
-  const old = doc.sliceString(a, b);
-  if (old === next) return;
-  // only what changed, so the lines around the caret keep their names (lineIds) and undo stays small
-  let p = 0;
-  while (p < old.length && p < next.length && old[p] === next[p]) p++;
-  let e = 0;
-  while (e < old.length - p && e < next.length - p && old[old.length - 1 - e] === next[next.length - 1 - e]) e++;
-  ev(view, { from: a + p, to: b - e, insert: next.slice(p, next.length - e) }, "input.type");
+  replaceMinimal(view, a, b, doc.sliceString(a, b), next, "input.type");
 }
 /** The lines `from`–`to` as a raw box edits them: without their shared indent. */
 export function rawText(view: EditorView, from: number, to: number, indent: number) {
@@ -215,12 +217,11 @@ export function addOption(view: EditorView, menu: Extract<Box, { kind: "menu" }>
   const routed = menu.options.find(o => o.route && o.hiddenJump);
   if (routed && menu.cont) {
     const label = freeLabel("opt", base, taken);
-    const conName = labelName(doc.line(menu.cont).text) ?? "";
     const C = doc.line(menu.cont);
     view.dispatch({
       changes: [
         { from: end.to, insert: `\n${pad(ind)}${optionLine(`Option ${n}`)}\n${pad(ind + 4)}jump ${label}` },
-        { from: C.from, insert: `label ${label}:\n    jump ${conName}\n\n` },
+        { from: C.from, insert: routeLabel(label, labelName(C.text) ?? "") },
       ],
       userEvent: "input.box",
     });
@@ -237,12 +238,10 @@ export function routeOption(view: EditorView, menu: Extract<Box, { kind: "menu" 
   const { doc } = view.state;
   const label = freeLabel("opt", base, taken);
   const J = doc.line(o.boxes[0].from), C = doc.line(menu.cont);
-  const conName = labelName(C.text) ?? "";
-  const ind = indentOf(J.text);
   view.dispatch({
     changes: [
-      { from: J.from, to: J.to, insert: `${pad(ind)}jump ${label}` },
-      { from: C.from, insert: `label ${label}:\n    jump ${conName}\n\n` },
+      { from: J.from, to: J.to, insert: `${pad(indentOf(J.text))}jump ${label}` },
+      { from: C.from, insert: routeLabel(label, labelName(C.text) ?? "") },
     ],
     userEvent: "input.box",
   });
@@ -281,20 +280,16 @@ export function setLabel(view: EditorView, name: string) {
 // ---------------------------------------------------------------- the phone
 
 /** A message's tail (what follows its text: `(reply="x", photos=[…])`), changed by `f` (see `withArgs`). */
-export function setMsgArgs(view: EditorView, line: number, f: (a: MsgArgs) => Partial<MsgArgs>) {
-  const L = view.state.doc.line(line);
-  const p = parseLine(L.text);
-  if (p.kind !== "say") return;
-  const tail = withArgs(p.tail, f);
-  const next = L.text.slice(0, p.to + 1) + (tail ? " " + tail : "");
-  if (next !== L.text) ev(view, { from: L.from, to: L.to, insert: next }, "input.args");
-}
+export const setMsgArgs = (view: EditorView, line: number, f: (a: MsgArgs) => Partial<MsgArgs>) =>
+  replaceLine(view, line, t => {
+    const p = parseLine(t);
+    if (p.kind !== "say") return null;
+    const tail = withArgs(p.tail, f);
+    return t.slice(0, p.to + 1) + (tail ? " " + tail : "");
+  }, "input.args");
 
-export function setChatHead(view: EditorView, line: number, head: ChatHead) {
-  const L = view.state.doc.line(line);
-  const next = pad(indentOf(L.text)) + formatChatHead(head);
-  if (next !== L.text) ev(view, { from: L.from, to: L.to, insert: next }, "input.stmt");
-}
+export const setChatHead = (view: EditorView, line: number, head: ChatHead) =>
+  replaceLine(view, line, t => pad(indentOf(t)) + formatChatHead(head), "input.stmt");
 
 /** A `react` line right after line `after` (same indent). Returns its line. */
 export function insertReact(view: EditorView, after: number, react: Extract<Stmt, { kind: "react" }>) {

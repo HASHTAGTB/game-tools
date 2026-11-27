@@ -29,9 +29,11 @@ To add a tool, add it to `TOOLS` in `src/app/tools.ts` and give it a `toolRoute(
 Storage: tools read and write through `src/shared/lib/workspace.ts` (`readJson`, `writeJson`, `listFiles`, …) with paths relative to the data folder, and keep their own files under `toolDir("<tool>")` (`.game-tools/<tool>/`). The data folder panel is `WorkspaceLocation` in `src/shared/ui/`.
 
 Keeping a tool's data and its files in step:
-* `src/shared/lib/fileSync.ts` (`createFileSync`): for data that is a set of JSON files (Timeline, Prompt Builder). The tool says what its data is as files; it writes what changed, deletes what went, picks up files changed elsewhere every few seconds and turns changes on both sides into conflicts (`ConflictBar` in `src/shared/ui/status.tsx`).
-* `src/shared/vault/store.ts` (`createVaultStore`): one open Markdown file at a time plus the folder tree (Notes, Scenes); `useDocEditor` there is the CodeMirror editor both use.
-* `src/shared/lib/toolState.ts`: the plumbing every store shares (one write at a time, notices that go away, settings for this browser, saving when the tab is hidden).
+* `src/shared/lib/fileSync.ts` (`createFileSync`): for data that is a set of JSON files (Timeline, Prompt Builder). The tool says what its data is as files (`files`) and how one file's text goes into it (`applyFile`, a pure function); fileSync writes what changed, deletes what went, picks up files changed elsewhere every few seconds and turns changes on both sides into conflicts (`ConflictBar` in `src/shared/ui/status.tsx`). `writeIfUnchanged` there is the one "write unless someone else changed it" check (the vault store uses it too).
+* `src/shared/vault/store.ts` (`createVaultStore`): one open Markdown file at a time plus the folder tree (Notes, Scenes); `useDocEditor` is the CodeMirror editor both use and `VaultToolPage` the page around it.
+* `src/shared/lib/toolState.ts`: the plumbing every store shares (one write at a time, notices that go away, settings for this browser, saving when the tab is hidden). `usePick` (`src/shared/lib/usePick.ts`) picks a few fields of a store so a component doesn't draw again on every change.
+* Paths in the data folder: `src/shared/lib/paths.ts` (`joinPath`, `parentOf`, `fileName`, `stem`, `isUnder`…); the vault's tool folders (game, scenes) are in `src/shared/lib/places.ts`.
+* Backends just read and write: callers ask for as many files as they need at once (`Promise.all`). The GitHub backend keeps its own requests to a few at a time.
 
 UI kit (`src/shared/ui/`): `Section` (title over a colored rule, actions that appear on hover), `IconButton` (icon only, so it always takes a `label` for its tooltip), `Tooltip`, `Popover`, `Confirm`, `Switch`, `CollapsiblePanel`, `SearchField` and `Toasts`.
 

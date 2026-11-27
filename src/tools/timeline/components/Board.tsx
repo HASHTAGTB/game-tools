@@ -10,7 +10,8 @@ import { allEvents, castOf, findEvent, insertColumn, moveEvent, randomId, remove
 import type { StoryEvent } from "../lib/types";
 import { nav } from "../lib/nav";
 import { useGame } from "@/shared/lib/game";
-import { useTimeline, useTimelinePick } from "../state";
+import { useTimeline } from "../state";
+import { usePick } from "@/shared/lib/usePick";
 import { BoardArrows } from "./BoardArrows";
 import { BoardCard } from "./BoardCard";
 import { at, useLanding, useZoomAnchor } from "./boardMotion";
@@ -35,7 +36,7 @@ type Drag =
   | { kind: "connect"; id: string };
 
 export function Board({ flagged }: { flagged: Map<string, "error" | "warning" | "info"> }) {
-  const { doc, filter, zoom, folded, selection, select, edit, toggleFolded } = useTimelinePick("doc", "filter", "zoom", "folded", "selection", "select", "edit", "toggleFolded");
+  const { doc, filter, zoom, folded, selection, select, edit, toggleFolded } = usePick(useTimeline, "doc", "filter", "zoom", "folded", "selection", "select", "edit", "toggleFolded");
   const scroller = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);

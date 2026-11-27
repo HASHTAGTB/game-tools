@@ -24,7 +24,7 @@ const WIPE_SIDE: Record<string, Side> = { right: "right", left: "left", up: "top
 /** What a name like `dissolve` or `slow_fade` does: the game's own `define`s first (Fade(…), Dissolve(…), a dict of
  *  layers), then Ren'Py's built-ins. Unknown ones dissolve. */
 export function motionOf(name: string, m: Manifest | null): Motion {
-  const def = m?.transitionDefs?.[name];
+  const def = m?.transitionDefs[name];
   if (def) {
     const f = /^Fade\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:.*?color\s*=\s*"([^"]+)")?/.exec(def);
     if (f) return { kind: "fade", out: +f[1], hold: +f[2], in: +f[3], color: f[4] ?? "#000" };

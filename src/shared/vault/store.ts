@@ -1,9 +1,10 @@
 import { create } from "zustand";
-import { useShallow } from "zustand/shallow";
+import { writeIfUnchanged } from "@/shared/lib/fileSync";
 import { browserPrefs, debounce, noticeSetter, serialQueue, whenHidden, whileVisible } from "@/shared/lib/toolState";
-import { errorMessage, freeName, isUnder, plural, strings } from "@/shared/lib/utils";
+import { fileName as lastPart, isUnder, joinPath, parentOf, rebase } from "@/shared/lib/paths";
+import { errorMessage, freeName, plural, strings } from "@/shared/lib/utils";
 import {
-  getLocation, joinPath, listDir, locationVersion, makeDir, movePath, NeedsPermission, readFile, removeDir, removeFile, statFile, walkFiles, writeText,
+  getLocation, listDir, locationVersion, makeDir, movePath, NeedsPermission, readFile, removeDir, removeFile, statFile, walkFiles, writeText,
   type Entry, type Location,
 } from "@/shared/lib/workspace";
 import { indexFiles, resolve, rewriteLinks } from "./links";
@@ -107,15 +108,13 @@ const vaultPrefs = (key: string) => browserPrefs(key, p => ({
   mode: (p.mode === "source" ? "source" : "live") as Mode,
 }));
 const RECENT = 12;
+/** What `updateLinks` says when nothing was moved that links could point at. */
+const NO_LINK_CHANGES = { updated: 0, fix: (_text: string, _note: string): string | null => null, openDisk: null as string | null };
 
 // ---------------------------------------------------------------- helpers
 
-export const parentOf = (path: string) => path.split("/").slice(0, -1).join("/");
 /** A file's name without its folder and its .md or .rpy. */
-export const baseName = (path: string) => path.split("/").pop()!.replace(/\.(md|rpy)$/i, "");
-const lastPart = (path: string) => path.split("/").pop()!;
-/** `path` with the folder `from` (or the file itself) replaced by `to`. */
-const rebase = (path: string, from: string, to: string) => (isUnder(path, from) ? to + path.slice(from.length) : path);
+export const baseName = (path: string) => lastPart(path).replace(/\.(md|rpy)$/i, "");
 const BAD_NAME = /[\\/:*?"<>|#^[\]]/;
 const hasExt = (p: string, ext: string) => p.toLowerCase().endsWith(ext);
 const byKindThenName = (a: Node, b: Node) =>
@@ -125,6 +124,21 @@ const byKindThenName = (a: Node, b: Node) =>
  *  again (the poll lists the open folders every few seconds). */
 const sameList = (prev: Node[] | undefined, next: Node[]) =>
   prev && prev.length === next.length && prev.every((n, i) => n.path === next[i].path && n.kind === next[i].kind) ? prev : next;
+
+/** The view state that names paths (open folders, folders made here, recent files, the finder's list), with each path
+ *  changed by `f` (null: it's gone). A list nothing changed in keeps its object. */
+function mapPaths(s: Pick<State, "expanded" | "virtual" | "recent" | "index">, f: (path: string) => string | null) {
+  const map = <L extends Iterable<string>>(list: L, make: (paths: string[]) => L): L => {
+    const before = [...list];
+    const after = before.flatMap(p => { const n = f(p); return n === null ? [] : [n]; });
+    return after.length === before.length && after.every((p, i) => p === before[i]) ? list : make(after);
+  };
+  return {
+    expanded: map(s.expanded, ps => new Set(ps)), virtual: map(s.virtual, ps => new Set(ps)),
+    recent: map(s.recent, ps => ps), index: s.index && map(s.index, ps => ps),
+  };
+}
+const without = (gone: (path: string) => boolean) => (p: string) => (gone(p) ? null : p);
 
 async function listNodes(dir: string, ext: string, virtual: Set<string>, hide: (path: string) => boolean): Promise<Node[]> {
   const shown = (e: Entry) => !e.name.startsWith(".") && (e.kind === "directory" || hasExt(e.name, ext));
@@ -200,14 +214,7 @@ export function createVaultStore(cfg: VaultConfig) {
     return serial(async () => {
       await saveNow();
       if (to === from) return;
-      if (!from || !to) throw new Error("The vault itself can't be moved.");
-      if (isUnder(to.toLowerCase(), from.toLowerCase()) && to.toLowerCase() !== from.toLowerCase()) throw new Error("A folder can't go inside itself.");
-      // Only the case changes (rin.md → Rin.md): fine unless the new name is listed as a file of its own, which a
-      // case-sensitive disk allows. Otherwise any name that differs only in case counts as taken.
-      const caseOnly = to.toLowerCase() === from.toLowerCase();
-      const clash = (await listDir(parentOf(to))).some(e => caseOnly ? e.name === lastPart(to) : e.name.toLowerCase() === lastPart(to).toLowerCase())
-        || (!caseOnly && get().virtual.has(to));
-      if (clash) throw new Error(`There is already something called "${lastPart(to)}" there.`);
+      await checkMove(from, to);
 
       set({ busy: `Moving ${lastPart(from)}…` });
       const before = await filesForMoves();
@@ -220,82 +227,87 @@ export function createVaultStore(cfg: VaultConfig) {
       // links in every note (on disk; the open note's unsaved text is handled below)
       const open = get().path;
       const now = open && rebase(open, from, to);
-      let updated = 0, openDisk: string | null = null;
-      let fix: (text: string, note: string) => string | null = () => null;
-      if (moves.size && markdown) {
-        const bi = indexFiles(before), ai = indexFiles(after);
-        const back = new Map([...moves].map(([o, n]) => [n, o]));
-        fix = (text, note) => (text.includes("[[") ? rewriteLinks(text, back.get(note) ?? note, bi, ai, moves) : null);
-        const notes = after.filter(f => /\.md$/i.test(f));
-        // read a few at a time: on GitHub each note is a request
-        const texts: (string | undefined)[] = [];
-        for (let i = 0; i < notes.length; i += 8) {
-          set({ busy: `Updating links… ${Math.min(i + 8, notes.length)}/${notes.length}` });
-          texts.push(...await Promise.all(notes.slice(i, i + 8).map(async n => (await readFile(n))?.text)));
-        }
-        for (const [i, note] of notes.entries()) {
-          const text = texts[i];
-          const next = text === undefined ? null : fix(text, note);
-          if (next === null) continue;
-          await writeText(note, next);
-          updated++;
-          if (note === now) openDisk = next;
-        }
-      }
+      const { updated, fix, openDisk } = moves.size && markdown ? await updateLinks(before, after, moves, now) : NO_LINK_CHANGES;
 
-      // The open note. Typing went on while the links were updated, and a conflict may hold back unsaved edits, so
-      // the editor keeps its own text (with the same link changes) and only learns what is on disk now.
-      if (open && now) {
-        const mtime = openDisk !== null || now !== open ? await statFile(now) : get().saved?.mtime ?? null;
-        const s = get();   // read after the awaits
-        if (s.path === open && s.saved) {
-          if (now !== open) set({ moved: { from: open, to: now } });
-          const live = fix(s.text, now) ?? s.text;
-          const disk = openDisk ?? (s.conflict ? s.conflict.theirs : s.saved.text);
-          if (!s.conflict && s.text === s.saved.text) {
-            if (openDisk !== null) show(now, { text: openDisk, mtime });
-            else set({ path: now, saved: { text: s.saved.text, mtime } });
-          } else {
-            set({
-              path: now, text: live, rev: live === s.text ? s.rev : s.rev + 1,
-              ...(s.conflict
-                ? { conflict: { theirs: disk, mtime: disk === null ? null : mtime } }
-                : { saved: { text: disk ?? "", mtime } }),
-            });
-            if (!s.conflict) autosave.schedule();
-          }
-        }
-      }
-      set(s => ({
-        expanded: new Set([...s.expanded].map(d => rebase(d, from, to))),
-        virtual: new Set([...s.virtual].map(d => rebase(d, from, to))),
-        recent: s.recent.map(p => rebase(p, from, to)),
-        index: s.index && s.index.map(p => rebase(p, from, to)),
-        busy: null,
-      }));
+      if (open && now) await followOpenNote(open, now, openDisk, fix);
+      set(s => ({ ...mapPaths(s, p => rebase(p, from, to)), busy: null }));
       await refreshAll();
       const verb = parentOf(from) === parentOf(to) ? `Renamed to ${baseName(to)}` : `Moved to ${parentOf(to) || "the vault"}`;
       get().setNotice(updated ? `${verb} · links updated in ${plural(updated, "note")}` : verb);
     }).catch(fail("Couldn't move it"));
   };
+  /** A move or rename that can't happen: the vault itself, a folder into itself, a name that's taken. */
+  async function checkMove(from: string, to: string) {
+    if (!from || !to) throw new Error("The vault itself can't be moved.");
+    if (isUnder(to.toLowerCase(), from.toLowerCase()) && to.toLowerCase() !== from.toLowerCase()) throw new Error("A folder can't go inside itself.");
+    // Only the case changes (rin.md → Rin.md): fine unless the new name is listed as a file of its own, which a
+    // case-sensitive disk allows. Otherwise any name that differs only in case counts as taken.
+    const caseOnly = to.toLowerCase() === from.toLowerCase();
+    const clash = (await listDir(parentOf(to))).some(e => caseOnly ? e.name === lastPart(to) : e.name.toLowerCase() === lastPart(to).toLowerCase())
+      || (!caseOnly && get().virtual.has(to));
+    if (clash) throw new Error(`There is already something called "${lastPart(to)}" there.`);
+  }
+
+  /** The open note was at `open` and is at `now` after a move (`openDisk`: its text on disk if the links in it changed,
+   *  `fix`: the same link changes for any text). Typing went on while the links were updated, and a conflict may hold
+   *  back unsaved edits, so the editor keeps its own text (with the same link changes) and only learns what is on disk. */
+  async function followOpenNote(open: string, now: string, openDisk: string | null, fix: (text: string, note: string) => string | null) {
+    const mtime = openDisk !== null || now !== open ? await statFile(now) : get().saved?.mtime ?? null;
+    const s = get();   // read after the awaits
+    if (s.path !== open || !s.saved) return;
+    if (now !== open) set({ moved: { from: open, to: now } });
+    const live = fix(s.text, now) ?? s.text;
+    const disk = openDisk ?? (s.conflict ? s.conflict.theirs : s.saved.text);
+    if (!s.conflict && s.text === s.saved.text) {
+      if (openDisk !== null) show(now, { text: openDisk, mtime });
+      else set({ path: now, saved: { text: s.saved.text, mtime } });
+    } else {
+      set({
+        path: now, text: live, rev: live === s.text ? s.rev : s.rev + 1,
+        ...(s.conflict
+          ? { conflict: { theirs: disk, mtime: disk === null ? null : mtime } }
+          : { saved: { text: disk ?? "", mtime } }),
+      });
+      if (!s.conflict) autosave.schedule();
+    }
+  }
+
+  /** After `moves` (old path → new path; `before`/`after`: every file around it): point every [[link]] to what moved at
+   *  its new place, in every note on disk. `open`: the open note's path now; its new text on disk is handed back. */
+  async function updateLinks(before: string[], after: string[], moves: Map<string, string>, open: string | null) {
+    const bi = indexFiles(before), ai = indexFiles(after);
+    const back = new Map([...moves].map(([o, n]) => [n, o]));
+    const fix = (text: string, note: string) => (text.includes("[[") ? rewriteLinks(text, back.get(note) ?? note, bi, ai, moves) : null);
+    const notes = after.filter(f => /\.md$/i.test(f));
+    let done = 0;
+    const progress = () => set({ busy: `Updating links… ${done}/${notes.length}` });
+    progress();
+    const texts = await Promise.all(notes.map(async n => { const f = await readFile(n); done++; progress(); return f?.text; }));
+    let updated = 0, openDisk: string | null = null;
+    for (const [i, note] of notes.entries()) {
+      const next = texts[i] === undefined ? null : fix(texts[i]!, note);
+      if (next === null) continue;
+      await writeText(note, next);
+      updated++;
+      if (note === open) openDisk = next;
+    }
+    return { updated, fix, openDisk };
+  }
+
   /** Show a note's text in the editor (opened or reloaded). */
   const show = (path: string | null, f: { text: string; mtime: number | null } | null) =>
     set(s => ({ path, text: f?.text ?? "", saved: f, rev: s.rev + 1, conflict: null }));
 
-  async function saveNow() {
+  /** Write the open note if it changed (`force`: even if it reads as saved, to put it back over theirs). */
+  async function saveNow(force = false) {
     const { path, text, saved, conflict, ready } = get();
-    if (!ready || !path || !saved || conflict || text === saved.text) return;
+    if (!ready || !path || !saved || conflict || (text === saved.text && !force)) return;
     set({ saving: true });
     try {
-      const now = await statFile(path);
-      if (now !== saved.mtime) {
-        const f = await readFile(path);
-        set({ conflict: { theirs: f?.text ?? null, mtime: f?.mtime ?? null } });
-        return;
-      }
-      const mtime = await writeText(path, text);
+      const r = await writeIfUnchanged(path, text, saved.mtime);
+      if ("theirs" in r) return set({ conflict: { theirs: r.theirs?.text ?? null, mtime: r.theirs?.mtime ?? null } });
       // only the text that was written counts as saved; typing during the write stays unsaved
-      if (get().path === path) set({ saved: { text, mtime } });
+      if (get().path === path) set({ saved: { text, mtime: r.mtime } });
     } catch (e) {
       set({ error: "Saving failed: " + errorMessage(e) });
     } finally {
@@ -416,7 +428,7 @@ export function createVaultStore(cfg: VaultConfig) {
         const f = await readFile(path);
         if (!f) {
           await refreshDir(parentOf(path)).catch(() => {});
-          set(s => ({ recent: s.recent.filter(p => p !== path), index: s.index && s.index.filter(p => p !== path) }));
+          set(s => mapPaths(s, without(p => p === path)));
           savePrefs();
           return get().setNotice(`${baseName(path)} doesn't exist any more.`);
         }
@@ -492,7 +504,7 @@ export function createVaultStore(cfg: VaultConfig) {
           if (get().path === path) { show(null, null); savePrefs(); }
           await removeFile(path);
         });
-        set(s => ({ recent: s.recent.filter(p => p !== path), index: s.index && s.index.filter(p => p !== path) }));
+        set(s => mapPaths(s, without(p => p === path)));
         savePrefs();
         await refreshDir(parentOf(path));
         get().setNotice(`Deleted ${baseName(path)}`);
@@ -507,12 +519,7 @@ export function createVaultStore(cfg: VaultConfig) {
           if (inside()) show(null, null);
           await removeDir(path);
         });
-        set(s => ({
-          virtual: new Set([...s.virtual].filter(v => !isUnder(v, path))),
-          expanded: new Set([...s.expanded].filter(v => !isUnder(v, path))),
-          recent: s.recent.filter(v => !isUnder(v, path)),
-          index: s.index && s.index.filter(v => !isUnder(v, path)),
-        }));
+        set(s => mapPaths(s, without(p => isUnder(p, path))));
         savePrefs();
         await refreshAll();
         get().setNotice(`Deleted the folder ${lastPart(path)}`);
@@ -529,9 +536,10 @@ export function createVaultStore(cfg: VaultConfig) {
         show(path, { text: conflict.theirs, mtime: conflict.mtime });
         return;
       }
-      // "mine": count their version as seen, so the next save overwrites it
-      set({ conflict: null, saved: { text: conflict.theirs ?? "\0", mtime: conflict.mtime } });
-      get().flush();
+      // "mine": count their version as seen, and put this one over it
+      set({ conflict: null, saved: { text: conflict.theirs ?? "", mtime: conflict.mtime } });
+      autosave.cancel();
+      void serial(() => saveNow(true));
     },
 
     openLink: async target => {
@@ -558,9 +566,3 @@ export function createVaultStore(cfg: VaultConfig) {
 
 export type VaultStore = ReturnType<typeof createVaultStore>;
 export type VaultState = State & Actions;
-
-/** Some of a vault store's state and actions; the component draws again only when one of them changes (not on every
- *  keystroke, as a bare `store()` would). */
-export function useVaultPick<K extends keyof VaultState>(store: VaultStore, ...keys: K[]): Pick<VaultState, K> {
-  return store(useShallow(s => Object.fromEntries(keys.map(k => [k, s[k]])) as Pick<VaultState, K>));
-}

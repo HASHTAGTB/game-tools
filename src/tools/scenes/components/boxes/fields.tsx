@@ -12,7 +12,11 @@ import { useKnownLabels } from "../../state";
  *  (dashed: no file for it yet), "other…" for anything else. And the first values a new card gets. */
 
 /** Sensible first values for a new statement, from what's on stage there. */
-export function defaults(stage: Stage, cast: string[], m: Manifest | null, script: Script, line: number) {
+/** The first values of each kind of new card; `expression` and `hide` are null while nobody is on stage. */
+export type Defaults = Record<"scene" | "enter" | "play" | "stop" | "pov" | "date" | "time" | "pause" | "jump" | "phone", Stmt>
+  & { expression: Stmt | null; hide: Stmt | null };
+
+export function defaults(stage: Stage, cast: string[], m: Manifest | null, script: Script, line: number): Defaults {
   const offstage = [...cast, ...Object.keys(m?.sprites ?? {})].find(id => !stage.sprites.some(s => s.tag === id)) ?? cast[0] ?? "";
   const speaking = (() => { for (let i = line - 1; i >= 0; i--) { const p = script.parsed[i]; if (p?.kind === "say" && p.who) return p.who; } return null; })();
   const onstage = stage.sprites.find(s => s.tag === speaking) ?? stage.sprites[0];
@@ -22,18 +26,18 @@ export function defaults(stage: Stage, cast: string[], m: Manifest | null, scrip
     return [outfit, ...(outfits?.[outfit]?.[0]?.split(" ") ?? [])];
   };
   return {
-    scene: { kind: "scene", image: stage.background ?? m?.backgrounds.find(b => b !== "black") ?? "black", with: "dissolve" } as Stmt,
-    enter: { kind: "show", tag: offstage, attrs: firstLook(offstage), at: "center", with: "dissolve" } as Stmt,
-    expression: onstage ? { kind: "show", tag: onstage.tag, attrs: onstage.attrs.length ? onstage.attrs : firstLook(onstage.tag), with: "expr_change" } as Stmt : null!,
-    hide: onstage ? { kind: "hide", tag: onstage.tag, with: "dissolve" } as Stmt : null!,
-    play: { kind: "play", channel: "music", name: m?.music[0] ?? "casual", fadein: "2.0" } as Stmt,
-    stop: { kind: "stop", channel: "music", fadeout: "2.0" } as Stmt,
-    pov: { kind: "pov", who: stage.pov ?? cast.find(id => characterOf(m, id)?.pov) ?? "satoru" } as Stmt,
-    date: { kind: "date", date: stage.date ?? new Date().toISOString().slice(0, 10), time: stage.time ?? undefined } as Stmt,
-    time: { kind: "time", time: stage.time ?? "12:00" } as Stmt,
-    pause: { kind: "pause", seconds: "1.0" } as Stmt,
-    jump: { kind: "jump", target: "" } as Stmt,
-    phone: { kind: "phone", action: "on" } as Stmt,
+    scene: { kind: "scene", image: stage.background ?? m?.backgrounds.find(b => b !== "black") ?? "black", with: "dissolve" },
+    enter: { kind: "show", tag: offstage, attrs: firstLook(offstage), at: "center", with: "dissolve" },
+    expression: onstage ? { kind: "show", tag: onstage.tag, attrs: onstage.attrs.length ? onstage.attrs : firstLook(onstage.tag), with: "expr_change" } : null,
+    hide: onstage ? { kind: "hide", tag: onstage.tag, with: "dissolve" } : null,
+    play: { kind: "play", channel: "music", name: m?.music[0] ?? "casual", fadein: "2.0" },
+    stop: { kind: "stop", channel: "music", fadeout: "2.0" },
+    pov: { kind: "pov", who: stage.pov ?? cast.find(id => characterOf(m, id)?.pov) ?? "satoru" },
+    date: { kind: "date", date: stage.date ?? new Date().toISOString().slice(0, 10), time: stage.time ?? undefined },
+    time: { kind: "time", time: stage.time ?? "12:00" },
+    pause: { kind: "pause", seconds: "1.0" },
+    jump: { kind: "jump", target: "" },
+    phone: { kind: "phone", action: "on" },
   };
 }
 

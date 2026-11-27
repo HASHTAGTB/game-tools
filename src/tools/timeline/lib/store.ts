@@ -1,7 +1,8 @@
 import { DEFAULT_COLOR } from "@/shared/lib/colors";
 import { normalizeRoster, ROSTER_PATH } from "@/shared/lib/roster";
 import { strings } from "@/shared/lib/utils";
-import { joinPath, jsonText, listFiles, toolDir } from "@/shared/lib/workspace";
+import { joinPath, stem } from "@/shared/lib/paths";
+import { jsonText, listFiles, readJson, toolDir } from "@/shared/lib/workspace";
 import type { Doc } from "./model";
 import type { Chapter, Filter, GroupBy, StoryEvent, Thread, View } from "./types";
 
@@ -10,7 +11,7 @@ export const THREADS_PATH = joinPath(toolDir("timeline"), "threads.json");
 export const VIEWS_PATH = joinPath(toolDir("timeline"), "views.json");
 export const chapterPath = (id: string) => joinPath(CHAPTERS_DIR, `${id}.json`);
 /** The chapter id a file name stands for. */
-export const chapterIdOf = (path: string) => path.split("/").pop()!.replace(/\.json$/, "");
+export const chapterIdOf = stem;
 
 function normalizeEvent(e: Partial<StoryEvent>): StoryEvent {
   return {
@@ -61,7 +62,18 @@ export function normalizeViews(raw: { views?: Partial<View>[] } | null): View[] 
   return (raw?.views ?? []).filter(v => v?.id).map(v => ({ id: v.id!, name: v.name || v.id!, ...normalizeFilter(v) }));
 }
 
-export const sortChapters = (cs: Chapter[]) => [...cs].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+export const sortChapters = <C extends Pick<Chapter, "order" | "name">>(cs: C[]) => [...cs].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+
+/** A chapter as other tools see it (the Scenes tool groups its scenes by them). */
+export type ChapterRef = Pick<Chapter, "id" | "name" | "order">;
+
+/** Every chapter's id, name and order, in the timeline's order. A file that doesn't parse still names a chapter (its
+ *  file name). */
+export async function readChapterRefs(): Promise<ChapterRef[]> {
+  const paths = await listFiles(CHAPTERS_DIR, ".json");
+  const raw = await Promise.all(paths.map(p => readJson<Partial<Chapter>>(p).catch(() => null)));
+  return sortChapters(raw.map((c, i) => normalizeChapter(c ?? {}, chapterIdOf(paths[i]))).map(({ id, name, order }) => ({ id, name, order })));
+}
 
 // ---------------------------------------------------------------- the doc as files
 

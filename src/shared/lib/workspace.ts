@@ -1,6 +1,7 @@
 import { folderSupported, STATIC } from "./env";
 import { connect, getConfig, github, refresh as refreshGitHub, REPO } from "./github";
 import { openDb, req } from "./idb";
+import { joinPath } from "./paths";
 
 /** The one folder every tool works in, normally the story vault. Paths are relative to it and use "/".
  *  Tool data lives under `.game-tools/<tool>/` (Obsidian ignores dot-folders; git still syncs it). Other paths, like the
@@ -30,8 +31,6 @@ export type FileData = { text: string; mtime: number };
 export const TOOLS_DIR = ".game-tools";
 /** Path of a tool's own data folder. */
 export const toolDir = (tool: string) => `${TOOLS_DIR}/${tool}`;
-
-export const joinPath = (...parts: string[]) => parts.filter(Boolean).join("/");
 
 /** Thrown while a picked folder is remembered but the browser wants the user to allow access again. */
 export class NeedsPermission extends Error {

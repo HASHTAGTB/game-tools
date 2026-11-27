@@ -1,4 +1,4 @@
-import type { Manifest } from "@/shared/lib/game";
+import { characterOf, type Manifest } from "@/shared/lib/game";
 import { unescapeText } from "./renpyText";
 import type { Script } from "./script";
 
@@ -14,7 +14,9 @@ import type { Script } from "./script";
  *  `reply=` / `react` point at an earlier message of the same chat: by its id, or by a piece of its text (the latest
  *  message that says it). Pure: no editor, no React. */
 
-export type ChatTarget = { group: string } | { dm: [string, string] };
+/** Two people texting each other. */
+export type DmTarget = { dm: [string, string] };
+export type ChatTarget = { group: string } | DmTarget;
 export type ChatHead = { target: ChatTarget; log: boolean; /** only for a log; null = today */ date: string | null };
 
 const NAME = "[A-Za-z_]\\w*";
@@ -35,6 +37,9 @@ export const sameChat = (a: ChatTarget, b: ChatTarget) => chatKey(a) === chatKey
 export const groupOf = (m: Manifest | null, id: string) => m?.chats?.find(g => g.id === id) ?? null;
 /** Who's in a chat; null for a group the game doesn't declare (or while the game isn't read). */
 export const membersOf = (m: Manifest | null, t: ChatTarget): string[] | null => ("group" in t ? groupOf(m, t.group)?.members ?? null : t.dm);
+/** What a chat is called: the group's title, or the two people's names ("Rin & Satoru"). */
+export const chatTitle = (m: Manifest | null, t: ChatTarget) =>
+  "group" in t ? groupOf(m, t.group)?.title ?? t.group : t.dm.map(id => characterOf(m, id)?.name ?? id).join(" & ");
 
 /** A log's date in words. */
 export function dateWords(date: string | null) {

@@ -8,7 +8,8 @@ import { visible } from "../lib/colors";
 import { castOf, isFiltered, threadsOf } from "../lib/model";
 import { newChapter } from "../lib/actions";
 import { nav } from "../lib/nav";
-import { useTimelinePick } from "../state";
+import { useTimeline } from "../state";
+import { usePick } from "@/shared/lib/usePick";
 import { DEFAULT_COLOR } from "@/shared/lib/colors";
 
 const PALETTE = ["#e86a92", "#7fae5a", "#e0b44a", "#6c8fd9", "#d9603b", "#4fb39b", "#c98bd6", "#c4956a"];
@@ -16,7 +17,7 @@ const PALETTE = ["#e86a92", "#7fae5a", "#e0b44a", "#6c8fd9", "#d9603b", "#4fb39b
 /** The sidebar's lists, like the game's menu: a vertical rule with text links. Characters and threads are focus toggles;
  *  the pencil edits. */
 export function Sidebar() {
-  const { doc, loaded, filter, viewId, selection, select, edit, setFilter } = useTimelinePick("doc", "loaded", "filter", "viewId", "selection", "select", "edit", "setFilter");
+  const { doc, loaded, filter, viewId, selection, select, edit, setFilter } = usePick(useTimeline, "doc", "loaded", "filter", "viewId", "selection", "select", "edit", "setFilter");
   const cast = castOf(doc.roster, doc.chapters);
   const threads = threadsOf(doc.threads, doc.chapters);
   const toggle = (key: "chars" | "threads", id: string) =>
