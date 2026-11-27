@@ -89,7 +89,7 @@ export const Slot = memo(function Slot({ place }: { place: Place }) {
   return (
     <button type="button" className="bx-slot" aria-label="Add here" title="Add here" data-open={open || undefined}
       onClick={e => openAdd(e.currentTarget, place)}>
-      <span className="bx-slot-plus"><Plus className="h-3 w-3" strokeWidth={3} /></span>
+      <span className="bx-slot-plus"><Plus className="h-3.5 w-3.5" strokeWidth={3} /></span>
     </button>
   );
 }, samePlace);

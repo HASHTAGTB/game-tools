@@ -92,9 +92,11 @@
 .bx-choice-body .bx-box:not(.bx-card) > .bx-acts, .bx-choice-body .bx-stage.bx-open > .bx-card > .bx-acts { left: calc(100% + 1.3rem); }
 
 /* ---------- slots: the only place new boxes appear */
-.bx-slot { all: unset; position: relative; display: grid; place-items: center; height: 12px; width: 100%; cursor: pointer; }
-.bx-slot::before { content: ""; position: absolute; left: .9rem; right: .9rem; top: 50%; height: 1px; background: var(--color-caramel); opacity: 0; transition: opacity .12s; }
-.bx-slot-plus { position: relative; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 999px; background: var(--color-caramel); color: var(--color-ink); opacity: 0; scale: .7; transition: opacity .12s, scale .12s; }
+.bx-slot { all: unset; position: relative; z-index: 3; display: block; height: 12px; width: 100%; cursor: pointer; }
+/* bigger hit area than the gap itself, without changing the spacing */
+.bx-slot::after { content: ""; position: absolute; inset: -6px 0; }
+.bx-slot::before { content: ""; position: absolute; left: .9rem; right: .9rem; top: 50%; height: 1px; translate: 0 -50%; background: var(--color-caramel); opacity: 0; transition: opacity .12s; }
+.bx-slot-plus { position: absolute; left: 50%; top: 50%; translate: -50% -50%; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 999px; background: var(--color-caramel); color: var(--color-ink); opacity: 0; scale: .7; transition: opacity .12s, scale .12s; }
 .bx-slot:hover::before, .bx-slot:focus-visible::before, .bx-slot[data-open]::before { opacity: .55; }
 .bx-slot:hover .bx-slot-plus, .bx-slot:focus-visible .bx-slot-plus, .bx-slot[data-open] .bx-slot-plus { opacity: 1; scale: 1; }
 .bx-first { all: unset; cursor: pointer; display: flex; align-items: center; gap: .5rem; width: 100%; box-sizing: border-box; padding: .7rem .95rem; border: 1px dashed var(--color-ink-line); border-radius: var(--radius-lg); font-family: var(--font-sans); color: var(--color-taupe); }

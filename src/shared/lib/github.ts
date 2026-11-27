@@ -234,8 +234,14 @@ const isLfsPointer = (b: Blob) => b.size < 1024 && b.size > 40;
 const LFS_CACHE = "game-tools-lfs";
 const lfsKey = (oid: string) => `https://lfs.invalid/${oid}`;
 
-/** The file a pointer stands for. GitHub's LFS media host lets the browser in with the token (the LFS batch API
- *  itself refuses browser requests that carry one). Null when the pointer isn't one, or the host says no. */
+/** Whether GitHub's media host takes the token directly. Some tokens (likely fine-grained ones) only get a 404
+ *  there, so after the first miss every file goes the Contents API way (see lfsBytes). */
+let mediaTakesToken = true;
+
+/** The file a pointer stands for. The LFS batch API refuses browser requests that carry a token, so it comes from
+ *  GitHub's media host: straight with the token if that works, else through the link the Contents API hands out
+ *  (`download_url`, signed for a short while, so it needs no token).
+ *  Null when neither gives it. */
 async function lfsBytes(pointer: string, path: string, commit: string): Promise<Blob | null> {
   const oid = LFS_POINTER.exec(pointer)?.[1];
   if (!oid) return new Blob([pointer]);     // a small file that merely isn't a pointer
@@ -243,12 +249,43 @@ async function lfsBytes(pointer: string, path: string, commit: string): Promise<
   const hit = await cache?.match(lfsKey(oid));
   if (hit) return hit.blob();
   const c = await cfg();
-  const url = `https://media.githubusercontent.com/media/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/${commit}/${path.split("/").map(encodeURIComponent).join("/")}`;
-  const blob = await inFlight(async () => {
-    const res = await fetch(url, { headers: { Authorization: `token ${c.token}` } }).catch(() => null);
-    return res?.ok ? res.blob() : null;
-  });
-  if (!blob) return null;
+  const enc = path.split("/").map(encodeURIComponent).join("/");
+  const direct = async () => {
+    const url = `https://media.githubusercontent.com/media/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/${commit}/${enc}`;
+    const b = await inFlight(async () => {
+      const res = await fetch(url, { headers: { Authorization: `token ${c.token}` } }).catch(() => null);
+      return res?.ok ? res.blob() : null;
+    });
+    if (!b) mediaTakesToken = false;
+    return b;
+  };
+  const viaContents = async () => {
+    const meta = await call<{ download_url?: string | null }>("GET", `${repoPath(c)}/contents/${enc}?ref=${commit}`).catch(() => null);
+    const url = meta?.data?.download_url;
+    if (!url) return null;
+    const b = await inFlight(async () => {
+      const res = await fetch(url).catch(() => null);
+      return res?.ok ? res.blob() : null;
+    });
+    if (!b) return null;
+    // the link may give the pointer again rather than the file
+    return isLfsPointer(b) && LFS_POINTER.test(await b.text()) ? null : b;
+  };
+  // the same endpoint in raw form, with the token: the last try
+  const viaRaw = async () => {
+    const b = await inFlight(async () => {
+      const res = await fetch(`${API}${repoPath(c)}/contents/${enc}?ref=${commit}`, {
+        headers: { Accept: "application/vnd.github.raw", "X-GitHub-Api-Version": "2022-11-28", Authorization: `Bearer ${c.token}` },
+      }).catch(() => null);
+      return res?.ok ? res.blob() : null;
+    });
+    return b && !(isLfsPointer(b) && LFS_POINTER.test(await b.text())) ? b : null;
+  };
+  const blob = (mediaTakesToken ? await direct() : null) ?? await viaContents() ?? await viaRaw();
+  if (!blob) {
+    console.warn(`game-tools: couldn't download ${path} from Git LFS (tried the media host, the Contents API link and raw)`);
+    return null;
+  }
   await cache?.put(lfsKey(oid), new Response(blob, { headers: { "Content-Type": blob.type } })).catch(() => {});
   return blob;
 }
