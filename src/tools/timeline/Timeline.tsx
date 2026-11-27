@@ -1,22 +1,26 @@
-import { crumpleAll } from "@/shared/ui/flair";
-import { cardsOf } from "./components/BoardCard";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookmarkPlus, Minus, Plus, Redo2, SquarePlus, Undo2, X } from "lucide-react";
+import { BookmarkPlus, Minus, Plus, Redo2, SquarePlus, Undo2 } from "lucide-react";
+import { TOOLS } from "@/app/tools";
+import { isTyping, useHotkeys } from "@/shared/lib/hotkeys";
 import { cn, uniqueId } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
+import { Chip } from "@/shared/ui/chip";
 import { IconButton } from "@/shared/ui/icon-button";
 import { AnimatePresence, m, spring } from "@/shared/ui/motion";
 import { MotionItem, MotionList } from "@/shared/ui/motion-list";
 import { Popover, PopoverTitle } from "@/shared/ui/popover";
 import { fieldCls } from "@/shared/ui/field";
 import { Switch } from "@/shared/ui/switch";
-import { ConflictBar, StatusToasts } from "@/shared/ui/status";
+import { HelpButton } from "@/shared/ui/help";
+import { BarDivider, EmptyState, NotReady, ToolBar, ToolPage } from "@/shared/ui/tool-page";
+import { newChapter, removeEvent } from "./lib/actions";
+import { GESTURES } from "./lib/help";
 import { visible } from "./lib/colors";
 import { runChecks, type Check } from "./lib/checks";
-import { allEvents, castOf, deleteEvent, findEvent, isFiltered, orderBetween, threadsOf } from "./lib/model";
+import { allEvents, castOf, isFiltered, threadsOf } from "./lib/model";
 import { nav, reveal } from "./lib/nav";
 import type { GroupBy } from "./lib/types";
-import { chapterIdFor, useTimeline, useTimelinePick } from "./state";
+import { useTimeline, useTimelinePick } from "./state";
 import { Board } from "./components/Board";
 import { ChecksButton } from "./components/Checks";
 import { FindButton } from "./components/Find";
@@ -25,49 +29,30 @@ import { Sidebar } from "./components/Sidebar";
 import { UNKNOWN_COLOR } from "@/shared/lib/colors";
 import { useGame } from "@/shared/lib/game";
 
-const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
-
 export default function Timeline() {
-  const s = useTimelinePick("loc", "loaded", "doc", "error", "notice", "conflicts", "zoom", "canUndo", "canRedo", "filter", "folded", "selection",
-    "edit", "select", "undo", "redo", "setZoom", "setFilter", "toggleFolded", "resolveConflict", "setError", "setNotice");
-  const { loc, loaded, doc, error, notice, conflicts, zoom, canUndo, canRedo } = s;
+  const s = useTimelinePick("loc", "loaded", "doc", "error", "notice", "conflicts", "zoom", "canUndo", "canRedo", "filter", "folded",
+    "undo", "redo", "setZoom", "setFilter", "toggleFolded", "resolveConflict", "setError", "setNotice", "reload", "flush", "revert");
+  const { loc, loaded, doc, conflicts, zoom, canUndo, canRedo } = s;
 
   useEffect(() => useTimeline.getState().init(), []);
   // the game's characters and colours join the roster (castOf); re-read whenever the timeline (re)loads
   const game = useGame(g => g.manifest);
   useEffect(() => { if (loaded) useGame.getState().load(); }, [loaded, loc]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const st = useTimeline.getState();
-      const mod = e.ctrlKey || e.metaKey;
-      if (mod && e.key.toLowerCase() === "z" && !typing(e.target)) { e.preventDefault(); if (e.shiftKey) st.redo(); else st.undo(); return; }
-      if (mod && e.key.toLowerCase() === "y" && !typing(e.target)) { e.preventDefault(); st.redo(); return; }
-      if (typing(e.target)) { if (e.key === "Escape") (e.target as HTMLElement).blur(); return; }
-      if (e.key === "Escape") st.select(null);
-      // only events: chapters, threads and characters are deleted from their panel, with a confirm. Not a bare
-      // Backspace: too easy to hit right after leaving a text field. Ctrl/Cmd+Backspace for keyboards without Delete.
-      if ((e.key === "Delete" || (mod && e.key === "Backspace")) && st.selection?.kind === "event") {
-        const id = st.selection.id;
-        st.select(null);
-        crumpleAll(cardsOf(id), () => st.edit(d => deleteEvent(d.chapters, id)));
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  /** A new chapter after the selected one (or the selected event's), else at the end. */
-  const newChapter = () => {
-    const sel = s.selection;
-    const after = sel?.kind === "chapter" ? sel.id : sel?.kind === "event" ? findEvent(doc.chapters, sel.id)?.chapter.id : undefined;
-    const i = after ? doc.chapters.findIndex(c => c.id === after) : doc.chapters.length - 1;
-    const order = orderBetween(doc.chapters[i]?.order, doc.chapters[i + 1]?.order);
-    const id = chapterIdFor(doc.chapters, "new-chapter");
-    s.edit(d => { d.chapters.push({ version: 2, id, name: "New chapter", order, columns: ["", "", ""], events: [] }); });
-    s.select({ kind: "chapter", id });
-    setTimeout(() => nav.toChapter(id), 50);
-  };
+  const st = useTimeline.getState;
+  /** Only events: chapters, threads and characters are deleted from their panel, with a confirm. Not a bare
+   *  Backspace: too easy to hit right after leaving a text field. Ctrl/Cmd+Backspace for keyboards without Delete. */
+  const deleteSelected = () => { const sel = st().selection; if (sel?.kind !== "event") return false; removeEvent(sel.id); };
+  useHotkeys({
+    // in a field, its own undo
+    "mod+z": { run: () => st().undo(), inFields: false },
+    "mod+shift+z": { run: () => st().redo(), inFields: false },
+    "mod+y": { run: () => st().redo(), inFields: false },
+    // leaves the field, else the selection; the key still reaches popups
+    escape: { inFields: true, run: e => { if (isTyping(e.target)) (e.target as HTMLElement).blur(); else st().select(null); return false; } },
+    delete: deleteSelected,
+    "mod+backspace": { run: deleteSelected, inFields: false },
+  });
 
   const goToCheck = (c: Check) => {
     if (c.go === "thread-lanes") return s.setFilter({ groupBy: "threads" });
@@ -89,27 +74,25 @@ export default function Timeline() {
   const events = allEvents(doc.chapters).length;
 
   return (
-    <div className="grid h-screen grid-cols-[240px_minmax(0,1fr)_300px] bg-ink text-paper xl:grid-cols-[280px_minmax(0,1fr)_340px]">
-      <Sidebar />
-
-      <main className="relative flex min-h-0 flex-col">
-        <StatusToasts className="bottom-6" error={error} notice={notice} setError={s.setError} setNotice={s.setNotice} />
-
-        <div className="flex h-12 shrink-0 items-center gap-1 border-b border-ink-line/60 px-4">
-          <IconButton icon={Undo2} label="Undo" kbd="Ctrl+Z" onClick={s.undo} disabled={!canUndo} />
-          <IconButton icon={Redo2} label="Redo" kbd="Ctrl+Shift+Z" onClick={s.redo} disabled={!canRedo} />
-          <span className="mx-2 h-5 w-px bg-ink-line" />
+    <ToolPage tool={TOOLS.timeline} data={s} sidebar={<Sidebar />} aside={<Inspector />}
+      bar={<>
+        <ToolBar>
+          <IconButton icon={Undo2} size="sm" tooltipSide="bottom" label="Undo" kbd="Ctrl+Z" onClick={s.undo} disabled={!canUndo} />
+          <IconButton icon={Redo2} size="sm" tooltipSide="bottom" label="Redo" kbd="Ctrl+Shift+Z" onClick={s.redo} disabled={!canRedo} />
+          <BarDivider />
           <GroupSwitch />
-          <span className="mx-2 h-5 w-px bg-ink-line" />
-          <IconButton icon={Minus} label="Narrower columns" kbd="Ctrl+scroll" onClick={() => s.setZoom(zoom / 1.25)} />
-          <IconButton icon={Plus} label="Wider columns" kbd="Ctrl+scroll" onClick={() => s.setZoom(zoom * 1.25)} />
-          <span className="mx-2 h-5 w-px bg-ink-line" />
+          <BarDivider />
+          <IconButton icon={Minus} size="sm" tooltipSide="bottom" label="Narrower columns" kbd="Ctrl+scroll" onClick={() => s.setZoom(zoom / 1.25)} />
+          <IconButton icon={Plus} size="sm" tooltipSide="bottom" label="Wider columns" kbd="Ctrl+scroll" onClick={() => s.setZoom(zoom * 1.25)} />
+          <BarDivider />
           <Button size="sm" onClick={newChapter} disabled={!loaded}><SquarePlus className="h-4 w-4" />New chapter</Button>
           <span className="flex-1" />
+          <span className="mr-2 hidden font-talk text-xs text-taupe 2xl:inline">{doc.chapters.length} chapters · {events} events</span>
           {loaded && <FindButton />}
           {loaded && <ChecksButton checks={checks} onGo={goToCheck} />}
-          <span className="ml-3 hidden font-talk text-xs text-taupe 2xl:inline">{doc.chapters.length} chapters · {events} events</span>
-        </div>
+          <BarDivider />
+          <HelpButton items={GESTURES} />
+        </ToolBar>
         <AnimatePresence initial={false}>
           {isFiltered(s.filter) && (
             <m.div key="focus" className="shrink-0 overflow-hidden" transition={spring.smooth}
@@ -118,27 +101,12 @@ export default function Timeline() {
             </m.div>
           )}
         </AnimatePresence>
-
-        <ConflictBar items={conflicts.map(c => ({ key: c.path, label: c.label, deleted: c.theirs === null }))} onResolve={s.resolveConflict} />
-
-        {loaded ? (
-          doc.chapters.length ? <Board flagged={flagged} /> : (
-            <div className="grid flex-1 place-items-center px-8 text-center">
-              <div className="max-w-md space-y-3">
-                <p className="font-sans text-xl font-light text-bone">No chapters yet.</p>
-                <p className="font-talk text-sm text-taupe">Start with <b>New chapter</b> at the top.</p>
-              </div>
-            </div>
-          )
-        ) : (
-          <div className="grid flex-1 place-items-center font-sans text-lg font-light text-bone">
-            {loc && !loc.ready ? "Pick the story folder at the bottom left." : "Loading…"}
-          </div>
-        )}
-      </main>
-
-      <Inspector />
-    </div>
+      </>}
+      conflicts={conflicts.map(c => ({ key: c.path, label: c.label, deleted: c.theirs === null }))} onResolve={s.resolveConflict}>
+      {!loaded ? <NotReady loc={loc} /> : doc.chapters.length ? <Board flagged={flagged} /> : (
+        <EmptyState title="No chapters yet.">Start with <b>New chapter</b> at the top.</EmptyState>
+      )}
+    </ToolPage>
   );
 }
 
@@ -198,10 +166,8 @@ function FocusBar() {
       <div className="relative flex flex-wrap gap-1">
         <MotionList>
         {chips.map(c => (
-          <MotionItem as="span" key={`${c.key}:${c.id}`} className="flex items-center gap-1 rounded-full border-2 py-px pl-2 pr-0.5 font-sans text-sm text-paper" style={{ borderColor: visible(c.color) }}>
-            {c.name}
-            <button aria-label={`Drop ${c.name}`} onClick={() => setFilter({ [c.key]: filter[c.key].filter(x => x !== c.id) }, null)}
-              className="grid h-4 w-4 place-items-center rounded-full text-taupe hover:text-paper"><X className="h-3 w-3" /></button>
+          <MotionItem as="span" key={`${c.key}:${c.id}`} className="flex">
+            <Chip color={visible(c.color)} removeLabel={`Drop ${c.name}`} onRemove={() => setFilter({ [c.key]: filter[c.key].filter(x => x !== c.id) }, null)}>{c.name}</Chip>
           </MotionItem>
         ))}
         </MotionList>

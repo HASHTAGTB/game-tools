@@ -7,27 +7,29 @@ import {
   pickServerRoot, reconnectFolder, refreshLocation, setServerRoot, switchTo, switchToGitHub, TOOLS_DIR, type Location,
 } from "@/shared/lib/workspace";
 import { Button } from "./button";
+import { ArmButton } from "./confirm";
 import { GitHubSave, usePendingPaths } from "./github-save";
 import { fieldCls } from "./field";
 import { IconButton } from "./icon-button";
+import type { ToolData } from "./tool-page";
 import { Popover, PopoverTitle } from "./popover";
 
 type Props = {
-  loc: Location | null;
-  /** The location changed (or failed to); `msg` says what happened. The tool should reload its data. */
-  onChanged: (msg: string) => void;
-  onReload: () => void;
-  /** Write the tool's in-memory edits out now (before a GitHub save). */
-  onFlush: () => Promise<void>;
-  /** Drop the tool's in-memory edits and reload, without saving them first (GitHub's Discard). */
-  onRevert: (drop: () => Promise<void>) => Promise<void>;
+  /** The tool's store: where its data is, and reload / save / drop. A change of folder reloads it. */
+  data: Pick<ToolData, "loc" | "reload" | "flush" | "revert">;
 };
+
+/** What a reload says, by where the data is. */
+const reloaded = (loc: Location | null) =>
+  loc?.kind === "browser" ? "Reloaded" : loc?.kind === "github" ? "Reloaded from GitHub" : "Reloaded from disk";
 
 const msgOf = (e: unknown) => String(e instanceof Error ? e.message : e);
 const copiedNote = (n: number) => (n ? ` (copied ${n} file${n > 1 ? "s" : ""} there)` : "");
 
 /** Sidebar footer shared by every tool: the one folder all tools keep their data in (normally the story vault). */
-export function WorkspaceLocation({ loc, onChanged, onReload: reloadTool, onFlush, onRevert }: Props) {
+export function WorkspaceLocation({ data }: Props) {
+  const { loc, flush: onFlush, revert: onRevert } = data;
+  const onChanged = (msg: string) => void data.reload(msg);
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
@@ -38,7 +40,7 @@ export function WorkspaceLocation({ loc, onChanged, onReload: reloadTool, onFlus
   useEffect(() => {
     if (open) getConfig().then(c => setGh({ token: "", login: c?.login ?? "", show: false }));
   }, [open, loc]);
-  const onReload = () => { refreshLocation().catch(() => {}).finally(reloadTool); };
+  const onReload = () => { refreshLocation().catch(() => {}).finally(() => data.reload(reloaded(loc))); };
 
   const run = async (fn: () => Promise<string | null>) => {
     setErr("");
@@ -148,7 +150,10 @@ export function WorkspaceLocation({ loc, onChanged, onReload: reloadTool, onFlus
                 </span>
                 <div className="mt-1 flex gap-3">
                   <Button size="sm" onClick={() => setGh(g => ({ ...g, show: true }))} disabled={busy}>New token…</Button>
-                  <DisconnectButton pending={pending.length} busy={busy} onConfirm={disconnectGitHub} />
+                  <ArmButton disabled={busy} onConfirm={disconnectGitHub}
+                    sure={pending.length ? `Discard ${pending.length} unsaved change${pending.length === 1 ? "" : "s"} and disconnect?` : "Really disconnect?"}>
+                    Disconnect
+                  </ArmButton>
                 </div>
               </div>
             ) : (
@@ -206,15 +211,5 @@ function GitHubForm({ value, busy, expanded, onChange, onConnect, onExpand }: {
         </Button>
       </div>
     </div>
-  );
-}
-
-function DisconnectButton({ pending, busy, onConfirm }: { pending: number; busy: boolean; onConfirm: () => void }) {
-  const [sure, setSure] = useState(false);
-  useEffect(() => { if (!sure) return; const t = setTimeout(() => setSure(false), 3000); return () => clearTimeout(t); }, [sure]);
-  return (
-    <Button size="sm" variant="danger" disabled={busy} className={cn(sure && "text-coral")} onClick={() => (sure ? onConfirm() : setSure(true))}>
-      {sure ? (pending ? `Discard ${pending} unsaved change${pending === 1 ? "" : "s"} and disconnect?` : "Really disconnect?") : "Disconnect"}
-    </Button>
   );
 }

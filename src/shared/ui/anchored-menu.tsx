@@ -5,6 +5,7 @@ import type { LucideIcon } from "lucide-react";
 import { create } from "zustand";
 import { cn } from "@/shared/lib/utils";
 import { popoverCls } from "@/shared/ui/popover";
+import { menuItemCls, MenuItemIcon, menuSeparatorCls } from "@/shared/ui/menu-item";
 
 /** A menu opened from outside React, next to any element: things CodeMirror draws (a table's handles, a scene's
  *  pause marks) open it through `openAnchoredMenu`; the page renders the one host. */
@@ -27,12 +28,11 @@ export function AnchoredMenuHost() {
           <Menu.Popup className={cn(popoverCls, "min-w-52 p-1.5", bloomCls)}>
 <div className="contents" ref={bloomRef}>
             {items.map((it, i) => it === "-"
-              ? <Menu.Separator key={i} className="my-1 h-px bg-ink-line" />
+              ? <Menu.Separator key={i} className={menuSeparatorCls} />
               : (
                 <Menu.Item key={i} disabled={it.disabled} onClick={() => { close(); it.run(); }}
-                  className={cn("flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-base outline-hidden select-none data-highlighted:bg-paper/8 data-disabled:cursor-default data-disabled:opacity-40",
-                    it.danger ? "text-bone data-highlighted:text-coral" : "text-bone data-highlighted:text-paper")}>
-                  <it.icon className={cn("h-3.5 w-3.5", it.checked ? "text-caramel" : "text-taupe")} strokeWidth={2.25} />
+                  className={menuItemCls(it.danger)}>
+                  <MenuItemIcon icon={it.icon} on={it.checked} />
                   <span className={cn("truncate", it.checked && "text-paper")}>{it.label}</span>
                 </Menu.Item>
               ))}

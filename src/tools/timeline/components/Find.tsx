@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
+import { useHotkeys } from "@/shared/lib/hotkeys";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { MenuMarker, MenuRule } from "@/shared/ui/menu";
@@ -35,13 +36,7 @@ export function FindButton() {
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLUListElement>(null);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setOpen(true); }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  useHotkeys({ "mod+k": () => setOpen(true) });
   // reopening keeps the last search, ready to be typed over
   useEffect(() => { if (open) setTimeout(() => input.current?.select(), 0); }, [open]);
 

@@ -5,9 +5,12 @@ import { useWash } from "@/shared/ui/use-wash";
 import type { Character } from "../lib/types";
 import { castLook } from "../lib/cast";
 import { promptSegments, segColor, type Segment } from "../lib/prompt";
-import { copyText } from "@/shared/lib/clipboard";
+import { useHotkeys } from "@/shared/lib/hotkeys";
+import { useCopy } from "@/shared/ui/use-copy";
 import { useGame } from "@/shared/lib/game";
 import { Button } from "@/shared/ui/button";
+import { lineCls, lineInputCls } from "@/shared/ui/field";
+import { cn } from "@/shared/lib/utils";
 import { AnimatePresence, m, spring, useReducedMotion } from "@/shared/ui/motion";
 
 /** The finished prompt, drawn as the character's dialogue box from the game. Ctrl+Shift+C copies it.
@@ -16,25 +19,14 @@ import { AnimatePresence, m, spring, useReducedMotion } from "@/shared/ui/motion
 export function PromptPanel({ ch, onNegative }: { ch: Character; onNegative: (v: string) => void }) {
   const segs = promptSegments(ch);
   const prompt = segs.map(s => s.tag).join(", ");
-  const [copied, setCopied] = useState<"p" | "n" | null>(null);
+  const [copied, copyText] = useCopy<"p" | "n">();
   const manifest = useGame(s => s.manifest);
   useEffect(() => { useGame.getState().load(); }, []);   // a cached copy shows meanwhile
   const look = castLook(ch.name, manifest);
   const [shown, skip] = useCrawl(ch.id, prompt.length);
 
-  const copy = async (what: "p" | "n") => {
-    await copyText(what === "p" ? prompt : ch.negative);
-    setCopied(what);
-    setTimeout(() => setCopied(c => (c === what ? null : c)), 1400);
-  };
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "c") { e.preventDefault(); copy("p"); }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
+  const copy = (what: "p" | "n") => copyText(what === "p" ? prompt : ch.negative, what);
+  useHotkeys({ "mod+shift+c": () => void copy("p") });
 
   const boxRef = useRef<HTMLDivElement>(null);
   useWash(ch.id, boxRef);
@@ -71,14 +63,14 @@ export function PromptPanel({ ch, onNegative }: { ch: Character; onNegative: (v:
 
       <div className="mt-3 flex items-center gap-4 px-1">
         <span className="shrink-0 font-talk text-sm tabular-nums text-taupe">{segs.length} tags, {prompt.length} characters</span>
-        <div className="flex flex-1 items-center gap-2 border-b-2 border-ink-line transition-colors focus-within:border-caramel">
+        <div className={cn(lineCls, "flex-1 gap-2")}>
           <label htmlFor="negative" className="font-sans text-base text-bone">Negative</label>
           <input
             id="negative"
             value={ch.negative}
             onChange={e => onNegative(e.target.value)}
             placeholder="optional, for this character only"
-            className="h-9 flex-1 bg-transparent font-talk text-base text-paper placeholder:text-taupe focus:outline-hidden"
+            className={lineInputCls}
           />
         </div>
         <Button size="md" onClick={() => copy("n")} disabled={!ch.negative}>

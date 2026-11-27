@@ -2,12 +2,8 @@ import { useRef } from "react";
 import { Download, Upload } from "lucide-react";
 import type { Character } from "../lib/types";
 import { exportCharacter, readImport } from "../lib/store";
-import type { Location } from "@/shared/lib/workspace";
 import { castLook } from "../lib/cast";
 import { useGame } from "@/shared/lib/game";
-import { WorkspaceLocation } from "@/shared/ui/workspace-location";
-import { ToolNav } from "@/shared/ui/tool-nav";
-import { TOOLS } from "@/app/tools";
 import { IconButton } from "@/shared/ui/icon-button";
 import { Button } from "@/shared/ui/button";
 import { AddField } from "@/shared/ui/field";
@@ -16,12 +12,12 @@ import { MotionFollow, MotionList } from "@/shared/ui/motion-list";
 
 type Props = {
   chars: Character[]; loaded: boolean; current: string | null; onSelect: (id: string) => void; onCreate: (name: string) => void;
-  loc: Location | null; onDirChanged: (msg: string) => void; onReload: () => void; onFlush: () => Promise<void>; onRevert: (drop: () => Promise<void>) => Promise<void>; onImport: (chars: Character[]) => void;
+  onImport: (chars: Character[]) => void;
   onError: (msg: string) => void;
 };
 
-/** Laid out like the game's main menu: a thin vertical rule with text links beside it. */
-export function Sidebar({ chars, loaded, current, onSelect, onCreate, loc, onDirChanged, onReload, onFlush, onRevert, onImport, onError }: Props) {
+/** The sidebar's list, laid out like the game's main menu: a thin vertical rule with text links beside it. */
+export function Sidebar({ chars, loaded, current, onSelect, onCreate, onImport, onError }: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
   const manifest = useGame(s => s.manifest);
   const importFiles = async (files: FileList | null) => {
@@ -35,10 +31,7 @@ export function Sidebar({ chars, loaded, current, onSelect, onCreate, loc, onDir
     }
   };
   return (
-    <aside className="flex min-h-0 flex-col border-r border-ink-line/60">
-      <ToolNav current={TOOLS.promptBuilder} />
-
-      <nav className="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
+    <div className="px-6">
         <MenuGroup title="Characters">
           <MenuRule>
             <MotionList reset={loaded}>{chars.map(c => (
@@ -57,9 +50,6 @@ export function Sidebar({ chars, loaded, current, onSelect, onCreate, loc, onDir
           </Button>
         </MotionFollow>
         <input ref={fileInput} type="file" accept=".json,application/json" multiple hidden onChange={e => importFiles(e.target.files)} />
-      </nav>
-
-      <WorkspaceLocation loc={loc} onChanged={onDirChanged} onReload={onReload} onFlush={onFlush} onRevert={onRevert} />
-    </aside>
+    </div>
   );
 }

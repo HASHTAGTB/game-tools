@@ -1,9 +1,9 @@
-import { ChevronDown, Wand2 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { Wand2 } from "lucide-react";
+import { useState } from "react";
 import { cn } from "@/shared/lib/utils";
+import { Field } from "@/shared/ui/field";
 import { IconButton } from "@/shared/ui/icon-button";
-import { MenuItem, MenuRule } from "@/shared/ui/menu";
-import { Popover } from "@/shared/ui/popover";
+import { Select } from "@/shared/ui/select";
 import { readInfo, RENPY_HINT, RENPY_LEVELS, setInfo, STATUS_HINT, STATUSES, type InfoKey } from "../lib/header";
 import { setLabel } from "../lib/ops";
 import { labelOf } from "../lib/labels";
@@ -30,46 +30,28 @@ export function SceneHeader({ text, title }: { text: string; title: string }) {
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-ink-line/60 px-6 py-2">
       <Pick label="Chapter" value={info.chapter} options={["", ...chapters.map(c => c.id)]} show={v => (v ? chapterName(v) : "none")}
-        hints={{ "": "Not in the timeline (yet)" }} onPick={v => write("chapter", v)} />
+        hints={{ "": "Not in the timeline (yet)" }} placeholder="none" onPick={v => write("chapter", v)} />
       <Pick label="Status" value={info.status} options={STATUSES} hints={STATUS_HINT} onPick={v => write("status", v)} />
       <Pick label="Ren'Py" value={info.renpy} options={RENPY_LEVELS} hints={RENPY_HINT} onPick={v => write("renpy", v)} />
-      <span className="ml-auto flex items-center gap-1">
-        <span className="font-sans text-sm text-taupe">Label</span>
+      <Field inline label="Label" className="ml-auto gap-1">
         {label
           ? <LabelInput key={label} value={label} onCommit={rename} />
           : <span className="font-talk text-sm text-coral">none</span>}
         {label && label !== suggested && (
           <IconButton icon={Wand2} size="sm" label={`Use ${suggested} (from the title)`} onClick={() => rename(suggested)} />
         )}
-      </span>
+      </Field>
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return <span className="flex items-center gap-1.5"><span className="font-sans text-sm text-taupe">{label}</span>{children}</span>;
-}
-
-function Pick({ label, value, options, hints, show = v => v, onPick }: {
-  label: string; value: string; options: readonly string[]; hints: Record<string, string>; show?: (v: string) => string; onPick: (v: string) => void;
+/** One of the header's pickers: `options` with their hints, each shown as `show` says. */
+function Pick({ label, value, options, hints, show = v => v, onPick, placeholder }: {
+  label: string; value: string; options: readonly string[]; hints: Record<string, string>; show?: (v: string) => string; onPick: (v: string) => void; placeholder?: string;
 }) {
-  const [open, setOpen] = useState(false);
   return (
-    <Field label={label}>
-      <Popover open={open} onOpenChange={setOpen} align="start" className="w-64 px-3 py-2.5"
-        trigger={
-          <button className={cn("flex h-7 items-center gap-1 rounded-md px-1.5 font-talk text-base transition-colors hover:bg-ink-2", value ? "text-paper" : "text-taupe", open && "bg-ink-2")}>
-            {value ? show(value) : label === "Chapter" ? "none" : "not set"}
-            <ChevronDown className="h-3.5 w-3.5 text-taupe" strokeWidth={2.5} />
-          </button>
-        }>
-        <MenuRule className="max-h-80 overflow-y-auto">
-          {options.map(o => (
-            <MenuItem key={o || "-"} size="base" active={o === value} layoutId={`${label}-marker`} label={show(o)} sub={hints[o]}
-              onClick={() => { setOpen(false); onPick(o); }} />
-          ))}
-        </MenuRule>
-      </Popover>
+    <Field inline label={label}>
+      <Select label={label} value={value} placeholder={placeholder} onChange={onPick} options={options.map(o => ({ value: o, label: show(o), hint: hints[o] }))} />
     </Field>
   );
 }

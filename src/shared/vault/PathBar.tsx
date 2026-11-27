@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/shared/lib/utils";
 import { MenuMarker, MenuRule } from "@/shared/ui/menu";
 import { Popover, popoverCls } from "@/shared/ui/popover";
+import { toolBarCls } from "@/shared/ui/tool-page";
+import { menuButtonCls } from "@/shared/ui/menu-item";
 import { useVault } from "./context";
 import { fuzzy, shownPath, type Hit } from "./fuzzy";
 import { baseName, parentOf, type Node } from "./store";
@@ -14,7 +16,7 @@ import { baseName, parentOf, type Node } from "./store";
 export function PathBar({ rootLabel, title, children }: { rootLabel?: string; title?: string; children?: ReactNode }) {
   const [searching, setSearching] = useState(false);
   return (
-    <div className="relative z-30 flex h-12 shrink-0 items-center gap-3 border-b border-ink-line/60 px-6">
+    <div className={cn(toolBarCls, "relative z-30 gap-3")}>
       {searching ? <QuickSwitch onClose={() => setSearching(false)} /> : <Crumbs rootLabel={rootLabel} title={title} onSearch={() => setSearching(true)} />}
       {!searching && children}
     </div>
@@ -102,7 +104,7 @@ function FolderMenu({ dir, label, disabled }: { dir: string; label: string; disa
                 setOpen(false);
                 useStore.getState().open(n.path);
               }}
-              className={cn("flex h-8 w-full items-center gap-2 rounded-md px-2 text-left transition-colors hover:bg-paper/8",
+              className={cn(menuButtonCls,
                 n.path === current ? "text-paper" : n.kind === "directory" ? "text-bone" : "text-bone/75 hover:text-paper")}>
               {n.kind === "directory"
                 ? <Folder className="h-3.5 w-3.5 shrink-0 text-taupe" />

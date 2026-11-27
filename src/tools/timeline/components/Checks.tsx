@@ -1,13 +1,11 @@
-import { CircleAlert, CircleCheck, Info, TriangleAlert } from "lucide-react";
+import { CircleCheck, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Popover, PopoverTitle } from "@/shared/ui/popover";
+import { ProblemRow, ProblemSummary } from "@/shared/ui/problems";
 import type { Check } from "../lib/checks";
 import { useTimeline } from "../state";
-
-const ICON = { error: CircleAlert, warning: TriangleAlert, info: Info };
-const TONE = { error: "text-coral", warning: "text-butter", info: "text-taupe" };
 
 /** Toolbar button with the number of problems; opens the list. Clicking one selects what it is about. */
 export function ChecksButton({ checks, onGo }: { checks: Check[]; onGo: (c: Check) => void }) {
@@ -27,24 +25,14 @@ export function ChecksButton({ checks, onGo }: { checks: Check[]; onGo: (c: Chec
     }>
       <div className="flex items-start gap-3 border-b border-ink-line px-4 pb-2.5 pt-3">
         <PopoverTitle className="mb-0 flex-1">Checks</PopoverTitle>
-        <span className="font-talk text-xs text-taupe">{errors} errors · {warnings} warnings</span>
-        <label className="flex items-center gap-1 font-talk text-xs text-taupe">
-          <input type="checkbox" checked={showInfo} onChange={e => setShowInfo(e.target.checked)} /> {infos} notes
-        </label>
+        <ProblemSummary real={errors + warnings} notes={infos} showNotes={showInfo} onShowNotes={setShowInfo} />
       </div>
-      <ul className="max-h-[60vh] overflow-y-auto py-1">
-        {shown.length ? shown.map((c, i) => {
-          const Icon = ICON[c.level];
-          return (
-            <li key={i}>
-              <button disabled={!c.target && !c.go} onClick={() => { if (c.target) select(c.target); onGo(c); setOpen(false); }}
-                className="flex w-full items-start gap-2 px-4 py-1.5 text-left font-talk text-sm leading-snug text-bone enabled:hover:bg-paper/8 enabled:hover:text-paper">
-                <Icon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", TONE[c.level])} />
-                <span className="min-w-0 flex-1 select-text">{c.message}</span>
-              </button>
-            </li>
-          );
-        }) : <li className="px-4 py-3 font-talk text-sm text-taupe">Nothing to check.</li>}
+      <ul className="max-h-[60vh] overflow-y-auto px-2 py-1.5">
+        {shown.length ? shown.map((c, i) => (
+          <ProblemRow key={i} level={c.level} onGo={c.target || c.go ? () => { if (c.target) select(c.target); onGo(c); setOpen(false); } : undefined}>
+            {c.message}
+          </ProblemRow>
+        )) : <li className="px-2 py-2 font-talk text-sm text-taupe">Nothing to check.</li>}
       </ul>
     </Popover>
   );

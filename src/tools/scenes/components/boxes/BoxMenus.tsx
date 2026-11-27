@@ -66,7 +66,7 @@ function Picker({ groups, placeholder, create }: { groups: Group[]; placeholder:
   return (
     <div onKeyDown={onKey}>
       <input autoFocus value={q} onChange={e => { setQ(e.target.value); setActive(0); }} placeholder={placeholder} aria-label={placeholder}
-        className="mb-2.5 w-full border-b border-ink-line bg-transparent px-1 pb-2 font-talk text-base text-paper placeholder:text-taupe focus:outline-hidden" />
+        className="mb-2.5 w-full border-b-2 border-ink-line bg-transparent px-1 pb-2 font-talk text-base text-paper transition-colors placeholder:text-taupe focus:border-caramel focus:outline-hidden" />
       {!shown.length && <p className="px-1 py-1 font-talk text-sm text-taupe">Nothing called that.</p>}
       <div className="space-y-2.5">
         {shown.map((g, gi) => (

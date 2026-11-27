@@ -2,13 +2,11 @@ import type { EditorView } from "@codemirror/view";
 import { Wrench } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
+import { SeverityIcon } from "@/shared/ui/problems";
 import type { Problem } from "../lib/checks";
 import { applyFix } from "../lib/fixes";
 
 /** How problems look wherever they're listed: under a box, in the checks list, on an empty page. */
-
-/** A problem's dot, by severity. */
-export const DOT: Record<Problem["severity"], string> = { error: "bg-coral", warning: "bg-butter", info: "bg-taupe/60" };
 
 /** The button that puts a problem's fix in. Doesn't take the focus from the box being typed in. */
 export function FixButton({ view, problem, variant = "quiet", className }: {
@@ -31,7 +29,7 @@ export function BoxProblems({ list, view }: { list: Problem[]; view: EditorView 
     <div className="bx-probs">
       {real.map((p, i) => (
         <div key={i} className="bx-prob">
-          <i className={DOT[p.severity]} />
+          <SeverityIcon level={p.severity} />
           <span className="min-w-0 flex-1">{p.message}</span>
           <FixButton view={view} problem={p} className="h-6" />
         </div>

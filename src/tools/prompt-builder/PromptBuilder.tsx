@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
-import { CircleHelp, CopyPlus, Plus, Trash2 } from "lucide-react";
+import { useEffect, useMemo } from "react";
+import { CopyPlus, Plus, Trash2 } from "lucide-react";
+import { TOOLS } from "@/app/tools";
 import { listFor, listLabel, sameKey, segColor, tagKey } from "./lib/prompt";
 import type { Character, ListKey } from "./lib/types";
-import { uniqueId } from "@/shared/lib/utils";
+import { cn, uniqueId } from "@/shared/lib/utils";
 import { BASE, currentChar, targetKey, usePromptBuilder } from "./state";
 import { Sidebar } from "./components/Sidebar";
 import { TagList } from "./components/TagList";
@@ -12,16 +13,17 @@ import { PromptPanel } from "./components/PromptPanel";
 import { TagBrowser } from "./components/TagBrowser";
 import { SearchDropZones } from "./components/SearchDropZones";
 import { Button } from "@/shared/ui/button";
-import { Confirm } from "@/shared/ui/confirm";
+import { Confirm, undoNote } from "@/shared/ui/confirm";
+import { textareaCls } from "@/shared/ui/field";
+import { HelpButton, type Gesture } from "@/shared/ui/help";
 import { IconButton } from "@/shared/ui/icon-button";
-import { Popover, PopoverTitle } from "@/shared/ui/popover";
-import { HoverActions, Section } from "@/shared/ui/section";
-import { ConflictBar, StatusToasts } from "@/shared/ui/status";
+import { Section } from "@/shared/ui/section";
+import { BarDivider, EmptyState, NotReady, ToolBar, ToolPage } from "@/shared/ui/tool-page";
 import { MotionFollow, MotionItem, MotionList } from "@/shared/ui/motion-list";
 
 export default function PromptBuilder() {
   const s = usePromptBuilder();
-  const { chars, loaded, curId, db, loc, error, notice, drag, update, setActiveKey, setError, setNotice } = s;
+  const { chars, loaded, curId, db, loc, drag, update, setActiveKey, setError } = s;
   const cur = currentChar(s);
   const target = targetKey(s);
 
@@ -41,37 +43,31 @@ export default function PromptBuilder() {
 
   return (
     <>
-      <div className="grid h-screen grid-cols-[240px_minmax(0,1fr)_280px] bg-ink text-paper lg:grid-cols-[240px_minmax(0,1fr)_340px] xl:grid-cols-[280px_minmax(0,1fr)_360px] 2xl:grid-cols-[280px_minmax(0,1fr)_400px]">
-        <Sidebar
-          chars={chars} loaded={loaded} current={curId} onSelect={s.select} onCreate={n => s.create(n)} loc={loc} onImport={s.importChars} onError={setError}
-          onDirChanged={s.reload} onFlush={s.flush} onRevert={s.revert}
-          onReload={() => s.reload(loc?.kind === "browser" ? "Reloaded" : loc?.kind === "github" ? "Reloaded from GitHub" : "Reloaded from disk")}
-        />
-
-        <main className="relative flex min-h-0 flex-col">
-          <StatusToasts className="top-4" error={error} notice={notice} setError={setError} setNotice={setNotice} />
-          <ConflictBar items={s.conflicts.map(c => ({ key: c.path, label: `Character ${c.label}`, deleted: c.theirs === null }))} onResolve={s.resolveConflict} />
-          {!cur ? (
-            <div className="grid flex-1 place-items-center font-sans text-xl font-light text-bone">Name a character on the left to start.</div>
+      <ToolPage tool={TOOLS.promptBuilder} data={s}
+        sidebar={<Sidebar chars={chars} loaded={loaded} current={curId} onSelect={s.select} onCreate={n => s.create(n)} onImport={s.importChars} onError={setError} />}
+        bar={
+          <ToolBar>
+            {cur ? (
+              <input value={cur.name} onChange={e => update(c => { c.name = e.target.value; })} aria-label="Character name"
+                className="h-full min-w-0 flex-1 bg-transparent font-sans text-lg text-paper focus:outline-hidden" />
+            ) : <span className="flex-1" />}
+            {cur && <>
+              <IconButton icon={CopyPlus} size="sm" tooltipSide="bottom" label="Duplicate character" onClick={() => s.create(cur.name + " copy", cur)} />
+              <Confirm label="Delete character" message={`Delete character "${cur.name}"? ${undoNote(loc)}`} onConfirm={() => s.remove(cur.id)}>
+                <IconButton icon={Trash2} size="sm" tone="danger" tooltipSide="bottom" label="Delete character" />
+              </Confirm>
+              <BarDivider />
+            </>}
+            <HelpButton items={HELP} />
+          </ToolBar>
+        }
+        conflicts={s.conflicts.map(c => ({ key: c.path, label: `Character ${c.label}`, deleted: c.theirs === null }))} onResolve={s.resolveConflict}
+        aside={<TagBrowser db={db} target={cur ? listLabel(cur, target) : "General"} targetColor={cur ? targetColor(cur, target) : segColor(0)} selected={selected} onToggle={text => cur && s.toggleInTarget(text)} />}>
+          {!loaded ? <NotReady loc={loc} /> : !cur ? (
+            <EmptyState title="No character open.">Name one on the left to start.</EmptyState>
           ) : (
             <>
               <div className="relative min-h-0 flex-1 space-y-10 overflow-y-auto px-8 pb-6 pt-6">
-                <header className="group/section flex items-end gap-3">
-                  <input
-                    value={cur.name}
-                    onChange={e => update(c => { c.name = e.target.value; })}
-                    aria-label="Character name"
-                    className="min-w-0 flex-1 bg-transparent font-sans text-[56px] font-light leading-none text-paper focus:outline-hidden"
-                  />
-                  <HoverActions className="mb-2">
-                    <IconButton icon={CopyPlus} label="Duplicate character" onClick={() => s.create(cur.name + " copy", cur)} />
-                    <Confirm label="Delete character" message={`Delete character "${cur.name}"? ${loc?.kind === "browser" ? "This can't be undone." : "This removes its file."}`} onConfirm={() => s.remove(cur.id)}>
-                      <IconButton icon={Trash2} tone="danger" label="Delete character" />
-                    </Confirm>
-                  </HoverActions>
-                  <HelpButton />
-                </header>
-
                 <Section title="General" note="always in the prompt" color={segColor(0)}>
                   <div className="mt-3">
                     <TagList listKey={BASE} tags={cur.base} db={db} accent={segColor(0)} active={sameKey(target, BASE)} onActivate={() => setActiveKey(BASE)}
@@ -117,7 +113,7 @@ export default function PromptBuilder() {
                     rows={2}
                     aria-label="Notes"
                     placeholder="Anything to remember about this character"
-                    className="mt-3 field-sizing-content min-h-16 w-full resize-none rounded-lg border-2 border-ink-3 bg-ink-2 px-3 py-2 font-talk text-base text-bone transition-colors placeholder:text-taupe hover:border-ink-line focus:border-caramel focus:outline-hidden"
+                    className={cn(textareaCls, "mt-3 field-sizing-content min-h-16 py-2")}
                   />
                 </Section>
                 </MotionFollow>
@@ -125,12 +121,7 @@ export default function PromptBuilder() {
               <PromptPanel ch={cur} onNegative={v => update(c => { c.negative = v; })} />
             </>
           )}
-        </main>
-
-        <div className="relative flex min-h-0 flex-col">
-          <TagBrowser db={db} target={cur ? listLabel(cur, target) : "General"} targetColor={cur ? targetColor(cur, target) : segColor(0)} selected={selected} onToggle={text => cur && s.toggleInTarget(text)} />
-        </div>
-      </div>
+      </ToolPage>
       <SearchDropZones />
     </>
   );
@@ -143,30 +134,14 @@ function targetColor(c: Character, key: ListKey) {
   return segColor(c.categories.findIndex(x => x.id === key.cat) + 1);
 }
 
-const HELP: [string, string][] = [
-  ["Click", "switch a tag off or on"],
-  ["Double-click", "edit a tag, or rename a preset tab"],
-  ["Ctrl + scroll", "change a tag's weight"],
-  ["Drag", "move tags between lists, onto preset tabs or toggle rows"],
-  ["Ctrl + drag", "copy instead of move"],
-  ["Drag to the right", "look a tag up on Danbooru or Google"],
-  ["Alt + ↑ / ↓", "move a category (in its name)"],
-  ["Ctrl + Shift + C", "copy the prompt"],
+const HELP: Gesture[] = [
+  ["Click a tag", "Switch it off or on"],
+  ["Double-click a tag", "Edit it"],
+  ["Double-click a preset tab", "Rename it"],
+  ["[Ctrl] + scroll on a tag", "Change its weight"],
+  ["Drag a tag", "Move it to another list, a preset tab or a toggle row"],
+  ["[Ctrl] + drag", "Copy instead of move"],
+  ["Drag a tag onto the tag browser", "Look it up on Danbooru or Google"],
+  ["[Alt] [↑] · [Alt] [↓]", "Move a category (in its name)"],
+  ["[Ctrl] [Shift] [C]", "Copy the prompt"],
 ];
-
-function HelpButton() {
-  const [open, setOpen] = useState(false);
-  return (
-    <Popover open={open} onOpenChange={setOpen} align="end" className="w-96" trigger={<IconButton icon={CircleHelp} label="Shortcuts" className="mb-2" />}>
-      <PopoverTitle>Shortcuts</PopoverTitle>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-        {HELP.map(([k, v]) => (
-          <div key={k} className="contents">
-            <dt className="font-bold text-paper">{k}</dt>
-            <dd className="text-bone">{v}</dd>
-          </div>
-        ))}
-      </dl>
-    </Popover>
-  );
-}

@@ -16,21 +16,24 @@ type Props = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & {
   tone?: keyof typeof TONES;
   size?: "sm" | "md";
   tooltipSide?: "top" | "bottom" | "left" | "right";
+  /** A toggle (bold, italic…): shown pressed, and says so to screen readers. */
+  pressed?: boolean;
 };
 
 /** Icon-only button. Always has a tooltip, since it has no visible text. Forwards props and ref,
     so it can be the trigger of a Popover or Confirm. */
 export const IconButton = forwardRef<HTMLButtonElement, Props>(
-  ({ icon: Icon, label, kbd, tone = "default", size = "md", tooltipSide, className, ...p }, ref) => (
+  ({ icon: Icon, label, kbd, tone = "default", size = "md", tooltipSide, pressed, className, ...p }, ref) => (
     <Tooltip label={label} kbd={kbd} side={tooltipSide}>
       <button
         ref={ref}
         type="button"
         aria-label={typeof label === "string" ? label : undefined}
+        aria-pressed={pressed}
         className={cn(
           "grid shrink-0 place-items-center rounded-md transition-[color,background-color,scale,opacity] active:scale-90 disabled:pointer-events-none disabled:opacity-30",
           size === "sm" ? "h-7 w-7" : "h-8 w-8",
-          TONES[tone], className,
+          TONES[tone], pressed && "bg-caramel/20 text-paper", className,
         )}
         {...p}
       >

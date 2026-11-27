@@ -16,7 +16,8 @@ import { beatsOf, type Beat } from "../lib/renpyText";
 import { useSceneUi } from "../lib/ui";
 import { useScenes } from "../state";
 import { applyFixes } from "../lib/fixes";
-import { DOT, FixButton } from "./problems";
+import { FixButton } from "./problems";
+import { ProblemRow, ProblemSummary } from "@/shared/ui/problems";
 
 /** Beside the script: what the player sees at the cursor (background, sprites, the textbox writing the line out with
  *  its pauses), and the scene's problems. */
@@ -42,7 +43,7 @@ export function Preview() {
   }
 
   return (
-    <aside className="flex h-full min-h-0 flex-col gap-4 border-l border-ink-line/60 p-5">
+    <div className="flex h-full min-h-0 flex-col gap-4 p-5">
       <div className="shrink-0 space-y-4">
         <StageView stage={stage} cue={cue} manifest={manifest} />
         <Facts stage={stage} manifest={manifest} />
@@ -55,7 +56,7 @@ export function Preview() {
         </p>
       )}
       <Problems />
-    </aside>
+    </div>
   );
 }
 
@@ -352,26 +353,19 @@ function Problems() {
     <section className="flex min-h-0 flex-1 flex-col">
       <div className="mb-2 flex shrink-0 items-baseline gap-3">
         <h2 className="font-sans text-lg text-paper">Checks</h2>
-        <span className="font-talk text-sm text-taupe">
-          {real.length ? `${real.length} to fix` : "all good"}
-          {notes.length > 0 && <> · <button className="underline-offset-4 hover:text-paper hover:underline" onClick={() => setShowNotes(v => !v)}>
-            {showNotes ? "hide" : "show"} {notes.length} missing art</button></>}
-        </span>
+        <ProblemSummary real={real.length} notes={notes.length} notesLabel="missing art" showNotes={showNotes} onShowNotes={setShowNotes} />
         {fixable.length > 1 && (
           <Button size="sm" variant="quiet" className="ml-auto" onClick={() => { const v = useSceneUi.getState().view; if (v) applyFixes(v, fixable); }}>
             <Wrench className="h-3.5 w-3.5" />Fix all {fixable.length}
           </Button>
         )}
       </div>
-      <ul className="-mx-2 min-h-0 flex-1 space-y-1 overflow-y-auto">
+      <ul className="-mx-2 min-h-0 flex-1 overflow-y-auto">
         {list.map((p, i) => (
-          <li key={i} className="group/p flex items-start gap-2.5 rounded-md px-2 py-1.5 hover:bg-ink-2">
-            <span className={cn("mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full", DOT[p.severity])} />
-            <button onClick={() => go(p)} className="min-w-0 flex-1 text-left font-talk text-sm text-bone hover:text-paper">
-              <span className="mr-1.5 text-xs tabular-nums text-taupe">{p.line}</span>{p.message}
-            </button>
-            <FixButton view={useSceneUi.getState().view} problem={p} className="shrink-0" />
-          </li>
+          <ProblemRow key={i} level={p.severity} onGo={() => go(p)} prefix={p.line}
+            action={<FixButton view={useSceneUi.getState().view} problem={p} className="shrink-0" />}>
+            {p.message}
+          </ProblemRow>
         ))}
       </ul>
     </section>

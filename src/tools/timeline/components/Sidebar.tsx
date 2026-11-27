@@ -1,23 +1,22 @@
-import { Pencil } from "lucide-react";
-import { TOOLS } from "@/app/tools";
+import { Pencil, SquarePlus } from "lucide-react";
 import { uniqueId } from "@/shared/lib/utils";
 import { AddField } from "@/shared/ui/field";
 import { MenuGroup, MenuItem, MenuRule } from "@/shared/ui/menu";
 import { MotionFollow, MotionList } from "@/shared/ui/motion-list";
 import { IconButton } from "@/shared/ui/icon-button";
-import { ToolNav } from "@/shared/ui/tool-nav";
-import { WorkspaceLocation } from "@/shared/ui/workspace-location";
 import { visible } from "../lib/colors";
 import { castOf, isFiltered, threadsOf } from "../lib/model";
+import { newChapter } from "../lib/actions";
 import { nav } from "../lib/nav";
 import { useTimelinePick } from "../state";
 import { DEFAULT_COLOR } from "@/shared/lib/colors";
 
 const PALETTE = ["#e86a92", "#7fae5a", "#e0b44a", "#6c8fd9", "#d9603b", "#4fb39b", "#c98bd6", "#c4956a"];
 
-/** Like the game's menu: a vertical rule with text links. Characters and threads are focus toggles; the pencil edits. */
+/** The sidebar's lists, like the game's menu: a vertical rule with text links. Characters and threads are focus toggles;
+ *  the pencil edits. */
 export function Sidebar() {
-  const { doc, loc, loaded, filter, viewId, selection, select, edit, reload, flush, revert, setFilter } = useTimelinePick("doc", "loc", "loaded", "filter", "viewId", "selection", "select", "edit", "reload", "flush", "revert", "setFilter");
+  const { doc, loaded, filter, viewId, selection, select, edit, setFilter } = useTimelinePick("doc", "loaded", "filter", "viewId", "selection", "select", "edit", "setFilter");
   const cast = castOf(doc.roster, doc.chapters);
   const threads = threadsOf(doc.threads, doc.chapters);
   const toggle = (key: "chars" | "threads", id: string) =>
@@ -25,9 +24,7 @@ export function Sidebar() {
   const isSel = (kind: string, id: string) => selection?.kind === kind && selection.id === id;
 
   return (
-    <aside className="flex min-h-0 flex-col border-r border-ink-line/60">
-      <ToolNav current={TOOLS.timeline} />
-      <nav className="min-h-0 flex-1 space-y-7 overflow-y-auto px-6 pb-4">
+    <div className="space-y-7 px-6">
         <MenuGroup title="Views">
           <MenuRule>
             <MenuItem label="Everything" active={!isFiltered(filter) && !viewId} layoutId="view-marker"
@@ -69,7 +66,7 @@ export function Sidebar() {
           }} /></MotionFollow>
         </MenuGroup>
 
-        <MenuGroup title="Chapters">
+        <MenuGroup title="Chapters" actions={<IconButton icon={SquarePlus} size="sm" label="New chapter" disabled={!loaded} onClick={newChapter} />}>
           <MenuRule>
             <MotionList reset={loaded}>{doc.chapters.map(c => (
               <MenuItem key={c.id} size="base" label={c.name} sub={c.when} active={isSel("chapter", c.id)} layoutId="chapter-marker"
@@ -77,10 +74,7 @@ export function Sidebar() {
             ))}</MotionList>
           </MenuRule>
         </MenuGroup>
-      </nav>
-      <WorkspaceLocation loc={loc} onChanged={reload} onFlush={flush} onRevert={revert}
-        onReload={() => reload(loc?.kind === "browser" ? "Reloaded" : loc?.kind === "github" ? "Reloaded from GitHub" : "Reloaded from disk")} />
-    </aside>
+    </div>
   );
 }
 

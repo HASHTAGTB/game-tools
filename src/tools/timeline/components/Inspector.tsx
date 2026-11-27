@@ -1,30 +1,33 @@
-import { crumpleAll } from "@/shared/ui/flair";
-import { cardsOf } from "./BoardCard";
 import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Eye, Trash2, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Confirm } from "@/shared/ui/confirm";
 import { IconButton } from "@/shared/ui/icon-button";
 import { fade, m, spring } from "@/shared/ui/motion";
+import { GestureList } from "@/shared/ui/help";
 import { Section } from "@/shared/ui/section";
+import { removeEvent } from "../lib/actions";
+import { GESTURES } from "../lib/help";
 import { visible } from "../lib/colors";
 import { allEvents, castOf, deleteEvent, findEvent, moveEvent, orderBetween, threadsOf } from "../lib/model";
 import { nav } from "../lib/nav";
 import { useTimeline, useTimelinePick } from "../state";
-import { AutoText, ChipPicker, ColorInput, Field, inputCls, TextInput } from "./fields";
+import { AutoText, ColorInput, Field, TextInput } from "@/shared/ui/field";
+import { Select } from "@/shared/ui/select";
+import { ChipPicker } from "./fields";
 import { DEFAULT_COLOR } from "@/shared/lib/colors";
 
 export function Inspector() {
   const sel = useTimeline(s => s.selection);
   return (
-    <aside className="flex min-h-0 flex-col overflow-y-auto border-l border-ink-line/60 px-5 py-6">
+    <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
       {/* a new panel slides in a little, so it's clear the panel now shows something else */}
       <m.div key={sel ? `${sel.kind}:${sel.id}` : "help"} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}
         transition={{ ...spring.snappy, opacity: fade.in }}>
         {!sel ? <Help /> : sel.kind === "event" ? <EventPanel id={sel.id} /> : sel.kind === "chapter" ? <ChapterPanel id={sel.id} />
           : sel.kind === "thread" ? <ThreadPanel id={sel.id} /> : sel.kind === "view" ? <ViewPanel id={sel.id} /> : <CharPanel id={sel.id} />}
       </m.div>
-    </aside>
+    </div>
   );
 }
 
@@ -32,24 +35,6 @@ function Close() {
   const select = useTimeline(s => s.select);
   return <IconButton icon={X} label="Close" kbd="Esc" onClick={() => select(null)} />;
 }
-
-const Key = ({ children }: { children: string }) => (
-  <kbd className="rounded-md border border-ink-line bg-ink-2 px-1 font-sans text-xs text-paper">{children}</kbd>
-);
-
-/** What you can do on the board, as gesture → result, so it can be scanned rather than read. */
-const GESTURES: [React.ReactNode, string][] = [
-  ["Double-click a lane", "Add an event there"],
-  ["Drag a card", "Move it to another column or lane"],
-  ["Drag its right edge", "Make it last longer"],
-  ["Drag its dot onto a card", "Draw an arrow"],
-  ["Click a column label", "Name it: \u201cMo\u201d, \u201cafter school\u201d"],
-  ["Click a name on the left", "Focus on that character or thread"],
-  [<><Key>Ctrl</Key> + scroll</>, "Wider or narrower columns"],
-  [<><Key>Ctrl</Key> <Key>K</Key></>, "Find an event"],
-  [<><Key>Ctrl</Key> <Key>Z</Key></>, "Undo (add Shift to redo)"],
-  [<><Key>Del</Key> or <Key>Ctrl</Key> <Key>⌫</Key></>, "Delete the selected event"],
-];
 
 function Help() {
   return (
@@ -59,14 +44,7 @@ function Help() {
         Chapters run left to right. Inside a chapter, events in the same <b className="font-semibold text-paper">column</b> happen
         at the same time. <b className="font-semibold text-paper">Threads</b> are storylines across chapters.
       </p>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-sm leading-snug">
-        {GESTURES.map(([g, what], i) => (
-          <div key={i} className="contents">
-            <dt className="whitespace-nowrap font-semibold text-paper">{g}</dt>
-            <dd className="text-bone">{what}</dd>
-          </div>
-        ))}
-      </dl>
+      <GestureList items={GESTURES} className="gap-x-3" />
       <p className="text-xs leading-snug text-taupe">Changes save on their own, except on GitHub: there, use Save to GitHub. If someone else changed a file, it reloads, or asks first when you had changes in it too.</p>
     </div>
   );
@@ -88,9 +66,7 @@ function EventPanel({ id }: { id: string }) {
   return (
     <div className="space-y-5">
       <Section title="Event" actions={<>
-        <Confirm message="Delete this event and the arrows to and from it?" onConfirm={() => { select(null); crumpleAll(cardsOf(id), () => edit(d => deleteEvent(d.chapters, id))); }}>
-          <IconButton icon={Trash2} label="Delete event" kbd="Del" tone="danger" />
-        </Confirm>
+        <IconButton icon={Trash2} label="Delete event" kbd="Del" tone="danger" onClick={() => removeEvent(id)} />
         <Close />
       </>} />
 
@@ -107,13 +83,12 @@ function EventPanel({ id }: { id: string }) {
       </Field>
       <Field label="When">
         <div className="grid grid-cols-[1fr_auto] gap-2">
-          <select value={chapter.id} onChange={e => {
-            // keep its column, as far as the other chapter has columns
-            const to = e.target.value, cols = doc.chapters.find(c => c.id === to)?.columns.length ?? 1;
-            edit(d => moveEvent(d.chapters, id, to, Math.min(event.col, cols - 1)));
-          }} className={inputCls}>
-            {doc.chapters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <Select variant="field" label="Chapter" value={chapter.id} options={doc.chapters.map(c => ({ value: c.id, label: c.name, hint: c.when }))}
+            onChange={to => {
+              // keep its column, as far as the other chapter has columns
+              const cols = doc.chapters.find(c => c.id === to)?.columns.length ?? 1;
+              edit(d => moveEvent(d.chapters, id, to, Math.min(event.col, cols - 1)));
+            }} />
           <div className="flex items-center">
             <IconButton icon={ChevronLeft} size="sm" label="One column earlier" disabled={event.col === 0} onClick={() => set(e => { e.col--; })} />
             <IconButton icon={ChevronRight} size="sm" label="One column later" onClick={() => edit(d => moveEvent(d.chapters, id, chapter.id, event.col + 1))} />

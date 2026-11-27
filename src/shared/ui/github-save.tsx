@@ -1,7 +1,9 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { commit, defaultMessage, discard, keepMine, onPendingChange, pendingSnapshot } from "@/shared/lib/github";
 import { cn } from "@/shared/lib/utils";
+import { useHotkeys } from "@/shared/lib/hotkeys";
 import { Button } from "./button";
+import { ArmButton } from "./confirm";
 import { fieldCls } from "./field";
 import { Popover, PopoverTitle } from "./popover";
 
@@ -53,13 +55,7 @@ export function GitHubSave({ onFlush, onRevert }: Props) {
   };
 
   // Ctrl+S / Cmd+S saves right away with the default message
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(""); }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
+  useHotkeys({ "mod+s": () => void save("") });
 
   const resolve = async (keep: "mine" | "theirs") => {
     setBusy(true);
@@ -118,7 +114,7 @@ export function GitHubSave({ onFlush, onRevert }: Props) {
         {err && <p className="mt-2 text-sm text-coral">{err}</p>}
         {!conflicts.length && (
           <div className="mt-3 flex items-center gap-3">
-            {n > 0 && <DiscardAll busy={busy} onDiscard={async () => { await onRevert(() => discard()); setOpen(false); }} />}
+            {n > 0 && <ArmButton disabled={busy} sure="Really discard?" onConfirm={async () => { await onRevert(() => discard()); setOpen(false); }}>Discard all</ArmButton>}
             <span className="flex-1" />
             <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Close</Button>
             {n > 0 && <Button size="sm" variant="primary" onClick={() => save()} disabled={busy}>Save</Button>}
@@ -126,16 +122,5 @@ export function GitHubSave({ onFlush, onRevert }: Props) {
         )}
       </Popover>
     </div>
-  );
-}
-
-/** Two clicks, not a nested popover. */
-function DiscardAll({ busy, onDiscard }: { busy: boolean; onDiscard: () => void }) {
-  const [sure, setSure] = useState(false);
-  useEffect(() => { if (!sure) return; const t = setTimeout(() => setSure(false), 3000); return () => clearTimeout(t); }, [sure]);
-  return (
-    <Button size="sm" variant="danger" disabled={busy} className={cn(sure && "text-coral")} onClick={() => (sure ? onDiscard() : setSure(true))}>
-      {sure ? "Really discard?" : "Discard all"}
-    </Button>
   );
 }

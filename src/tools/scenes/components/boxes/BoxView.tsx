@@ -1,6 +1,7 @@
 import { EditorView } from "@codemirror/view";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useGame } from "@/shared/lib/game";
+import { EmptyState } from "@/shared/ui/tool-page";
 import { cascade, spotlight } from "@/shared/ui/flair";
 import { allBoxes, buildTree, type Box, type Tree } from "../../lib/blocks";
 import { sceneCast } from "../../lib/cast";
@@ -112,7 +113,7 @@ export function BoxView({ view }: { view: EditorView }) {
       <div ref={page} className="bx-page h-full overflow-y-auto">
         <div className="bx-col">
           {!tree.scene ? (
-            <Empty text="The script has no label yet, so nothing can jump to it.">{fix(problems.find(p => p.fix?.at === "after" || p.fix?.at === "start"))}</Empty>
+            <EmptyState className="flex-none py-24" title="The script has no label yet, so nothing can jump to it.">{fix(problems.find(p => p.fix?.at === "after" || p.fix?.at === "start"))}</EmptyState>
           ) : (
             <>
               {tree.pre.length > 0 && (
@@ -134,15 +135,6 @@ export function BoxView({ view }: { view: EditorView }) {
       </div>
       <BoxMenus />
     </BoxContext.Provider>
-  );
-}
-
-function Empty({ text, children }: { text: string; children?: React.ReactNode }) {
-  return (
-    <div className="grid place-items-center py-24 text-center">
-      <p className="font-sans text-xl font-light text-bone">{text}</p>
-      {children}
-    </div>
   );
 }
 

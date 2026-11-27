@@ -2,10 +2,12 @@ import { AlertDialog } from "@base-ui/react/alert-dialog";
 import { bloomRef } from "@/shared/ui/flair";
 import { bloomCls } from "@/shared/ui/motion";
 import { ContextMenu } from "@base-ui/react/context-menu";
-import { ChevronRight, Copy, FilePlus, FolderPlus, Pencil, Trash2, type LucideIcon } from "lucide-react";
-import { useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
+import { ChevronRight, Copy, FilePlus, FolderPlus, Pencil, Trash2 } from "lucide-react";
+import { useRef, useState, type DragEvent, type MouseEvent } from "react";
 import { cn, isUnder } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
+import { undoNote } from "@/shared/ui/confirm";
+import { ContextMenuItem as Item, ContextMenuSeparator } from "@/shared/ui/menu-item";
 import { IconButton } from "@/shared/ui/icon-button";
 import { AnimatePresence, m, spring } from "@/shared/ui/motion";
 import { MenuMarker } from "@/shared/ui/menu";
@@ -14,8 +16,8 @@ import { popoverCls } from "@/shared/ui/popover";
 import { Rule } from "@/shared/ui/heading";
 import { useVault } from "./context";
 import { baseName, parentOf, type Node } from "./store";
+import { DropRing, GroupRule, hoverOnly, InlineRename, RowActions, useHoverOpen } from "./tree-parts";
 
-const hoverOnly = "opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 [@media(hover:none)]:opacity-100";
 const INDENT = 14;
 /** Left padding of a top-level row. */
 const BASE = 12;
@@ -44,8 +46,7 @@ export function FileTree() {
   const [deleting, setDeleting] = useState<Node | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropDir, setDropDir] = useState<string | null>(null);
-  const hoverTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const hoverDir = useRef<string | null>(null);
+  const hoverOpen = useHoverOpen(toggle);
 
   const root = tree[rootDir];
   if (!ready) return null;
@@ -59,14 +60,9 @@ export function FileTree() {
     e.dataTransfer.dropEffect = "move";
     setDropDir(dir);
     // hovering a closed folder for a moment opens it, so you can drop deeper
-    const closed = n?.kind === "directory" && !expanded.has(n.path) ? n.path : null;
-    if (closed !== hoverDir.current) {
-      clearTimeout(hoverTimer.current);
-      hoverDir.current = closed;
-      if (closed) hoverTimer.current = setTimeout(() => toggle(closed), 700);
-    }
+    hoverOpen.over(n?.kind === "directory" && !expanded.has(n.path) ? n.path : null);
   };
-  const endDrag = () => { setDragging(null); setDropDir(null); clearTimeout(hoverTimer.current); hoverDir.current = null; };
+  const endDrag = () => { setDragging(null); setDropDir(null); hoverOpen.reset(); };
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
     const dir = dropDirOf(nodeAt(e.target), rootDir);
@@ -106,10 +102,10 @@ export function FileTree() {
                   {note && <Item icon={Pencil} label="Rename" onClick={() => setRenaming(note.path)} />}
                   {note && <Item icon={Copy} label="Duplicate" onClick={() => duplicate(note.path)} />}
                   {note && <Item icon={Trash2} label="Delete…" danger onClick={() => setDeleting(note)} />}
-                  {note && <ContextMenu.Separator className="my-1 h-px bg-ink-line" />}
+                  {note && <ContextMenuSeparator />}
                   <Item icon={FilePlus} label={`New ${noun}${inHere}`} onClick={() => create(here)} />
                   <Item icon={FolderPlus} label={`New folder${inHere}`} onClick={() => createFolder(here)} />
-                  {dir && <ContextMenu.Separator className="my-1 h-px bg-ink-line" />}
+                  {dir && <ContextMenuSeparator />}
                   {dir && <Item icon={Pencil} label="Rename folder" onClick={() => setRenaming(dir.path)} />}
                   {dir && <Item icon={Trash2} label="Delete folder…" danger onClick={() => setDeleting(dir)} />}
                 </>
@@ -124,17 +120,6 @@ export function FileTree() {
   );
 }
 
-export function Item({ icon: Icon, label, danger, onClick }: { icon: LucideIcon; label: string; danger?: boolean; onClick: () => void }) {
-  return (
-    <ContextMenu.Item onClick={onClick}
-      className={cn("flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-base outline-hidden select-none data-highlighted:bg-paper/8",
-        danger ? "text-bone data-highlighted:text-coral" : "text-bone data-highlighted:text-paper")}>
-      <Icon className="h-3.5 w-3.5 text-taupe" strokeWidth={2.25} />
-      <span className="truncate">{label}</span>
-    </ContextMenu.Item>
-  );
-}
-
 type RowProps = {
   node: Node; depth: number; dropDir: string | null; dragging: string | null;
   onDragStart: (path: string) => void; onDragEnd: () => void; onDelete: (n: Node) => void; ref?: React.Ref<HTMLLIElement>;
@@ -142,7 +127,7 @@ type RowProps = {
 
 function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete, ref }: RowProps) {
   const useStore = useVault();
-  const { tree, expanded, path: open, renaming, toggle, open: openNote, create, setRenaming } = useStore();
+  const { tree, expanded, path: open, renaming, toggle, open: openNote, create, setRenaming, rename } = useStore();
   const isDir = node.kind === "directory";
   const isOpen = expanded.has(node.path);
   const active = open === node.path;
@@ -158,10 +143,11 @@ function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete,
           // the signature moment: the marker slides along the menu rules to the note that was just opened
           <MenuMarker layoutId={`${useStore.config.noun}-marker`} className="z-10" style={{ left: ruleX(depth) - 1 }} />
         )}
-        {target && <span aria-hidden className="absolute inset-y-0.5 left-2 right-2 rounded-md bg-caramel/20 ring-2 ring-caramel" />}
+        {target && <DropRing />}
 
         {renaming === node.path ? (
-          <RenameInput node={node} pad={pad} />
+          <InlineRename value={baseName(node.path)} label={isDir ? "Folder name" : "Name"} onCommit={v => rename(node.path, v)} onCancel={() => setRenaming(null)}
+            className={isDir ? "font-sans" : "font-talk"} style={{ paddingLeft: pad.paddingLeft + (isDir ? 0 : 18) }} />
         ) : (
           <button
             draggable
@@ -183,12 +169,7 @@ function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete,
           <span className="relative flex">
             {isDir ? (
               <IconButton icon={FilePlus} size="sm" label={`New ${useStore.config.noun} here`} tooltipSide="right" className={hoverOnly} onClick={() => create(node.path)} />
-            ) : (
-              <>
-                <IconButton icon={Pencil} size="sm" label="Rename" tooltipSide="right" className={hoverOnly} onClick={() => setRenaming(node.path)} />
-                <IconButton icon={Trash2} size="sm" tone="danger" label="Delete" tooltipSide="right" className={hoverOnly} onClick={() => onDelete(node)} />
-              </>
-            )}
+            ) : <RowActions onRename={() => setRenaming(node.path)} onDelete={() => onDelete(node)} />}
           </span>
         )}
       </div>
@@ -198,7 +179,7 @@ function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete,
           <m.ul role="group" key="kids" className="relative overflow-hidden" transition={spring.smooth}
             initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
             {/* the menu rule, one per folder level; lights up while something can be dropped into this folder */}
-            <span aria-hidden className={cn("absolute inset-y-1 w-0.5 transition-colors", target ? "bg-caramel" : open && parentOf(open) === node.path ? "bg-bone/40" : "bg-bone/15")} style={{ left: ruleX(depth + 1) }} />
+            <GroupRule drop={target} holdsOpen={!!open && parentOf(open) === node.path} style={{ left: ruleX(depth + 1) }} />
             {children === undefined
               ? <li className="h-7 font-talk text-sm leading-7 text-taupe" style={{ paddingLeft: BASE + (depth + 1) * INDENT + 18 }}>…</li>
               : children.length === 0
@@ -209,28 +190,6 @@ function Row({ node, depth, dropDir, dragging, onDragStart, onDragEnd, onDelete,
         )}
       </AnimatePresence>
     </MotionItem>
-  );
-}
-
-function RenameInput({ node, pad }: { node: Node; pad: React.CSSProperties }) {
-  const { rename, setRenaming } = useVault()();
-  const [name, setName] = useState(baseName(node.path));
-  const ref = useRef<HTMLInputElement>(null);
-  // after the context menu closes, so its focus return doesn't steal the input's focus
-  useEffect(() => { const t = setTimeout(() => { ref.current?.focus(); ref.current?.select(); }, 0); return () => clearTimeout(t); }, []);
-  const done = useRef(false);
-  const commit = () => { if (done.current) return; done.current = true; rename(node.path, name); };
-  const isDir = node.kind === "directory";
-  return (
-    <div className="relative flex h-full min-w-0 flex-1 items-center" style={{ paddingLeft: (pad.paddingLeft as number) + (isDir ? 0 : 18) }}>
-      <input ref={ref} value={name} onChange={e => setName(e.target.value)} aria-label={isDir ? "Folder name" : "Name"}
-        onKeyDown={e => {
-          if (e.key === "Enter") commit();
-          if (e.key === "Escape") { done.current = true; setRenaming(null); }
-        }}
-        onBlur={commit}
-        className={cn("h-6 min-w-0 flex-1 rounded-md border-b-2 border-caramel bg-ink px-1 text-paper focus:outline-hidden", isDir ? "font-sans text-base" : "font-talk text-base")} />
-    </div>
   );
 }
 
@@ -255,7 +214,7 @@ export function DeleteDialog({ node, onClose, name, what = "Links to it will sto
           </div>
           <AlertDialog.Description className="mb-4 text-sm text-bone">
             {isDir ? "Everything inside it goes too, images and other files included." : what}
-            {" "}{loc?.kind === "github" ? "Git history still has it if it was saved." : "This can't be undone unless the vault is in git."}
+            {" "}{undoNote(loc)}
           </AlertDialog.Description>
           <div className="flex justify-end gap-3">
             <AlertDialog.Close render={<Button size="sm" variant="ghost">Cancel</Button>} />

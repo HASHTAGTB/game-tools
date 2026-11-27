@@ -2,19 +2,19 @@ import { ContextMenu } from "@base-ui/react/context-menu";
 import { bloomRef } from "@/shared/ui/flair";
 import { bloomCls } from "@/shared/ui/motion";
 import { ChevronRight, Copy, FilePlus, Pencil, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from "react";
+import { useMemo, useState, type DragEvent, type MouseEvent } from "react";
 import { cn, isUnder } from "@/shared/lib/utils";
-import { IconButton } from "@/shared/ui/icon-button";
+import { ContextMenuItem as Item, ContextMenuSeparator } from "@/shared/ui/menu-item";
 import { MenuMarker } from "@/shared/ui/menu";
 import { AnimatePresence, m, spring } from "@/shared/ui/motion";
 import { popoverCls } from "@/shared/ui/popover";
 import { MotionItem, MotionList } from "@/shared/ui/motion-list";
-import { DeleteDialog, Item } from "@/shared/vault/FileTree";
+import { DeleteDialog } from "@/shared/vault/FileTree";
+import { DropRing, GroupRule, InlineRename, RowActions, useHoverOpen } from "@/shared/vault/tree-parts";
 import { GAME_DIR, NEW_SCENE_DIR } from "@/shared/vault/places";
 import { readInfo, type SceneInfo } from "../lib/header";
 import { createScene, duplicateScene, moveScene, retitleScene, titleOf, useChapters, useSceneIndex, useScenes } from "../state";
 
-const hoverOnly = "opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 [@media(hover:none)]:opacity-100";
 const DEV_DIR = `${GAME_DIR}/dev`;
 
 type Row = { path: string; title: string };
@@ -37,8 +37,8 @@ export function SceneList() {
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const [dragging, setDragging] = useState<{ path: string; group: string } | null>(null);
   const [dropGroup, setDropGroup] = useState<string | null>(null);
-  const hoverTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const hoverGroup = useRef<string | null>(null);
+  const toggle = (id: string) => setClosed(s => { const n = new Set(s); if (!n.delete(id)) n.add(id); return n; });
+  const hoverOpen = useHoverOpen(toggle);
 
   // the open scene from its live text, so a new title shows while typing
   const openInfo = useMemo(() => (open ? readInfo(text) : null), [open, text]);
@@ -67,10 +67,9 @@ export function SceneList() {
     const el = (target as HTMLElement | null)?.closest<HTMLElement>("[data-path]");
     return el ? { path: el.dataset.path!, title: el.dataset.title! } : null;
   };
-  const toggle = (id: string) => setClosed(s => { const n = new Set(s); if (!n.delete(id)) n.add(id); return n; });
 
   const startDrag = (path: string, group: string) => setDragging({ path, group });
-  const endDrag = () => { setDragging(null); setDropGroup(null); clearTimeout(hoverTimer.current); hoverGroup.current = null; };
+  const endDrag = () => { setDragging(null); setDropGroup(null); hoverOpen.reset(); };
   const onDragOver = (e: DragEvent) => {
     const g = groupAt(e.target);
     if (!dragging || !g || g === dragging.group) { setDropGroup(null); return; }
@@ -78,12 +77,7 @@ export function SceneList() {
     e.dataTransfer.dropEffect = "move";
     setDropGroup(g);
     // hovering a closed group for a moment opens it
-    const shut = closed.has(g) ? g : null;
-    if (shut !== hoverGroup.current) {
-      clearTimeout(hoverTimer.current);
-      hoverGroup.current = shut;
-      if (shut) hoverTimer.current = setTimeout(() => toggle(shut), 700);
-    }
+    hoverOpen.over(closed.has(g) ? g : null);
   };
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
@@ -110,7 +104,7 @@ export function SceneList() {
                   <li key={g.id} data-group={g.id}>
                     <button onClick={() => toggle(g.id)}
                       className="relative flex h-7 w-full items-center gap-1 pl-3 pr-2 text-left font-sans text-base text-bone transition-colors hover:text-paper">
-                      {dropGroup === g.id && <span aria-hidden className="absolute inset-y-0.5 left-2 right-2 rounded-md bg-caramel/20 ring-2 ring-caramel" />}
+                      {dropGroup === g.id && <DropRing />}
                       <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-taupe transition-transform duration-200", !closed.has(g.id) && "rotate-90")} strokeWidth={2.5} />
                       <span className={cn("relative truncate", g.id.startsWith(":") && "italic text-taupe")}>{g.name}</span>
                     </button>
@@ -118,8 +112,7 @@ export function SceneList() {
                       {!closed.has(g.id) && (
                         <m.ul key="rows" className="relative overflow-hidden" transition={spring.smooth}
                           initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
-                          <span aria-hidden className={cn("absolute inset-y-1 left-[18px] w-0.5 transition-colors",
-                            dropGroup === g.id ? "bg-caramel" : g.rows.some(r => r.path === open) ? "bg-bone/40" : "bg-bone/15")} />
+                          <GroupRule drop={dropGroup === g.id} holdsOpen={g.rows.some(r => r.path === open)} style={{ left: 18 }} />
                           {/* a new scene drops in, a deleted one crumples, one moved to another chapter does both
                               (not when the timeline's chapters arrive and sort them all for the first time) */}
                           <MotionList reset={!!chapters}>{g.rows.map(r => <SceneRow key={r.path} row={r} active={r.path === open} onDelete={setDeleting}
@@ -140,7 +133,7 @@ export function SceneList() {
               {menuFor && <Item icon={Pencil} label="Rename" onClick={() => setRenaming(menuFor.path)} />}
               {menuFor && <Item icon={Copy} label="Duplicate" onClick={() => duplicateScene(menuFor.path)} />}
               {menuFor && <Item icon={Trash2} label="Delete…" danger onClick={() => setDeleting(menuFor)} />}
-              {menuFor && <ContextMenu.Separator className="my-1 h-px bg-ink-line" />}
+              {menuFor && <ContextMenuSeparator />}
               <Item icon={FilePlus} label="New scene" onClick={createScene} />
             </div>
 </ContextMenu.Popup>
@@ -165,7 +158,11 @@ function SceneRow({ row, active, onDelete, dragging, onDragStart, onDragEnd, ref
       <div data-path={row.path} data-title={row.title} className={cn("group/row relative flex h-7 items-center pr-2", dragging === "self" && "opacity-40")}>
         {/* the signature moment: the marker slides along the rule to the scene that was just opened */}
         {active && <MenuMarker layoutId="scene-marker" className="z-10" style={{ left: 17 }} />}
-        {renaming === row.path ? <TitleInput row={row} /> : (
+        {renaming === row.path ? (
+          // the scene's `## title:` line; the file keeps its name
+          <InlineRename value={row.title} label="Title" className="font-talk" style={{ paddingLeft: 30 }}
+            onCommit={v => (v !== row.title ? retitleScene(row.path, v) : setRenaming(null))} onCancel={() => setRenaming(null)} />
+        ) : (
           <button draggable
             onDragStart={e => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", row.path); onDragStart(); }}
             onDragEnd={onDragEnd}
@@ -176,34 +173,9 @@ function SceneRow({ row, active, onDelete, dragging, onDragStart, onDragEnd, ref
           </button>
         )}
         {renaming !== row.path && !dragging && (
-          <span className="relative flex">
-            <IconButton icon={Pencil} size="sm" label="Rename" tooltipSide="right" className={hoverOnly} onClick={() => setRenaming(row.path)} />
-            <IconButton icon={Trash2} size="sm" tone="danger" label="Delete" tooltipSide="right" className={hoverOnly} onClick={() => onDelete(row)} />
-          </span>
+          <RowActions onRename={() => setRenaming(row.path)} onDelete={() => onDelete(row)} />
         )}
       </div>
     </MotionItem>
-  );
-}
-
-/** Editing a scene's title in place (its `## title:` line; the file keeps its name). */
-function TitleInput({ row }: { row: Row }) {
-  const { setRenaming } = useScenes();
-  const [title, setTitle] = useState(row.title);
-  const ref = useRef<HTMLInputElement>(null);
-  // after the context menu closes, so its focus return doesn't steal the input's focus
-  useEffect(() => { const t = setTimeout(() => { ref.current?.focus(); ref.current?.select(); }, 0); return () => clearTimeout(t); }, []);
-  const done = useRef(false);
-  const commit = () => { if (done.current) return; done.current = true; if (title !== row.title) retitleScene(row.path, title); else setRenaming(null); };
-  return (
-    <div className="relative flex h-full min-w-0 flex-1 items-center pl-[30px]">
-      <input ref={ref} value={title} onChange={e => setTitle(e.target.value)} aria-label="Title"
-        onKeyDown={e => {
-          if (e.key === "Enter") commit();
-          if (e.key === "Escape") { done.current = true; setRenaming(null); }
-        }}
-        onBlur={commit}
-        className="h-6 min-w-0 flex-1 rounded-md border-b-2 border-caramel bg-ink px-1 font-talk text-base text-paper focus:outline-hidden" />
-    </div>
   );
 }

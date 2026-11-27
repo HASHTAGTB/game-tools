@@ -175,7 +175,6 @@
 /* ---------- problems under a box, sections */
 .bx-probs { display: grid; gap: .15rem; margin: .3rem .2rem 0; font-family: var(--font-talk); font-size: 13px; line-height: 18px; }
 .bx-prob { display: flex; align-items: center; gap: .5rem; color: var(--color-bone); }
-.bx-prob > i { width: 6px; height: 6px; border-radius: 999px; flex: none; }
 .bx-section { display: flex; align-items: center; gap: .6rem; margin: 2.2rem 0 .4rem; font-family: var(--font-sans); font-size: 14px; color: var(--color-taupe); }
 .bx-section::before { content: ""; width: 1.4rem; height: 3px; border-radius: 2px; background: var(--color-butter); }
 .bx-section code { font-family: ui-monospace, monospace; font-size: 13px; color: var(--color-bone); }

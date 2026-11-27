@@ -4,10 +4,10 @@ import {
   List, ListOrdered, ListTodo, Strikethrough, TextQuote, type LucideIcon,
 } from "lucide-react";
 import type { EditorView } from "@codemirror/view";
-import { cn } from "@/shared/lib/utils";
 import { IconButton } from "@/shared/ui/icon-button";
 import { MenuItem, MenuRule } from "@/shared/ui/menu";
 import { Popover } from "@/shared/ui/popover";
+import { BarDivider } from "@/shared/ui/tool-page";
 import { setHeading, toggleInline, toggleList, toggleQuote, useFormat, type InlineStyle, type ListStyle } from "../lib/format";
 
 /** The style toggles in the path bar. They act on the editor's selection, or the word under the cursor, and light
@@ -22,7 +22,6 @@ const run = (cmd: (v: EditorView) => boolean) => {
 /** Keep the editor focused (and its selection showing) while a button is pressed. */
 const keepFocus = (e: MouseEvent) => e.preventDefault();
 
-const on = "bg-ink-3 text-caramel";
 
 const INLINE: { style: InlineStyle; icon: LucideIcon; label: string; kbd?: string }[] = [
   { style: "bold", icon: Bold, label: "Bold", kbd: "Ctrl+B" },
@@ -43,14 +42,14 @@ export function FormatBar() {
   const ready = useFormat(s => s.view !== null);
   const btn = (key: string, icon: LucideIcon, label: string, isOn: boolean, cmd: (v: EditorView) => boolean, kbd?: string) => (
     <IconButton key={key} icon={icon} label={label} kbd={kbd} size="sm" tooltipSide="bottom" disabled={!ready}
-      aria-pressed={isOn} className={cn(isOn && on)} onMouseDown={keepFocus} onClick={() => run(cmd)} />
+      pressed={isOn} onMouseDown={keepFocus} onClick={() => run(cmd)} />
   );
 
   return (
     <div role="toolbar" aria-label="Text style" className="flex shrink-0 items-center gap-0.5">
       {INLINE.map(i => btn(i.style, i.icon, i.label, active.inline.includes(i.style), toggleInline(i.style), i.kbd))}
       {btn("wikilink", Link, "Link to a note [[ ]]", active.inline.includes("wikilink"), toggleInline("wikilink"))}
-      <Divider />
+      <BarDivider />
       <HeadingMenu level={active.heading} disabled={!ready} />
       {LISTS.map(l => btn(l.style, l.icon, l.label, active.list === l.style, toggleList(l.style)))}
       {btn("quote", TextQuote, "Quote", active.quote, toggleQuote)}
@@ -58,7 +57,6 @@ export function FormatBar() {
   );
 }
 
-const Divider = () => <span aria-hidden className="mx-1.5 h-4 w-px bg-ink-line" />;
 
 function HeadingMenu({ level, disabled }: { level: number; disabled: boolean }) {
   const [open, setOpen] = useState(false);
@@ -72,7 +70,7 @@ function HeadingMenu({ level, disabled }: { level: number; disabled: boolean }) 
       finalFocus={() => useFormat.getState().view?.contentDOM ?? true}
       trigger={
         <IconButton icon={HEADINGS[level]} label={level ? `Heading ${level}` : "Heading"} size="sm" tooltipSide="bottom"
-          disabled={disabled} className={cn((level > 0 || open) && on)} onMouseDown={keepFocus} />
+          disabled={disabled} pressed={level > 0 || open} onMouseDown={keepFocus} />
       }>
       <MenuRule>
         {HEADINGS.map((_, n) => (

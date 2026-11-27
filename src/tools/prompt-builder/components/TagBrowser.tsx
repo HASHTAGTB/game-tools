@@ -6,6 +6,7 @@ import { RARE, searchTags, toPromptText, type TagDb } from "../lib/tags";
 import { cn, fmtCount } from "@/shared/lib/utils";
 import { DRAG_MIME, useDnd } from "../lib/dnd";
 import { CollapsiblePanel } from "@/shared/ui/collapsible";
+import { Chip } from "@/shared/ui/chip";
 import { Rule } from "@/shared/ui/heading";
 import { SearchField } from "@/shared/ui/search-field";
 import { AnimatePresence, m, spring } from "@/shared/ui/motion";
@@ -61,7 +62,7 @@ export function TagBrowser({ db, target, targetColor, selected, onToggle }: Prop
     .filter(s => s.subs.length);
 
   return (
-    <aside className="flex min-h-0 flex-1 flex-col border-l border-ink-line/60" style={{ "--target": targetColor } as React.CSSProperties}>
+    <div className="flex min-h-0 flex-1 flex-col" style={{ "--target": targetColor } as React.CSSProperties}>
       <div className="space-y-3 px-5 pb-3 pt-6">
         <div className="flex min-h-7 flex-wrap items-center gap-x-2 gap-y-1 font-talk text-sm text-taupe">
           Adding to
@@ -70,10 +71,9 @@ export function TagBrowser({ db, target, targetColor, selected, onToggle }: Prop
               key={target}
               initial={{ opacity: 0, y: -6, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: 0.9 }}
               transition={spring.bouncy}
-              className="inline-flex max-w-full items-center gap-1.5 truncate rounded-full border-2 border-(--target) px-2.5 py-0.5 font-sans text-base text-paper"
+              className="inline-flex max-w-full"
             >
-              <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-(--target)" />
-              <span className="truncate">{target}</span>
+              <Chip color="var(--target)" dot>{target}</Chip>
             </m.span>
           </AnimatePresence>
         </div>
@@ -109,7 +109,7 @@ export function TagBrowser({ db, target, targetColor, selected, onToggle }: Prop
           </div>
         ))}
       </div>
-    </aside>
+    </div>
   );
 }
 

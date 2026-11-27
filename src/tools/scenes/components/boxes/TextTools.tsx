@@ -6,6 +6,7 @@ import { create } from "zustand";
 import { cn } from "@/shared/lib/utils";
 import { IconButton } from "@/shared/ui/icon-button";
 import { Popover, surfaceCls } from "@/shared/ui/popover";
+import { BarDivider } from "@/shared/ui/tool-page";
 import {
   caretAfter, chip, insertAtCaret, PAUSE_BARS, pauseOf, pauseRaw, PAUSES, selRange, setChip, setSpeed, speedAround, SPEEDS, speedAtCaret, stepBy,
   unwrap, wrapSpeed, type Marks,
@@ -79,7 +80,6 @@ const BAR = [[italic, bold], [speed, pause, click, para]];
 
 // ---------------------------------------------------------------- the top bar
 
-const on = "bg-caramel/20 text-paper";
 
 /** Italic, bold, speed, a pause, a click wait, a click then a new line: for the say box you're typing in, dimmed
  *  while you aren't. Pressing one keeps the box focused. */
@@ -96,12 +96,12 @@ export function TextBar() {
     <div role="toolbar" aria-label="Text effects" className="flex shrink-0 items-center gap-0.5" onMouseDown={e => e.preventDefault()}>
       {BAR.map((group, g) => (
         <span key={g} className="contents">
-          {g > 0 && <span aria-hidden className="mx-1.5 h-4 w-px bg-ink-line" />}
+          {g > 0 && <BarDivider />}
           {group.map(a => {
             const pressed = a.on?.(marks);
             return (
               <IconButton key={a.label} icon={a.icon} size="sm" label={a === speed && pressed ? "Normal speed again" : a.bar!} kbd={a.kbd}
-                tooltipSide="bottom" disabled={!t} aria-pressed={pressed} className={cn(pressed && on)} onClick={use(a)} />
+                tooltipSide="bottom" disabled={!t} pressed={pressed} onClick={use(a)} />
             );
           })}
         </span>
@@ -298,5 +298,5 @@ function PauseChoices({ edit }: { edit: MarkEdit }) {
 
 const Foot = ({ children }: { children: React.ReactNode }) => <div className="mt-2.5 flex items-center gap-1 border-t border-ink-line pt-2">{children}</div>;
 const Toggle = ({ icon, label, pressed, onClick }: { icon: LucideIcon; label: string; pressed: boolean; onClick: () => void }) => (
-  <IconButton icon={icon} size="sm" label={label} aria-pressed={pressed} className={cn(pressed && on)} onClick={onClick} />
+  <IconButton icon={icon} size="sm" label={label} pressed={pressed} onClick={onClick} />
 );
