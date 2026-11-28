@@ -283,3 +283,94 @@
 @media (prefers-reduced-motion: reduce) {
   .bx-title-ch, .bx-title h2 span, .bx-title-rule, .bx-title p { animation-duration: 1ms; animation-delay: 0s; }
 }
+
+/* ---------- open stage cards: the shared parts (card/parts.tsx) */
+.bx-hint { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; padding: .3rem .4rem .3rem .75rem; border-radius: var(--radius-md); font-family: var(--font-talk); font-size: 14px; color: var(--color-paper);
+  background: color-mix(in srgb, var(--color-periwinkle) 12%, var(--color-ink-2)); border: 1px solid color-mix(in srgb, var(--color-periwinkle) 35%, transparent); }
+
+/* ---------- picker tiles (card/BgPicker.tsx, card/thumb.tsx) */
+.bx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr)); gap: .35rem; }
+.bx-grid-sm { grid-template-columns: repeat(auto-fill, minmax(6.75rem, 1fr)); }
+/* a long list in the card scrolls on its own (all places, the tracks); not in the large view */
+.bx-scroll { max-height: 22rem; overflow-y: auto; padding-right: .25rem; scrollbar-color: var(--color-ink-line) transparent; }
+.bx-tile { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; gap: .3rem; min-width: 0; padding: .25rem; border-radius: var(--radius-lg);
+  content-visibility: auto; contain-intrinsic-size: auto 7.5rem; }
+.bx-tile:hover { background: var(--color-ink-2); }
+.bx-tile:focus-visible { outline: 2px solid var(--color-periwinkle); outline-offset: 1px; }
+.bx-tile-on { background: color-mix(in srgb, var(--color-caramel) 16%, var(--color-ink-2)); box-shadow: inset 0 0 0 1px var(--color-caramel); }
+.bx-tile-name { font-family: var(--font-talk); font-size: 12.5px; line-height: 1.3; color: var(--color-bone); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 .15rem; }
+.bx-tile-on .bx-tile-name { color: var(--color-paper); }
+.bx-tile-dots { display: flex; align-items: center; gap: 3px; padding: 0 .15rem; font-size: 10px; line-height: 6px; color: var(--color-taupe); }
+.bx-tile-dots i { width: 6px; height: 6px; border-radius: 50%; display: block; }
+.bx-dot-morning { background: #f1c9a5; } .bx-dot-day { background: #e8d79a; } .bx-dot-evening { background: #e59a63; } .bx-dot-night { background: #6f86c9; } .bx-dot-none { background: var(--color-taupe); }
+.bx-th { position: relative; display: block; aspect-ratio: 16 / 9; border-radius: var(--radius-md); overflow: hidden; background: var(--color-ink); max-width: 100%; }
+.bx-th > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.bx-th-wait { background: var(--color-ink-2); }
+.bx-th-note { position: absolute; inset: 0; display: grid; place-items: center; padding: .25rem; text-align: center; font-family: var(--font-talk); font-size: 11px; color: var(--color-taupe); }
+.bx-card-was { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-talk); font-size: 13px; color: var(--color-taupe); }
+
+/* ---------- clock and date (card/ClockPicker.tsx) */
+.bx-dial { width: 13.5rem; max-width: 100%; flex: none; touch-action: none; cursor: grab; user-select: none; border-radius: 50%; }
+.bx-dial:active { cursor: grabbing; }
+.bx-dial:focus-visible { outline: 2px solid var(--color-periwinkle); outline-offset: 4px; }
+.bx-week { display: grid; grid-template-columns: 1.75rem repeat(7, minmax(0, 1fr)) 1.75rem; gap: .25rem; }
+.bx-week-nav { all: unset; cursor: pointer; display: grid; place-items: center; border-radius: var(--radius-md); color: var(--color-taupe); }
+.bx-week-nav:hover { background: var(--color-ink-2); color: var(--color-paper); }
+.bx-day { all: unset; cursor: pointer; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: .35rem 0 .3rem; border-radius: var(--radius-md); border: 1px solid transparent; }
+.bx-day:hover { background: var(--color-ink-2); }
+.bx-day[aria-pressed="true"] { border-color: var(--color-caramel); background: color-mix(in srgb, var(--color-caramel) 15%, transparent); }
+.bx-day:focus-visible { outline: 2px solid var(--color-periwinkle); }
+.bx-day-wd { font-family: var(--font-sans); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--color-taupe); }
+.bx-day-n { font-family: var(--font-sans); font-size: 18px; color: var(--color-paper); font-variant-numeric: tabular-nums; }
+.bx-day-was .bx-day-n { color: var(--color-caramel); }
+.bx-day-dots { display: flex; gap: 2px; height: 5px; }
+.bx-day-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--color-periwinkle); display: block; }
+
+/* ---------- music (card/MusicPicker.tsx) */
+.bx-track { display: grid; grid-template-columns: 2rem minmax(0, 1fr) minmax(0, 8rem) 2.75rem; align-items: center; gap: .75rem; padding: .35rem .5rem; border-radius: var(--radius-md); cursor: pointer; }
+.bx-track:hover { background: var(--color-ink-2); }
+.bx-track:focus-visible { outline: 2px solid var(--color-periwinkle); outline-offset: 1px; }
+.bx-track-missing { outline: 1px dashed var(--color-ink-line); outline-offset: -1px; }
+.bx-play { all: unset; cursor: pointer; width: 1.9rem; height: 1.9rem; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--color-ink-line); color: var(--color-paper); }
+.bx-play:hover { border-color: var(--color-caramel); }
+.bx-play:disabled { opacity: .35; cursor: default; }
+.bx-track-bar { height: 3px; border-radius: 2px; background: var(--color-ink-line); overflow: hidden; }
+.bx-track-bar i { display: block; height: 100%; background: var(--color-caramel); }
+@container (max-width: 34rem) { .bx-track { grid-template-columns: 2rem minmax(0, 1fr) 2.75rem; } .bx-track-bar { display: none; } }
+.bx-stage.bx-open .bx-card-form { container-type: inline-size; }
+
+/* ---------- sprites (card/SpritePicker.tsx) */
+.bx-show { display: grid; grid-template-columns: minmax(0, 12.5rem) minmax(0, 1fr); gap: 1.1rem; align-items: start; }
+@container (max-width: 34rem) { .bx-show { grid-template-columns: minmax(0, 1fr); } }
+.bx-portrait { position: relative; width: 100%; max-width: 12.5rem; aspect-ratio: 1024 / 1600; border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--color-ink-line);
+  background: radial-gradient(ellipse at 50% 85%, var(--color-ink-3), var(--color-ink)); }
+.bx-portrait > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: bottom; }
+.bx-facebox { position: absolute; cursor: move; touch-action: none; border: 2px solid var(--color-caramel); border-radius: var(--radius-md); box-shadow: 0 0 0 999px rgb(0 0 0 / .45); }
+.bx-facebox-grip { position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px; border-radius: 50%; background: var(--color-caramel); cursor: nwse-resize; }
+.bx-face { position: relative; display: block; flex: none; border-radius: var(--radius-lg); background-color: var(--color-ink); }
+.bx-face-round { border-radius: 50%; }
+.bx-faces { display: grid; grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr)); gap: .3rem; }
+.bx-face-tile { all: unset; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: .15rem; min-width: 0; padding: .35rem .15rem .25rem; border-radius: var(--radius-lg); border: 1px solid transparent; }
+.bx-face-tile:hover { background: var(--color-ink-2); }
+.bx-face-tile:focus-visible { outline: 2px solid var(--color-periwinkle); }
+.bx-pose { all: unset; cursor: pointer; flex: none; width: 4.75rem; display: flex; flex-direction: column; align-items: center; gap: .1rem; padding: .3rem .15rem; border-radius: var(--radius-md); border: 1px solid transparent; }
+.bx-pose:hover { background: var(--color-ink-2); }
+.bx-pose:focus-visible { outline: 2px solid var(--color-periwinkle); }
+/* after the tiles' `all: unset`, which would wipe it */
+.bx-face-tile.bx-tile-on, .bx-pose.bx-tile-on { background: color-mix(in srgb, var(--color-caramel) 16%, var(--color-ink-2)); border-color: var(--color-caramel); }
+.bx-pose-img { position: relative; width: 2.75rem; height: 4.3rem; }
+.bx-pose-img > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: bottom; }
+
+/* ---------- the large view of an open card (StageCard BigView) */
+.bx-big { position: fixed; z-index: 40; display: flex; flex-direction: column; background: var(--color-ink); border-left: 1px solid var(--color-ink-line); border-right: 1px solid var(--color-ink-line); }
+.bx-big-head { display: flex; align-items: center; gap: .5rem; height: 3rem; flex: none; padding: 0 1rem; border-bottom: 1px solid var(--color-ink-line); font-family: var(--font-sans); font-size: 14px; color: var(--color-taupe); }
+.bx-big-head svg { color: var(--color-taupe); }
+.bx-big-body { flex: 1; min-height: 0; overflow-y: auto; padding: .75rem .5rem 1rem; }
+.bx-big-body .bx-card-form { max-width: 72rem; margin: 0 auto; container-type: inline-size; }
+/* a card with a list that scrolls (places, tracks): only that list scrolls, filling what's left of the view, so the
+   search above it and the foot below stay put. Cards without one scroll the whole body. */
+.bx-big-body:has(.bx-scroll) { overflow: hidden; display: flex; flex-direction: column; }
+.bx-big-body:has(.bx-scroll) > .bx-card-form { flex: 1; min-height: 0; width: 100%; }
+.bx-big .bx-card-form :has(.bx-scroll) { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; }
+/* as tall as its rows, shrinking (and scrolling) only when they don't fit: a short list lets what's below come up */
+.bx-big .bx-scroll { flex: 0 1 auto; min-height: 6rem; max-height: none; align-content: start; }

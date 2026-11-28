@@ -49,7 +49,7 @@ type Props = {
 export function VaultToolPage(p: Props) {
   // not the text: the editor, the list and DocStatus follow that themselves
   const s = usePick(p.store, "loc", "ready", "path", "conflict", "mode", "busy", "error", "notice",
-    "setError", "setNotice", "reload", "flush", "revert", "setMode", "resolveConflict");
+    "setError", "setNotice", "reload", "flush", "revert", "setMode", "resolveConflict", "conflictVersions");
   const { loc, ready, path, conflict, mode } = s;
   const other: Mode = mode === "live" ? "source" : "live";
   const { noun } = p.store.config;
@@ -80,7 +80,7 @@ export function VaultToolPage(p: Props) {
             <HelpButton items={p.help} />
           </PathBar>
         }
-        conflicts={conflict ? [{ key: noun, label: `This ${noun}`, deleted: conflict.theirs === null }] : []}
+        conflicts={conflict ? [{ key: noun, label: `This ${noun}`, deleted: conflict.theirs === null, versions: s.conflictVersions }] : []}
         onResolve={(_, keep) => s.resolveConflict(keep)}
         asideTitle={p.asideTitle}
         // a fragment, so the column stays while no file is open

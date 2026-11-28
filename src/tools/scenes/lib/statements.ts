@@ -55,6 +55,9 @@ type Spec<S extends { kind: StmtKind }> = {
 // ---------------------------------------------------------------- reading
 
 const WORD = /^[A-Za-z_]\w*$/;
+/** One word of an image name, as Ren'Py takes it: may start with a digit (`2nd_floor_hallway_day`) and hold a `-`
+ *  (`confused-blush`), only not start with one (a leading `-` removes an attribute). */
+const IMAGE_WORD = /^(?!-)[\w-]+$/;
 
 /** Split `with x` off the end of a statement's words (x a transition's name). */
 function takeWith(words: string[]): string | undefined {
@@ -79,7 +82,7 @@ function imageWords(body: string, head: "show" | "hide") {
   const { rest, at } = takeAt(" " + restWords.join(" "));
   const words = rest.trim().split(/\s+/).filter(Boolean);
   const w = takeWith(words);
-  if (!words.length || !words.every(x => WORD.test(x)) || words[0] === "screen") return null;
+  if (!words.length || !words.every(x => IMAGE_WORD.test(x)) || words[0] === "screen") return null;
   return { words, at, with: w };
 }
 
@@ -114,7 +117,7 @@ const STATEMENTS: { [K in StmtKind]: Spec<Extract<Stmt, { kind: K }>> } = {
       if (head !== "scene") return null;
       const words = [...rest];
       const w = takeWith(words);
-      return words.length && words.every(x => WORD.test(x)) ? { kind: "scene", image: words.join(" "), with: w } : null;
+      return words.length && words.every(x => IMAGE_WORD.test(x)) ? { kind: "scene", image: words.join(" "), with: w } : null;
     },
     format: x => `scene ${x.image}${withText(x.with)}`,
     card: x => plainCard(Image, "Background", join(x.image, x.with)),

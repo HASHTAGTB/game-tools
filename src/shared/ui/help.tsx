@@ -13,7 +13,7 @@ export const Key = ({ children }: { children: ReactNode }) => (
 export type Gesture = [how: string, what: string];
 
 /** "[Ctrl] + scroll" with the bracketed keys as keycaps. */
-function How({ text }: { text: string }) {
+export function How({ text }: { text: string }) {
   return <>{text.split(/(\[[^\]]+\])/).filter(Boolean).map((p, i) => (p.startsWith("[") ? <Key key={i}>{p.slice(1, -1)}</Key> : p))}</>;
 }
 

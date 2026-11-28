@@ -538,6 +538,52 @@ export async function discard(paths?: string[]) {
   changed();
 }
 
+// ---------------------------------------------------------------- comparing (the Changes view)
+
+/** Text files are compared; anything else (images, sounds) only shows whether it's there. */
+const isText = (path: string) => /\.(md|rpy|json|txt|canvas|ya?ml|csv)$/i.test(path);
+const textAt = async (path: string, sha: string | null) => (sha === null ? null : isText(path) ? blob(sha) : "");
+/** A pending change's own text: null if it deletes the file. */
+const pendingText = (path: string, p: Pending) => (deleted(p) ? Promise.resolve(null) : p.sha ? textAt(path, p.sha) : Promise.resolve(p.text));
+
+export type Versions = { path: string; a: string | null; b: string | null; o?: string | null; binary: boolean };
+
+/** Every unsaved change: the file as the repo had it where the change started (`a`) and as it is here (`b`). */
+export async function pendingVersions(): Promise<Versions[]> {
+  const ps = await pend();
+  return Promise.all([...ps].map(async ([path, p]) => ({
+    path, a: await textAt(path, p.base), b: await pendingText(path, p), binary: !isText(path),
+  })));
+}
+
+/** For files that changed on GitHub too: where this browser's change started (`o`), its version (`a`) and GitHub's
+ *  now (`b`). */
+export async function conflictVersions(paths: string[]): Promise<Versions[]> {
+  const [ps, t] = await Promise.all([pend(), currentTree(true)]);
+  return Promise.all(paths.flatMap(path => {
+    const p = ps.get(path);
+    if (!p) return [];
+    return [(async () => ({
+      path, o: await textAt(path, p.base), a: await pendingText(path, p), b: await textAt(path, t.files.get(path) ?? null), binary: !isText(path),
+    }))()];
+  }));
+}
+
+/** Settle a file that changed on GitHub too with `text` (null: deleted): a pending change on top of GitHub's version
+ *  now, or none if it is GitHub's version. Binary files can only keep mine (`keepMine`) or take theirs (`discard`). */
+export async function settle(path: string, text: string | null) {
+  const [ps, t] = await Promise.all([pend(), currentTree(true)]);
+  const remote = t.files.get(path) ?? null;
+  if (text === null) {
+    if (remote === null) ps.delete(path); else ps.set(path, { text: null, base: remote, mtime: 0 });
+  } else {
+    const sha = await blobSha(text);
+    blobs.set(sha, text);
+    if (sha === remote) ps.delete(path); else ps.set(path, { text, base: remote, mtime: shaTime(sha) });
+  }
+  changed();
+}
+
 /** Re-read the branch now (after "Reload"). */
 export const refresh = () => currentTree(true).then(() => {});
 

@@ -5,12 +5,21 @@ import type { Box, Place } from "./blocks";
 import type { Problem } from "./checks";
 import type { Marks } from "./richtext";
 import type { Script } from "./script";
+import type { Stage } from "./stage";
+import type { AssetImage } from "@/shared/lib/assetUrl";
 
 /** What the scene editor shares between its parts: the CodeMirror view holding the file (visible in the source view,
  *  hidden behind the boxes otherwise), the parsed script and the line in focus (for the preview and the header),
  *  and what the box view has open. */
 
 export type Caret = "start" | "end" | number;
+
+/** What an open card's option shows in the preview while it's hovered. A background, sprite …: the stage with that
+ *  option in, and images to use instead of reading the real file (asset path → a thumbnail), so hovering through a
+ *  grid never downloads every full image. A transition: the card's line (1-based) played with it. */
+export type Peek =
+  | { stage: Partial<Stage>; images?: Record<string, AssetImage> }
+  | { line: number; with: string };
 
 /** The one popup the box view has open: the Add menu at a slot, who says a line, or one of a chat's popups. */
 export type BoxMenu =
@@ -60,11 +69,13 @@ type SceneUi = {
   typing: { el: HTMLElement; marks: Marks; commit: () => void } | null;
   /** the speed slider is open (the box keeps its place in `typing` while the slider has focus) */
   speedOpen: boolean;
+  /** an open card's hovered option, shown in the preview instead of the line's stage (null: none) */
+  peek: Peek | null;
 };
 
 /** What the box view has open or pending for the scene in it: none of it carries over to another scene. */
-const perScene = (): Pick<SceneUi, "focus" | "openCard" | "tabs" | "reveal" | "menu" | "entering" | "rawIds" | "typing" | "speedOpen"> => ({
-  focus: null, openCard: null, tabs: {}, reveal: null, menu: null, entering: null, rawIds: new Set(), typing: null, speedOpen: false,
+const perScene = (): Pick<SceneUi, "focus" | "openCard" | "tabs" | "reveal" | "menu" | "entering" | "rawIds" | "typing" | "speedOpen" | "peek"> => ({
+  focus: null, openCard: null, tabs: {}, reveal: null, menu: null, entering: null, rawIds: new Set(), typing: null, speedOpen: false, peek: null,
 });
 
 export const useSceneUi = create<SceneUi>(() => ({
@@ -95,3 +106,14 @@ export function markRaw(view: EditorView, line: number, on: boolean) {
   useSceneUi.setState({ rawIds: next });
 }
 export const isRaw = (view: EditorView, line: number) => useSceneUi.getState().rawIds.has(view.state.field(lineIds)[line - 1]);
+
+let peekTimer: ReturnType<typeof setTimeout> | undefined;
+/** Show `p` in the preview a moment from now (moving across a grid doesn't flash every option), or with null: show
+ *  the line's own stage again, right away. */
+export function peekAt(p: Peek | null) {
+  clearTimeout(peekTimer);
+  if (p) peekTimer = setTimeout(() => useSceneUi.setState({ peek: p }), 60);
+  else if (useSceneUi.getState().peek) useSceneUi.setState({ peek: null });
+}
+// a card that closes (or another that opens) takes its peek with it
+useSceneUi.subscribe((s, prev) => { if (s.openCard !== prev.openCard && s.peek) peekAt(null); });

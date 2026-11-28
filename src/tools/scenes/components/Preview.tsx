@@ -9,11 +9,11 @@ import type { TargetAndTransition, Transition } from "motion/react";
 import { AnimatePresence, m, spring, useReducedMotion } from "@/shared/ui/motion";
 import type { Problem } from "../lib/checks";
 import { look } from "../lib/look";
-import { cueBetween, lengthOf, STILL, type Cue, type Motion } from "../lib/motion";
+import { cueBetween, cueWith, lengthOf, STILL, type Cue, type Motion } from "../lib/motion";
 import type { Script } from "../lib/script";
 import { EMPTY_STAGE, placeOf, playScript, type Sprite, type Stage } from "../lib/stage";
 import { beatsOf, type Beat } from "../lib/renpyText";
-import { useSceneUi } from "../lib/ui";
+import { useSceneUi, type Peek } from "../lib/ui";
 import { useScenes } from "../state";
 import { applyFixes, isLineFix } from "../lib/fixes";
 import { FixButton } from "./problems";
@@ -29,8 +29,14 @@ export function Preview() {
   const loaded = useGame(s => s.loaded);
 
   const stages = useMemo(() => (script ? playScript(script) : []), [script]);
-  const { stage, cue } = useShownStage(script, stages, line, moved, manifest);
+  const shown = useShownStage(script, stages, line, moved, manifest);
   usePreloadStages(stages, manifest);
+  // an open card's hovered option: a stage option shown as it would be (nothing plays), a transition played
+  const peek = useSceneUi(s => s.peek);
+  const played = usePlayedPeek(peek, script, stages, manifest);
+  const stage = played?.stage ?? (peek && "stage" in peek ? { ...shown.stage, ...peek.stage } : shown.stage);
+  const cue = played?.cue ?? (peek ? STILL : shown.cue);
+  const images = peek && "images" in peek ? peek.images : undefined;
 
   // the line in the textbox: the one at the cursor, or the last one before it
   let say: { who: string | null; raw: string; n: number } | null = null;
@@ -46,7 +52,7 @@ export function Preview() {
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-5">
       <div className="shrink-0 space-y-4">
-        <StageView stage={stage} cue={cue} manifest={manifest} />
+        <StageView stage={stage} cue={cue} manifest={manifest} over={images} />
         <Facts stage={stage} manifest={manifest} />
         <TextboxPreview say={say} pov={stage.pov} manifest={manifest} restart={moved} wait={cue.length} />
       </div>
@@ -93,6 +99,23 @@ function useShownStage(script: Script | null, stages: Stage[], line: number, mov
   const r = replay && replay.text === text && replay.moved === moved ? replay : null;
   if (r && !r.cue) return { stage: stages[line - 2] ?? EMPTY_STAGE, cue: STILL };
   return { stage: stages[line - 1] ?? EMPTY_STAGE, cue: r?.cue ?? cue };
+}
+
+/** A hovered transition (a card's peek): the stage before the card's line, then the line played with it. Each hover
+ *  plays it once from the start. Null for any other peek. */
+function usePlayedPeek(peek: Peek | null, script: Script | null, stages: Stage[], manifest: Manifest | null) {
+  const reduce = useReducedMotion();
+  const play = peek && "with" in peek && !reduce ? peek : null;
+  const [cue, setCue] = useState<{ of: Peek; cue: Cue } | null>(null);
+  useLayoutEffect(() => {
+    if (!play || !script) return;
+    // like a replay: long enough for what the line changes to have gone, so it comes back in
+    const t = setTimeout(() => setCue({ of: play, cue: cueWith(script, play.line, play.with, manifest) }), 40);
+    return () => clearTimeout(t);
+  }, [play]);   // eslint-disable-line react-hooks/exhaustive-deps
+  if (!play) return null;
+  if (cue?.of !== play) return { stage: stages[play.line - 2] ?? EMPTY_STAGE, cue: STILL };
+  return { stage: stages[play.line - 1] ?? EMPTY_STAGE, cue: cue.cue };
 }
 
 /** Reads the scene's backgrounds and sprites ahead, so moving the cursor shows them at once. */
@@ -155,11 +178,11 @@ const SHAKE = {
 
 /** The background and the sprites as the game shows them, from the game's own images where this backend can read them
  *  (else the background's name on a tinted backdrop and sprites as tinted figures), with the lines' transitions. */
-function StageView({ stage, cue, manifest }: { stage: Stage; cue: Cue; manifest: Manifest | null }) {
+function StageView({ stage, cue, manifest, over }: { stage: Stage; cue: Cue; manifest: Manifest | null; over?: Over }) {
   const bg = stage.background;
   // like a sprite's look: while a new background is still being read the old one stays, and the change plays once it's
   // there (else its transition would play on an empty frame and the image pop in after)
-  const { pending } = useAssetImage(bg && bg !== "black" ? manifest?.imageFiles[bg] : null, manifest);
+  const { pending } = useImage(bg && bg !== "black" ? manifest?.imageFiles[bg] : null, manifest, over);
   const lastBg = useRef(bg);
   if (!pending) lastBg.current = bg;
   const shownBg = pending ? lastBg.current : bg;
@@ -180,11 +203,11 @@ function StageView({ stage, cue, manifest }: { stage: Stage; cue: Cue; manifest:
     <div className="group relative aspect-video overflow-hidden rounded-lg border border-ink-line bg-black">
       <div ref={frame} className="absolute inset-0">
         <AnimatePresence initial={false} custom={cue}>
-          <Backdrop key={shownBg ?? ""} bg={shownBg} cue={cue} manifest={manifest} />
+          <Backdrop key={shownBg ?? ""} bg={shownBg} cue={cue} manifest={manifest} over={over} />
         </AnimatePresence>
         <div className="absolute inset-0 z-[2]">
           <AnimatePresence initial={false} custom={cue}>
-            {stage.sprites.map(sp => <SpriteView key={sp.tag} sprite={sp} cue={cue} manifest={manifest} />)}
+            {stage.sprites.map(sp => <SpriteView key={sp.tag} sprite={sp} cue={cue} manifest={manifest} over={over} />)}
           </AnimatePresence>
         </div>
       </div>
@@ -203,9 +226,9 @@ function StageView({ stage, cue, manifest }: { stage: Stage; cue: Cue; manifest:
 /** One background: its image, or its name's colours while there is none (nothing while it's still being read, so the
  *  stand-in doesn't flash up; StageView normally waits for the image before showing a new one). A new one comes on
  *  over the old. */
-function Backdrop({ bg, cue, manifest }: { bg: string | null; cue: Cue; manifest: Manifest | null }) {
+function Backdrop({ bg, cue, manifest, over }: { bg: string | null; cue: Cue; manifest: Manifest | null; over?: Over }) {
   const hue = bg ? [...bg].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7) : 0;
-  const { img, pending } = useAssetImage(bg && bg !== "black" ? manifest?.imageFiles[bg] : null, manifest);
+  const { img, pending } = useImage(bg && bg !== "black" ? manifest?.imageFiles[bg] : null, manifest, over);
   const url = img?.url;
   const e = enterOf(cue.background, cue);
   return (
@@ -216,6 +239,14 @@ function Backdrop({ bg, cue, manifest }: { bg: string | null; cue: Cue; manifest
       {url && <img src={url} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />}
     </m.div>
   );
+}
+
+/** Images a peek brings along (asset path → thumbnail), used instead of reading those files. */
+type Over = Record<string, AssetImage> | undefined;
+function useImage(file: string | null | undefined, manifest: Manifest | null, over: Over) {
+  const given = file ? over?.[file] : undefined;
+  const read = useAssetImage(given ? null : file, manifest);
+  return given ? { img: given, pending: false } : read;
 }
 
 /** Ren'Py's screen height, and the zoom placeOf's scale 1 stands for (transforms in core/transitions.rpy). */
@@ -237,9 +268,9 @@ function spriteFile(m: Manifest | null, sp: Sprite) {
  *  character's name while there is none. It comes, goes, moves and changes its look the way the script says; a move
  *  written without a transition still glides a little, so you can see who went where. While a new look is still being
  *  read the old one stays (the change plays once it's there), never the stand-in figure. */
-function SpriteView({ sprite: sp, cue, manifest }: { sprite: Sprite; cue: Cue; manifest: Manifest | null }) {
+function SpriteView({ sprite: sp, cue, manifest, over }: { sprite: Sprite; cue: Cue; manifest: Manifest | null; over?: Over }) {
   const { x, scale } = placeOf(sp.at, manifest?.positions);
-  const { img: read, pending } = useAssetImage(spriteFile(manifest, sp), manifest);
+  const { img: read, pending } = useImage(spriteFile(manifest, sp), manifest, over);
   const last = useRef<AssetImage | null>(null);
   if (!pending) last.current = read;
   const img = pending ? last.current : read;

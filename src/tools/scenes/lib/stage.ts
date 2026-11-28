@@ -64,3 +64,28 @@ export function placeOf(at: string | null, positions: { name: string; params?: R
   const n = named[at];
   return n ? { x: n.x, scale: n.zoom / BASE } : { x: 0.5, scale: 1 };
 }
+
+/** What a scene uses, for the stage cards' shelves and counts: backgrounds and music tracks (in the order they come,
+ *  repeats kept out), the looks each character is shown in ("casual happy"), and the days it plays on (`set_date`
+ *  statements and dates in its labels, `sc_2025_04_07_mon`). */
+export type SceneUses = { backgrounds: string[]; music: string[]; looks: Record<string, string[]>; dates: string[] };
+
+export function usesIn(s: Script, labels: Iterable<string> = []): SceneUses {
+  const bgs = new Set<string>(), music = new Set<string>(), dates = new Set<string>(), looks: Record<string, Set<string>> = {};
+  for (const p of s.parsed) {
+    if (p?.kind !== "stmt") continue;
+    const x = p.stmt;
+    if (x.kind === "scene") bgs.add(x.image);
+    else if (x.kind === "play" && x.channel === "music") music.add(x.name);
+    else if (x.kind === "show" && x.attrs.length) (looks[x.tag] ??= new Set()).add(x.attrs.join(" "));
+    else if (x.kind === "date" && /^\d{4}-\d{2}-\d{2}$/.test(x.date)) dates.add(x.date);
+  }
+  for (const l of labels) {
+    const m = /(\d{4})_(\d{2})_(\d{2})/.exec(l);
+    if (m) dates.add(`${m[1]}-${m[2]}-${m[3]}`);
+  }
+  return {
+    backgrounds: [...bgs], music: [...music], dates: [...dates].sort(),
+    looks: Object.fromEntries(Object.entries(looks).map(([k, v]) => [k, [...v]])),
+  };
+}

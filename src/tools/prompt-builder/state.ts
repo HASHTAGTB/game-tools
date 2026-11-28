@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import { STATIC } from "@/shared/lib/env";
 import { fileName } from "@/shared/lib/paths";
-import { createFileSync, type FileConflict } from "@/shared/lib/fileSync";
+import type { FileCompare } from "@/shared/lib/diff/files";
+import { createFileSync, type FileConflict, type Resolution } from "@/shared/lib/fileSync";
+import { noteOutside } from "@/shared/ui/diff/store";
 import { debounce, noticeSetter, whenHidden } from "@/shared/lib/toolState";
 import { errorMessage, uniqueId } from "@/shared/lib/utils";
 import type { DragTag } from "./lib/dnd";
@@ -46,7 +48,9 @@ type Actions = {
   create: (name: string, from?: Character) => void;
   importChars: (incoming: Character[]) => void;
   remove: (id: string) => void;
-  resolveConflict: (path: string, keep: "mine" | "theirs") => void;
+  resolveConflict: (path: string, keep: Resolution) => void;
+  /** A conflict's three versions, for the merge. */
+  conflictVersions: (path: string) => FileCompare | null;
   setActiveKey: (k: ListKey) => void;
   /** Add the tag to the target list, or remove it if it's already there. */
   toggleInTarget: (text: string) => void;
@@ -80,9 +84,9 @@ export const usePromptBuilder = create<State & Actions>()((set, get) => {
     conflicts: () => get().conflicts,
     setConflicts: conflicts => set({ conflicts }),
     onError: e => set({ error: "Saving failed: " + errorMessage(e) }),
-    onReloaded: labels => get().setNotice(labels.length === 1
+    onReloaded: (labels, changes) => noteOutside(labels.length === 1
       ? `${labels[0]} changed on disk and was reloaded.`
-      : `${labels.length} characters changed on disk and were reloaded.`),
+      : `${labels.length} characters changed on disk and were reloaded.`, changes.map(c => ({ path: c.path, a: c.before, b: c.after }))),
   });
 
   return {
@@ -134,6 +138,7 @@ export const usePromptBuilder = create<State & Actions>()((set, get) => {
   },
 
   resolveConflict: (path, keep) => sync.resolve(path, keep),
+  conflictVersions: path => sync.versions(path),
 
   update: fn => set(s => ({
     chars: s.chars.map(c => {

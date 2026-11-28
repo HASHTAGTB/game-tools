@@ -10,6 +10,7 @@ import {
 import { Button } from "./button";
 import { ArmButton } from "./confirm";
 import { GitHubSave, usePendingPaths } from "./github-save";
+import { CheckpointBox } from "./diff/checkpoint-box";
 import { fieldCls } from "./field";
 import { IconButton } from "./icon-button";
 import type { ToolData } from "./tool-page";
@@ -98,7 +99,7 @@ export function WorkspaceLocation({ data }: Props) {
 
   return (
     <>
-    {loc?.kind === "github" && <GitHubSave onFlush={onFlush} onRevert={onRevert} />}
+    {loc?.kind === "github" ? <GitHubSave data={data} onFlush={onFlush} onRevert={onRevert} /> : loc?.ready && <CheckpointBox data={data} />}
     <div className="flex items-end gap-1 px-4 py-4">
       <Popover open={open} onOpenChange={setOpen} side="top" align="start" className="w-md" trigger={
         <button className="group min-w-0 flex-1 rounded-md p-2 text-left" title="Change the data folder">

@@ -139,5 +139,14 @@ export function cueBetween(s: Script, from: number, to: number, m: Manifest | nu
   return cue;
 }
 
+/** What line `line` (1-based) plays if it's written with transition `w` instead ("" = none). */
+export function cueWith(s: Script, line: number, w: string, m: Manifest | null): Cue {
+  const p = s.parsed[line - 1];
+  if (p?.kind !== "stmt" || !("with" in p.stmt)) return STILL;
+  const parsed = s.parsed.slice();
+  parsed[line - 1] = { ...p, stmt: { ...p.stmt, with: w || undefined } as typeof p.stmt };
+  return cueBetween({ ...s, parsed }, line - 1, line, m);
+}
+
 /** The cue where nothing plays (moving back up, or typing). */
 export const STILL: Cue = { id: 0, enter: {}, exit: {}, look: {}, move: {}, fade: null, punch: null, length: 0 };

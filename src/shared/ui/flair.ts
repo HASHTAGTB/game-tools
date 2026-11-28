@@ -160,6 +160,21 @@ export function morph(el: HTMLElement, from: Size, easing = SPRING) {
   return a;
 }
 
+/** Expand: a view laid over a column (`el`, position fixed) grows out of the card it opens from (`from`, its rect and
+ *  corners and fill) to where it is; `back` shrinks it into the card instead (resolves when done, so it can be removed then).
+ *  Its contents only fade in once it has room, so they don't jostle while it grows. */
+export function expand(el: HTMLElement, from: { rect: DOMRect; r: string; bg: string }, back = false): Promise<void> {
+  const to = el.getBoundingClientRect();
+  const cs = getComputedStyle(el);
+  const box = (r: DOMRect, radius: string, bg: string) => ({ left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`, borderRadius: radius, backgroundColor: bg });
+  const small = box(from.rect, from.r, from.bg), big = box(to, cs.borderTopLeftRadius, cs.backgroundColor);
+  el.style.overflow = "hidden";
+  const a = play(el, back ? [big, small] : [small, big], { duration: back ? 280 : 420, easing: back ? "cubic-bezier(.4, 0, .6, 1)" : EASE, fill: back ? "forwards" : "none" });
+  for (const c of el.children) play(c, back ? [{ opacity: 1 }, { opacity: 0 }] : [{ opacity: 0 }, { opacity: 1 }],
+    back ? { duration: 120, fill: "forwards" } : { duration: 200, delay: 180, fill: "backwards" });
+  return finished(a).then(() => { if (!back) el.style.overflow = ""; });
+}
+
 /** Rise: items come up into an opened card one after another. */
 export function rise(els: Iterable<Element>, delay = 140) {
   stagger(els, [{ opacity: 0, translate: "0 8px" }, { opacity: 1, translate: "0 0" }], { duration: 300, delay, step: 55, spread: 400 });

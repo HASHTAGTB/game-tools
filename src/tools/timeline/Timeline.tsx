@@ -32,7 +32,7 @@ import { useGame } from "@/shared/lib/game";
 
 export default function Timeline() {
   const s = usePick(useTimeline, "loc", "loaded", "doc", "selection", "error", "notice", "conflicts", "zoom", "canUndo", "canRedo", "filter", "folded",
-    "undo", "redo", "setZoom", "setFilter", "toggleFolded", "resolveConflict", "setError", "setNotice", "reload", "flush", "revert");
+    "undo", "redo", "setZoom", "setFilter", "toggleFolded", "resolveConflict", "conflictVersions", "setError", "setNotice", "reload", "flush", "revert");
   const { loc, loaded, doc, conflicts, zoom, canUndo, canRedo } = s;
 
   useEffect(() => useTimeline.getState().init(), []);
@@ -107,7 +107,7 @@ export default function Timeline() {
           )}
         </AnimatePresence>
       </>}
-      conflicts={conflicts.map(c => ({ key: c.path, label: c.label, deleted: c.theirs === null }))} onResolve={s.resolveConflict}>
+      conflicts={conflicts.map(c => ({ key: c.path, label: c.label, deleted: c.theirs === null, versions: () => s.conflictVersions(c.path) }))} onResolve={s.resolveConflict}>
       {!loaded ? <NotReady loc={loc} /> : doc.chapters.length ? <Board flagged={flagged} /> : (
         <EmptyState title="No chapters yet.">Start with <b>New chapter</b> at the top.</EmptyState>
       )}

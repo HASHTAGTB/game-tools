@@ -5,6 +5,7 @@ import { useHotkeys } from "@/shared/lib/hotkeys";
 import { browserPrefs } from "@/shared/lib/toolState";
 import { cn } from "@/shared/lib/utils";
 import { IconButton } from "./icon-button";
+import type { Resolution } from "@/shared/lib/fileSync";
 import type { Location } from "@/shared/lib/workspace";
 import { ConflictBar, StatusToasts, type ConflictItem } from "./status";
 import { ToolNav } from "./tool-nav";
@@ -34,7 +35,7 @@ type Props = {
   bar?: ReactNode;
   /** Files changed elsewhere while this tab had unsaved edits to them. */
   conflicts?: ConflictItem[];
-  onResolve?: (key: string, keep: "mine" | "theirs") => void;
+  onResolve?: (key: string, keep: Resolution) => void;
   /** The right column (the tag browser, the Inspector, the preview). */
   aside?: ReactNode;
   /** Set it when the tool decides whether the right column shows (the timeline's Inspector, only while something is
@@ -87,7 +88,7 @@ export function ToolPage({ tool, data, sidebar, bar, conflicts = [], onResolve, 
 
       <main className="@container relative flex min-h-0 flex-col">
         {bar}
-        <StatusToasts className="top-16" error={data.error} notice={data.notice} setError={data.setError} setNotice={data.setNotice} />
+        <StatusToasts className="top-16" data={data} error={data.error} notice={data.notice} setError={data.setError} setNotice={data.setNotice} />
         {onResolve && <ConflictBar items={conflicts} onResolve={onResolve} />}
         {children}
       </main>

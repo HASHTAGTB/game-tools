@@ -14,6 +14,12 @@ import { locationVersion, readFile, removeFile, statFile, writeText, type FileDa
 /** Someone else changed (or deleted: `theirs` null) a file while this tab had unsaved edits to it. */
 export type FileConflict = { path: string; label: string; theirs: string | null; mtime: number | null };
 
+/** A file someone else changed that was taken over (null: it didn't exist / was deleted). */
+export type OutsideChange = { path: string; before: string | null; after: string | null };
+
+/** How a conflict is settled: their file, mine over it, or a text put together from both (null: no file). */
+export type Resolution = "mine" | "theirs" | { text: string | null };
+
 export type FileSyncConfig<D> = {
   /** The data before any file is read into it. */
   empty: D;
@@ -33,8 +39,8 @@ export type FileSyncConfig<D> = {
   conflicts: () => FileConflict[];
   setConflicts: (c: FileConflict[]) => void;
   onError: (e: unknown) => void;
-  /** Files changed elsewhere were taken over (their labels). */
-  onReloaded: (labels: string[]) => void;
+  /** Files changed elsewhere were taken over: their labels, and each file before and after. */
+  onReloaded: (labels: string[], changes: OutsideChange[]) => void;
 };
 
 /** Write `text` to `path` unless the file changed since this tab knew it at `mtime` (null: it didn't exist). Returns
@@ -109,9 +115,10 @@ export function createFileSync<D>(c: FileSyncConfig<D>) {
       else incoming.push([path, f]);
     });
     if (!incoming.length) return;
+    const before = new Map(incoming.map(([p]) => [p, known.get(p)?.text ?? null]));
     const used = applyAll(c.get(), incoming.map(([p, f]) => [p, f?.text ?? null]));
     for (const [p, f] of incoming) if (used.has(p)) remember(p, f);
-    if (used.size) c.onReloaded([...used].map(c.label));
+    if (used.size) c.onReloaded([...used].map(c.label), incoming.filter(([p]) => used.has(p)).map(([path, f]) => ({ path, before: before.get(path)!, after: f?.text ?? null })));
   }
 
   return {
@@ -142,19 +149,26 @@ export function createFileSync<D>(c: FileSyncConfig<D>) {
     watch: (ready: () => boolean) => whileVisible(() => {
       if (ready()) serial(() => pollNow().catch(() => { /* offline, permission gone: the next load shows it */ }));
     }),
-    /** "theirs": take their file; "mine": count theirs as seen, so the next flush overwrites it. */
-    resolve: (path: string, keep: "mine" | "theirs") => {
+    /** A conflict's three versions: where this tab started (`o`), its own (`a`) and theirs (`b`). */
+    versions: (path: string) => {
+      const x = c.conflicts().find(y => y.path === path);
+      return x ? { path, o: base(path), a: files().get(path) ?? null, b: x.theirs } : null;
+    },
+    /** "theirs": take their file; "mine": count theirs as seen, so the next flush overwrites it; `{ text }`: put
+     *  that in (a merge of both) and write it over theirs. */
+    resolve: (path: string, keep: Resolution) => {
       const x = c.conflicts().find(y => y.path === path);
       if (!x) return;
       c.setConflicts(c.conflicts().filter(y => y.path !== path));
       const theirs = x.theirs === null ? null : { text: x.theirs, mtime: x.mtime! };
-      if (keep === "theirs") {
+      if (keep === "theirs" || (typeof keep === "object" && keep.text === x.theirs)) {
         applyAll(c.get(), [[path, x.theirs]]);
         remember(path, theirs);
-      } else {
-        if (theirs) known.set(path, theirs); else known.delete(path);
-        void serial(() => flushNow().catch(c.onError));
+        return;
       }
+      if (typeof keep === "object") applyAll(c.get(), [[path, keep.text]]);
+      if (theirs) known.set(path, theirs); else known.delete(path);
+      void serial(() => flushNow().catch(c.onError));
     },
   };
 }

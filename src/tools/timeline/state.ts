@@ -1,5 +1,7 @@
 import { create } from "zustand";
-import { createFileSync, type FileConflict } from "@/shared/lib/fileSync";
+import type { FileCompare } from "@/shared/lib/diff/files";
+import { createFileSync, type FileConflict, type Resolution } from "@/shared/lib/fileSync";
+import { noteOutside } from "@/shared/ui/diff/store";
 import { browserPrefs, debounce, noticeSetter, whenHidden } from "@/shared/lib/toolState";
 import { errorMessage, freeName } from "@/shared/lib/utils";
 import { getLocation, NeedsPermission, type Location } from "@/shared/lib/workspace";
@@ -46,7 +48,9 @@ type Actions = {
   setZoom: (z: number) => void;
   setFilter: (f: Partial<Filter>, viewId?: string | null) => void;
   toggleFolded: (id: string) => void;
-  resolveConflict: (path: string, keep: "mine" | "theirs") => void;
+  resolveConflict: (path: string, keep: Resolution) => void;
+  /** A conflict's three versions, for the merge. */
+  conflictVersions: (path: string) => FileCompare | null;
   setError: (msg: string | null) => void;
   setNotice: (msg: string | null) => void;
 };
@@ -90,9 +94,9 @@ export const useTimeline = create<State & Actions>()((set, get) => {
     conflicts: () => get().conflicts,
     setConflicts: conflicts => set({ conflicts }),
     onError: e => set({ error: "Saving failed: " + errorMessage(e) }),
-    onReloaded: labels => get().setNotice(labels.length === 1
+    onReloaded: (labels, changes) => noteOutside(labels.length === 1
       ? `${labels[0]} changed on disk and was reloaded.`
-      : `${labels.length} files changed on disk and were reloaded.`),
+      : `${labels.length} files changed on disk and were reloaded.`, changes.map(c => ({ path: c.path, a: c.before, b: c.after }))),
   });
 
   return {
@@ -169,6 +173,7 @@ export const useTimeline = create<State & Actions>()((set, get) => {
     toggleFolded: id => { set(s => { const f = new Set(s.folded); if (!f.delete(id)) f.add(id); return { folded: f }; }); savePrefs(); },
 
     resolveConflict: (path, keep) => sync.resolve(path, keep),
+    conflictVersions: path => sync.versions(path),
 
     setError: error => set({ error }),
     setNotice: noticeSetter(set),

@@ -30,7 +30,7 @@ export type GameCharacter = {
 export type ChatGroup = { id: string; title: string; members: string[] };
 
 /** Bumped whenever the shape changes: a copy cached in this browser by an older version is then ignored. */
-export const MANIFEST_VERSION = 2;
+export const MANIFEST_VERSION = 3;
 
 export type Manifest = {
   version: typeof MANIFEST_VERSION;
@@ -43,6 +43,10 @@ export type Manifest = {
   /** image name → its file in assets/ ("rin casual happy" → "images/char/rin/rin_casual_happy.webp") */
   imageFiles: Record<string, string>;
   music: string[];
+  /** the tracks in audio/…/not_used/ (not in `music`; the music card lists them dimmed) */
+  musicUnused: string[];
+  /** track name → its file in assets/ ("casual" → "audio/bgm/casual.opus"), used and unused */
+  audioFiles: Record<string, string>;
   transitions: string[];
   /** the game's own transitions (`define`s in core/transitions.rpy): name → what it's defined as ("Fade(1.5, 0, 0.5)") */
   transitionDefs: Record<string, string>;
@@ -79,7 +83,7 @@ function fromCache(): { manifest: Manifest; text: string } | null {
     const text = localStorage.getItem(CACHE_KEY);
     if (!text) return null;
     const m = JSON.parse(text);
-    return m?.version === MANIFEST_VERSION && Array.isArray(m.characters) && m.imageFiles ? { manifest: m, text } : null;
+    return m?.version === MANIFEST_VERSION && Array.isArray(m.characters) && m.imageFiles && m.audioFiles ? { manifest: m, text } : null;
   } catch { return null; }
 }
 function toCache(text: string | null) {

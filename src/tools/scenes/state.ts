@@ -12,6 +12,7 @@ import { readInfo, setInfo, withInfo, type InfoKey, type SceneInfo } from "./lib
 import { labelsIn } from "./lib/labels";
 import { chatsIn, type ChatMsg } from "./lib/phone";
 import { parseScript, sceneTemplate, suggestLabel } from "./lib/script";
+import { usesIn, type SceneUses } from "./lib/stage";
 import { useSceneUi } from "./lib/ui";
 
 /** The scene files: the game's .rpy files in renpy/game/scenes and renpy/game/dev, on the same kind of store as the
@@ -31,10 +32,11 @@ useScenes.setState({ expanded: new Set(SCENE_DIRS) });
 const locKey = () => { const l = useScenes.getState().loc; return l ? `${l.kind}:${l.label}:${l.name ?? ""}` : ""; };
 
 /** What the list, the jump checks and the chats need of a scene: its labels, its header, its chat messages. */
-export type SceneEntry = { labels: string[]; info: SceneInfo; chats: ChatMsg[] };
+export type SceneEntry = { labels: string[]; info: SceneInfo; chats: ChatMsg[]; uses: SceneUses };
 export const entryOf = (text: string): SceneEntry => {
   const s = parseScript(text);
-  return { labels: [...labelsIn(s)], info: readInfo(text), chats: chatsIn(s).msgs };
+  const labels = [...labelsIn(s)];
+  return { labels, info: readInfo(text), chats: chatsIn(s).msgs, uses: usesIn(s, labels) };
 };
 /** What the list calls a scene: its title, else its file name. */
 export const titleOf = (path: string, info: SceneInfo | undefined) => info?.title || baseName(path);
@@ -57,7 +59,8 @@ type SceneIndex = {
 };
 
 const same = (a: SceneEntry | undefined, b: SceneEntry) =>
-  !!a && a.labels.join() === b.labels.join() && JSON.stringify(a.info) === JSON.stringify(b.info) && JSON.stringify(a.chats) === JSON.stringify(b.chats);
+  !!a && a.labels.join() === b.labels.join() && JSON.stringify(a.info) === JSON.stringify(b.info) && JSON.stringify(a.chats) === JSON.stringify(b.chats)
+  && JSON.stringify(a.uses) === JSON.stringify(b.uses);
 
 export const useSceneIndex = create<SceneIndex>()((set, get) => ({
   files: null, readFor: null, reading: null, pending: {},

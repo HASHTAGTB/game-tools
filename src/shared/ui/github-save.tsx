@@ -1,13 +1,17 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { commit, defaultMessage, discard, keepMine, onPendingChange, pendingSnapshot } from "@/shared/lib/github";
+import { commit, defaultMessage, discard, onPendingChange, pendingSnapshot } from "@/shared/lib/github";
 import { cn } from "@/shared/lib/utils";
 import { useHotkeys } from "@/shared/lib/hotkeys";
 import { Button } from "./button";
 import { ArmButton } from "./confirm";
 import { fieldCls } from "./field";
 import { Popover, PopoverTitle } from "./popover";
+import { mergeGitHub, reviewGitHub } from "./diff/sessions";
+import type { ToolData } from "./tool-page";
 
 type Props = {
+  /** The tool, for the Changes view (it writes the edits out first and reloads after). */
+  data: Pick<ToolData, "flush" | "reload">;
   /** Write the tool's in-memory edits out first, so the commit has them. */
   onFlush: () => Promise<void>;
   /** Throw away the tool's in-memory edits: stop autosaving, wait for any write in progress, run `drop` (which drops
@@ -24,7 +28,7 @@ export const usePendingPaths = () => useSyncExternalStore(onPendingChange, pendi
 
 /** Shown in the sidebar footer while the data lives on GitHub: unsaved changes and the Save button. Nothing is pushed
  *  until Save (or Ctrl+S). */
-export function GitHubSave({ onFlush, onRevert }: Props) {
+export function GitHubSave({ data, onFlush, onRevert }: Props) {
   const paths = usePendingPaths();
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
@@ -57,12 +61,17 @@ export function GitHubSave({ onFlush, onRevert }: Props) {
   // Ctrl+S / Cmd+S saves right away with the default message
   useHotkeys({ "mod+s": () => void save("") });
 
-  const resolve = async (keep: "mine" | "theirs") => {
+  /** The Changes view: what will be saved (`path`: that file first). */
+  const review = (path?: string) => {
+    setOpen(false);
+    reviewGitHub(data, path).catch(e => { setErr(msgOf(e)); setOpen(true); });
+  };
+  /** The Changes view as a merge of the files someone else saved meanwhile; then saves. */
+  const merge = async () => {
     setBusy(true);
     try {
-      if (keep === "mine") { await keepMine(conflicts); setConflicts([]); setBusy(false); await save(); return; }
-      await onRevert(() => discard(conflicts));
-      setConflicts([]);
+      await mergeGitHub(data, conflicts, async () => { setConflicts([]); await save(); });
+      setOpen(false);
     } catch (e) {
       setErr(msgOf(e));
     } finally {
@@ -94,8 +103,8 @@ export function GitHubSave({ onFlush, onRevert }: Props) {
             <p className="mb-2 text-sm text-bone">Someone saved these files since you started editing them here. Nothing was saved yet.</p>
             <ul className="mb-3 max-h-40 overflow-y-auto font-talk text-sm text-coral">{conflicts.map(p => <li key={p}>{short(p)}</li>)}</ul>
             <div className="flex items-center justify-end gap-3">
-              <Button size="sm" variant="ghost" onClick={() => resolve("theirs")} disabled={busy}>Take theirs (drop my edits)</Button>
-              <Button size="sm" variant="primary" onClick={() => resolve("mine")} disabled={busy}>Keep mine and save</Button>
+              <Button size="sm" variant="ghost" onClick={() => setConflicts([])} disabled={busy}>Not now</Button>
+              <Button size="sm" variant="primary" onClick={merge} disabled={busy}>Compare and merge…</Button>
             </div>
           </>
         ) : (
@@ -103,7 +112,14 @@ export function GitHubSave({ onFlush, onRevert }: Props) {
             <PopoverTitle>Save to GitHub</PopoverTitle>
             {n ? (
               <>
-                <ul className="mb-3 max-h-40 overflow-y-auto font-talk text-sm text-bone">{paths.map(p => <li key={p}>{short(p)}</li>)}</ul>
+                <ul className="mb-3 max-h-40 overflow-y-auto font-talk text-sm text-bone">
+                  {paths.map(p => (
+                    <li key={p}>
+                      <button onClick={() => review(p)} title="See what changed in it"
+                        className="w-full truncate rounded-sm text-left underline-offset-4 hover:text-paper hover:underline">{short(p)}</button>
+                    </li>
+                  ))}
+                </ul>
                 <input value={message} onChange={e => setMessage(e.target.value)} onKeyDown={e => e.key === "Enter" && save()} autoFocus disabled={busy}
                   aria-label="Commit message"
                   className={fieldCls} />
@@ -115,6 +131,7 @@ export function GitHubSave({ onFlush, onRevert }: Props) {
         {!conflicts.length && (
           <div className="mt-3 flex items-center gap-3">
             {n > 0 && <ArmButton disabled={busy} sure="Really discard?" onConfirm={async () => { await onRevert(() => discard()); setOpen(false); }}>Discard all</ArmButton>}
+            {n > 0 && <Button size="sm" onClick={() => review()} disabled={busy}>See changes</Button>}
             <span className="flex-1" />
             <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Close</Button>
             {n > 0 && <Button size="sm" variant="primary" onClick={() => save()} disabled={busy}>Save</Button>}

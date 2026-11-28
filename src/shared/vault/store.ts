@@ -1,5 +1,7 @@
 import { create } from "zustand";
-import { writeIfUnchanged } from "@/shared/lib/fileSync";
+import type { FileCompare } from "@/shared/lib/diff/files";
+import { writeIfUnchanged, type Resolution } from "@/shared/lib/fileSync";
+import { noteOutside } from "@/shared/ui/diff/store";
 import { browserPrefs, debounce, noticeSetter, serialQueue, whenHidden, whileVisible } from "@/shared/lib/toolState";
 import { fileName as lastPart, isUnder, joinPath, parentOf, rebase } from "@/shared/lib/paths";
 import { errorMessage, freeName, plural, strings } from "@/shared/lib/utils";
@@ -96,7 +98,9 @@ type Actions = {
   remove: (path: string) => Promise<void>;
   removeFolder: (path: string) => Promise<void>;
   setRenaming: (path: string | null) => void;
-  resolveConflict: (keep: "mine" | "theirs") => void;
+  resolveConflict: (keep: Resolution) => void;
+  /** The open file's three versions while it has a conflict, for the merge. */
+  conflictVersions: () => FileCompare | null;
   setError: (msg: string | null) => void;
   setNotice: (msg: string | null) => void;
 };
@@ -331,7 +335,7 @@ export function createVaultStore(cfg: VaultConfig) {
       if (text !== saved.text) return set({ conflict: { theirs: f?.text ?? null, mtime: f?.mtime ?? null } });
       if (!f) { show(null, null); savePrefs(); return get().setNotice(`${baseName(path)} was deleted elsewhere.`); }
       show(path, f);
-      get().setNotice(`${baseName(path)} changed on disk and was reloaded.`);
+      noteOutside(`${baseName(path)} changed on disk and was reloaded.`, [{ path, a: saved.text, b: f.text }]);
     } catch { /* permission gone, offline: the next load shows it */ }
   }
 
@@ -528,9 +532,23 @@ export function createVaultStore(cfg: VaultConfig) {
 
     setRenaming: renaming => set({ renaming }),
 
+    conflictVersions: () => {
+      const { conflict, path, saved, text } = get();
+      return conflict && path ? { path, o: saved?.text ?? null, a: text, b: conflict.theirs } : null;
+    },
+
     resolveConflict: keep => {
       const { conflict, path } = get();
       if (!conflict || !path) return;
+      // a merge that comes to their file (or to no file: they deleted it) is taking theirs
+      if (typeof keep === "object" && (keep.text === conflict.theirs || keep.text === null)) keep = "theirs";
+      if (typeof keep === "object") {
+        // the merge goes over their version, like keeping mine
+        set(s => ({ conflict: null, saved: { text: conflict.theirs ?? "", mtime: conflict.mtime }, text: keep.text!, rev: s.rev + 1 }));
+        autosave.cancel();
+        void serial(() => saveNow(true));
+        return;
+      }
       if (keep === "theirs") {
         if (conflict.theirs === null) { show(null, null); savePrefs(); return; }
         show(path, { text: conflict.theirs, mtime: conflict.mtime });

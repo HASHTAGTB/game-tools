@@ -12,7 +12,7 @@ import { readText, walkFiles, writeText } from "./workspace";
  *                  and pattern from core/gui/say.rpy and whether there is a narrator variant (x_n, so x can be POV)
  *    sprites       assets/images/char/<tag>/<tag>_<outfit>_<expression...>.<ext>  →  {tag: {outfit: [expression]}}
  *    backgrounds   the other files in assets/images (named after the file)
- *    music         assets/audio, without not_used/
+ *    music         assets/audio, without not_used/ (those are `musicUnused`); `audioFiles` has every track's file
  *    transitions   Ren'Py's own plus the `define`s in core/transitions.rpy
  *    positions     the `transform`s in core/transitions.rpy
  *    labels        every label outside scenes/ and dev/ (the Scenes tool reads those itself)
@@ -135,9 +135,13 @@ export function parseMedia(files: string[]) {
     const n = stem(f).toLowerCase();
     imageFiles[f.split("/").includes("char") ? n.replace(/_/g, " ") : n] ??= f;
   }
-  const music = [...new Set(files.filter(f => f.startsWith("audio/") && AUDIO_EXT.has(extOf(f)) && !f.split("/").includes("not_used"))
-    .map(f => stem(f)))].sort();
-  return { sprites, backgrounds, music, imageFiles };
+  const audio = files.filter(f => f.startsWith("audio/") && AUDIO_EXT.has(extOf(f)));
+  const unused = (f: string) => f.split("/").includes("not_used");
+  const music = [...new Set(audio.filter(f => !unused(f)).map(f => stem(f)))].sort();
+  const musicUnused = [...new Set(audio.filter(unused).map(f => stem(f)))].filter(n => !music.includes(n)).sort();
+  const audioFiles: Record<string, string> = {};
+  for (const f of [...audio.filter(f => !unused(f)), ...audio.filter(unused)]) audioFiles[stem(f)] ??= f;
+  return { sprites, backgrounds, music, musicUnused, audioFiles, imageFiles };
 }
 
 /** Everything the tools want to know about the game; null if the vault has no game (no core/characters.rpy). */
